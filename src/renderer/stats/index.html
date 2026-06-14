@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WordPop - 学习统计</title>
+  <link rel="stylesheet" href="../shared/common.css">
+  <link rel="stylesheet" href="stats.css">
+</head>
+<body>
+  <div class="stats-container">
+    <!-- 标题栏 -->
+    <div class="stats-header">
+      <h1>📊 学习统计</h1>
+    </div>
+
+    <!-- 统计卡片 -->
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="stat-today-reviewed">--</div>
+        <div class="stat-label">今日复习</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-today-learned">--</div>
+        <div class="stat-label">今日新学</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-total-words">--</div>
+        <div class="stat-label">累计单词</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="stat-streak">--</div>
+        <div class="stat-label">连续打卡</div>
+      </div>
+    </div>
+
+    <!-- 累计数据 -->
+    <div class="stats-section">
+      <h2>累计统计</h2>
+      <div class="stats-row">
+        <span class="stats-row-label">累计复习次数</span>
+        <span class="stats-row-value" id="stat-total-correct">--</span>
+      </div>
+      <div class="stats-row">
+        <span class="stats-row-label">已掌握单词</span>
+        <span class="stats-row-value" id="stat-mastered">--</span>
+      </div>
+      <div class="stats-row">
+        <span class="stats-row-label">正确率</span>
+        <span class="stats-row-value" id="stat-accuracy">--</span>
+      </div>
+    </div>
+
+    <!-- 7天趋势图 -->
+    <div class="stats-section">
+      <h2>近 7 天趋势</h2>
+      <div class="chart-container">
+        <canvas id="chart-daily"></canvas>
+      </div>
+    </div>
+
+    <!-- 阶段分布 -->
+    <div class="stats-section">
+      <h2>记忆阶段分布</h2>
+      <div class="chart-container">
+        <canvas id="chart-stage"></canvas>
+      </div>
+    </div>
+
+    <!-- 刷新按钮 -->
+    <div class="stats-footer">
+      <button class="btn btn-sm btn-ghost" id="btn-refresh">🔄 刷新数据</button>
+      <button class="btn btn-sm btn-primary" id="btn-settings">⚙ 打开设置</button>
+    </div>
+  </div>
+
+  <script src="../shared/utils.js"></script>
+  <script src="stats.js"></script>
+</body>
+</html>

@@ -1,0 +1,40 @@
+appId: com.wordpop.app
+productName: WordPop
+copyright: Copyright 2026 WordPop
+
+directories:
+  output: build
+  buildResources: assets
+
+files:
+  - src/**/*
+  - assets/**/*
+  - node_modules/**/*
+  - package.json
+
+extraResources:
+  - from: src/data/wordlists
+    to: wordlists
+    filter:
+      - "**/*.json"
+
+win:
+  target:
+    - target: nsis
+      arch:
+        - x64
+  icon: assets/icon.ico
+  # 在 Linux CI 中禁用 rcedit（需要 Wine 显示服务）
+  rfc3161TimeStampServer: ""
+  timeStampServer: ""
+
+nsis:
+  oneClick: false
+  perMachine: true
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: WordPop
+
+asar: true
+compression: maximum

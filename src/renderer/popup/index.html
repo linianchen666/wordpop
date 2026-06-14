@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WordPop</title>
+  <link rel="stylesheet" href="../shared/common.css">
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <!-- 弹窗容器 -->
+  <div id="popup-container" class="popup-container">
+    <!-- 标题栏 -->
+    <div class="popup-header">
+      <span class="popup-title">📖 WordPop</span>
+      <span class="popup-progress" id="progress-text">--</span>
+      <div class="popup-actions">
+        <button class="popup-btn-icon" id="btn-minimize" title="最小化到托盘">─</button>
+      </div>
+    </div>
+
+    <!-- 单词内容区 -->
+    <div class="popup-body">
+      <div class="word-main" id="word-text">Loading...</div>
+      <div class="word-phonetic" id="phonetic-text"></div>
+      <div class="word-translation" id="translation-text"></div>
+      <div class="word-example" id="example-text"></div>
+    </div>
+
+    <!-- 操作按钮区 -->
+    <div class="popup-footer">
+      <button class="btn btn-lg btn-danger btn-action" id="btn-unknown">
+        ✗ 不认识
+      </button>
+      <button class="btn btn-lg btn-success btn-action" id="btn-known">
+        ✓ 认识
+      </button>
+    </div>
+
+    <!-- 进度指示器 -->
+    <div class="popup-progress-bar">
+      <div class="progress-fill" id="progress-fill"></div>
+    </div>
+  </div>
+
+  <script src="../shared/utils.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

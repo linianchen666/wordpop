@@ -1,0 +1,6 @@
+node_modules/
+build/
+*.exe
+*.zip
+.DS_Store
+core*
