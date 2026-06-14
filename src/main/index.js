@@ -1,5 +1,6 @@
 const { app, BrowserWindow, Menu } = require('electron');
 const path = require('path');
+const fs = require('fs');
 const { initDatabase, importWordlist, getWordlistIndex } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
 const { createTray, destroyTray } = require('./tray');
@@ -12,73 +13,94 @@ let settingsWindow = null;
 let statsWindow = null;
 let setupWindow = null;
 
-// 开发模式标志
-const isDev = process.argv.includes('--dev');
+// 日志文件
+const logPath = path.join(app.getPath('userData'), 'wordpop.log');
+function log(msg) {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  console.log(line.trim());
+  try { fs.appendFileSync(logPath, line); } catch (e) {}
+}
+
+// 防止多实例
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    openStatsWindow();
+  });
+}
+
+// 全局异常处理——写日志
+process.on('uncaughtException', (error) => {
+  log(`[FATAL] Uncaught Exception: ${error.message}\n${error.stack}`);
+});
 
 /**
  * 应用入口
  */
 app.whenReady().then(async () => {
-  console.log('[App] WordPop starting...');
+  log('[App] WordPop starting...');
 
-  // 1. 初始化数据库
-  initDatabase();
+  try {
+    // 1. 初始化数据库
+    initDatabase();
+    log('[App] Database initialized');
 
-  // 2. 加载配置
-  const config = loadConfig();
+    // 2. 加载配置
+    const config = loadConfig();
+    log(`[App] Config loaded: setupComplete=${config.setupComplete}, wordlists=${JSON.stringify(config.selectedWordlists)}`);
 
-  // 3. 注册 IPC 处理器
-  registerIpcHandlers();
+    // 3. 注册 IPC 处理器
+    registerIpcHandlers();
 
-  // 4. 创建系统托盘
-  createTray({
-    onPauseToggle: (paused) => {
-      if (paused) {
-        scheduler.pause();
-        popupManager.closeImmediately();
-      } else {
-        scheduler.resume();
-      }
-    },
-    onOpenSettings: openSettingsWindow,
-    onOpenStats: openStatsWindow,
-    onQuit: () => {
-      scheduler.stop();
-      app.quit();
-    }
-  });
-
-  // 5. 隐藏 macOS 的 Dock 图标（Windows 下不影响）
-  if (process.platform === 'darwin') {
-    app.dock.hide();
-  }
-
-  // 6. 移除应用菜单（Windows 上不需要）
-  Menu.setApplicationMenu(null);
-
-  // 7. 首次启动：检查是否需要初始设置
-  if (!config.setupComplete) {
-    openSetupWindow();
-  } else {
-    // 确保所选词库已导入
-    await ensureWordlistsImported(config);
-
-    // 8. 创建弹窗（不显示，等待调度器）
-    popupManager.createPopupWindow();
-
-    // 9. 启动调度器
-    scheduler.start();
-
-    // 10. 设置统计更新通知
-    scheduler.onStatsUpdate(() => {
-      // 通知统计窗口更新
-      if (statsWindow && !statsWindow.isDestroyed()) {
-        statsWindow.webContents.send('stats:updated');
+    // 4. 创建系统托盘
+    createTray({
+      onPauseToggle: (paused) => {
+        if (paused) {
+          scheduler.pause();
+          popupManager.closeImmediately();
+        } else {
+          scheduler.resume();
+        }
+      },
+      onOpenSettings: openSettingsWindow,
+      onOpenStats: openStatsWindow,
+      onQuit: () => {
+        scheduler.stop();
+        app.quit();
       }
     });
-  }
 
-  console.log('[App] WordPop ready');
+    // 5. 移除应用菜单
+    Menu.setApplicationMenu(null);
+
+    // 6. 首次启动或已设置完成
+    if (!config.setupComplete) {
+      log('[App] First launch, opening setup window');
+      openSetupWindow();
+    } else {
+      // 确保词库已导入
+      await ensureWordlistsImported(config);
+
+      // 创建弹窗
+      popupManager.createPopupWindow();
+
+      // 启动调度器
+      scheduler.start();
+      log('[App] Scheduler started');
+
+      scheduler.onStatsUpdate(() => {
+        if (statsWindow && !statsWindow.isDestroyed()) {
+          statsWindow.webContents.send('stats:updated');
+        }
+      });
+    }
+
+    log('[App] WordPop ready');
+  } catch (err) {
+    log(`[FATAL] Startup error: ${err.message}\n${err.stack}`);
+  }
 });
 
 /**
@@ -86,25 +108,37 @@ app.whenReady().then(async () => {
  */
 async function ensureWordlistsImported(config) {
   const wordlists = config.selectedWordlists || ['cet4'];
+  log(`[App] Ensuring wordlists imported: ${JSON.stringify(wordlists)}`);
+
   const index = getWordlistIndex();
+  log(`[App] Available wordlists: ${JSON.stringify(index.map(e => e.id))}`);
+
   const { getDb } = require('./db');
   const db = getDb();
 
   for (const wlId of wordlists) {
     const entry = index.find(e => e.id === wlId);
-    if (!entry) continue;
+    if (!entry) {
+      log(`[App] WARNING: Wordlist ${wlId} not found in index`);
+      continue;
+    }
 
-    // 检查是否已导入
     const count = db.prepare('SELECT COUNT(*) as c FROM words WHERE wordlist = ?').get(wlId);
+    log(`[App] Wordlist ${wlId}: ${count.c} words in DB`);
+
     if (!count || count.c === 0) {
       try {
-        importWordlist(wlId);
-        console.log(`[App] Auto-imported wordlist: ${wlId}`);
+        const result = importWordlist(wlId);
+        log(`[App] Imported ${result.imported} words from ${wlId}`);
       } catch (err) {
-        console.error(`[App] Failed to import ${wlId}:`, err.message);
+        log(`[App] FAILED to import ${wlId}: ${err.message}`);
       }
     }
   }
+
+  // 验证数据库中确实有单词
+  const totalCount = db.prepare('SELECT COUNT(*) as c FROM words').get();
+  log(`[App] Total words in DB: ${totalCount.c}`);
 }
 
 /**
@@ -130,7 +164,6 @@ function openSettingsWindow() {
   });
 
   settingsWindow.loadFile(path.join(__dirname, '..', 'renderer', 'settings', 'index.html'));
-  settingsWindow.setMenu(null);
 
   settingsWindow.on('closed', () => {
     settingsWindow = null;
@@ -160,7 +193,6 @@ function openStatsWindow() {
   });
 
   statsWindow.loadFile(path.join(__dirname, '..', 'renderer', 'stats', 'index.html'));
-  statsWindow.setMenu(null);
 
   statsWindow.on('closed', () => {
     statsWindow = null;
@@ -185,19 +217,23 @@ function openSetupWindow() {
   });
 
   setupWindow.loadFile(path.join(__dirname, '..', 'renderer', 'settings', 'index.html'));
-  setupWindow.setMenu(null);
 
-  setupWindow.on('closed', () => {
+  setupWindow.on('closed', async () => {
     setupWindow = null;
-    // 设置窗口关闭后启动主功能
+    log('[App] Setup window closed');
+
     const config = loadConfig();
     if (!config.setupComplete) {
-      // 用户关闭了设置窗口但未完成设置，使用默认配置
       saveConfig({ setupComplete: true });
     }
 
+    const latestConfig = loadConfig();
+    await ensureWordlistsImported(latestConfig);
+
     popupManager.createPopupWindow();
     scheduler.start();
+    log('[App] Scheduler started after setup');
+
     scheduler.onStatsUpdate(() => {
       if (statsWindow && !statsWindow.isDestroyed()) {
         statsWindow.webContents.send('stats:updated');
@@ -208,38 +244,19 @@ function openSetupWindow() {
 
 // === 应用生命周期 ===
 
-// 所有窗口关闭时不退出（托盘应用）
 app.on('window-all-closed', () => {
   // 不退出，托盘常驻
 });
 
-// macOS 激活
 app.on('activate', () => {
   if (BrowserWindow.getAllWindows().length === 0) {
     openStatsWindow();
   }
 });
 
-// 退出前清理
 app.on('before-quit', () => {
   scheduler.stop();
   destroyTray();
   const { closeDatabase } = require('./db');
   closeDatabase();
-});
-
-// 防止多实例
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    // 已有实例运行时，显示设置窗口
-    openStatsWindow();
-  });
-}
-
-// 全局异常处理
-process.on('uncaughtException', (error) => {
-  console.error('[App] Uncaught Exception:', error);
 });

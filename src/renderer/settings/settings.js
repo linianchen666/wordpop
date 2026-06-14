@@ -2,7 +2,6 @@
 
 // === DOM 引用 ===
 const dailyNewWords = document.getElementById('dailyNewWords');
-const popupInterval = document.getElementById('popupInterval');
 const showExample = document.getElementById('showExample');
 const autoPronounce = document.getElementById('autoPronounce');
 const fontSize = document.getElementById('fontSize');
@@ -30,7 +29,6 @@ async function init() {
 
   // 填充表单
   dailyNewWords.value = currentConfig.dailyNewWords || 20;
-  popupInterval.value = currentConfig.popupInterval || 300000;
   showExample.checked = currentConfig.showExample !== false;
   autoPronounce.checked = currentConfig.autoPronounce || false;
   fontSize.value = currentConfig.fontSize || 'medium';
@@ -116,7 +114,6 @@ btnSave.addEventListener('click', async () => {
 
   const newConfig = {
     dailyNewWords: parseInt(dailyNewWords.value),
-    popupInterval: parseInt(popupInterval.value),
     popupPosition: selectedPosition,
     selectedWordlists: selectedWordlists,
     showExample: showExample.checked,

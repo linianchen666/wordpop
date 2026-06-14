@@ -104,7 +104,8 @@ function importWordlist(wordlistId) {
     throw new Error(`词库索引文件不存在: ${indexPath}`);
   }
 
-  const index = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  const raw = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  const index = Array.isArray(raw) ? raw : (raw.wordlists || []);
   const entry = index.find(e => e.id === wordlistId);
 
   if (!entry) {
@@ -156,7 +157,8 @@ function getWordlistIndex() {
   const wordlistDir = getWordlistPath();
   const indexPath = path.join(wordlistDir, 'index.json');
   if (!fs.existsSync(indexPath)) return [];
-  return JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  const raw = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+  return Array.isArray(raw) ? raw : (raw.wordlists || []);
 }
 
 /**
