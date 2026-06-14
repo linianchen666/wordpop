@@ -31,18 +31,18 @@ const STAGE_INTERVALS = [
   Infinity              // Stage 9: 已掌握
 ];
 
-const MAX_STAGE = 9; // 达到此阶段表示已掌握
+const MAX_STAGE = 9;
 
 class Scheduler {
   constructor() {
     this.queue = [];
     this.currentWord = null;
-    this.tickIntervalId = null;
+    this.nextPopupTimer = null;
     this.isPaused = false;
     this.dailyNewWordsLimit = 20;
     this.dailyNewWordsCount = 0;
     this.popupInterval = 300000; // 默认 5 分钟
-    this._onStatsUpdate = null;  // 统计更新回调
+    this._onStatsUpdate = null;
   }
 
   /**
@@ -56,22 +56,24 @@ class Scheduler {
     this._resetDailyCountIfNeeded();
     this.reloadQueue();
 
-    // 每秒检查是否需要弹出
-    this.tickIntervalId = setInterval(() => this.tick(), 1000);
-
     console.log('[Scheduler] Started | daily limit:', this.dailyNewWordsLimit,
       '| interval:', this.popupInterval, 'ms',
       '| queue size:', this.queue.length);
+
+    // 立即弹出第一个单词（如果有的话）
+    this._popNext();
   }
 
   /**
    * 停止调度器
    */
   stop() {
-    if (this.tickIntervalId) {
-      clearInterval(this.tickIntervalId);
-      this.tickIntervalId = null;
+    if (this.nextPopupTimer) {
+      clearTimeout(this.nextPopupTimer);
+      this.nextPopupTimer = null;
     }
+    this.queue = [];
+    this.currentWord = null;
     console.log('[Scheduler] Stopped');
   }
 
@@ -80,7 +82,10 @@ class Scheduler {
    */
   pause() {
     this.isPaused = true;
-    // 如果当前有弹窗，隐藏它
+    if (this.nextPopupTimer) {
+      clearTimeout(this.nextPopupTimer);
+      this.nextPopupTimer = null;
+    }
     if (this.currentWord) {
       popupManager.hide();
     }
@@ -94,17 +99,18 @@ class Scheduler {
     this.isPaused = false;
     this.reloadQueue();
     console.log('[Scheduler] Resumed | queue size:', this.queue.length);
+    // 立即弹出下一个
+    this._popNext();
   }
 
   /**
-   * 每秒 tick：检查是否需要弹出下一个单词
+   * 弹出下一个单词
    */
-  tick() {
+  _popNext() {
     if (this.isPaused) return;
-    if (this.currentWord) return;  // 有单词正在展示，等待用户反馈
-    if (popupManager.isVisible()) return;
+    if (this.currentWord) return;
 
-    // 如果队列空了，尝试重新加载
+    // 如果队列空了，重新加载
     if (this.queue.length === 0) {
       this.reloadQueue();
     }
@@ -113,6 +119,10 @@ class Scheduler {
     if (word) {
       this.currentWord = word;
       this._showWord(word);
+    } else {
+      // 没有单词了，1 分钟后重试
+      console.log('[Scheduler] No words available, retrying in 60s');
+      this.nextPopupTimer = setTimeout(() => this._popNext(), 60000);
     }
   }
 
@@ -141,13 +151,11 @@ class Scheduler {
 
   /**
    * 重新加载队列
-   * 优先级：到期复习 > 新词
    */
   reloadQueue() {
     const db = getDb();
     const now = Date.now();
 
-    // 1. 到期的复习单词（按到期时间排序）
     const dueReviews = db.prepare(`
       SELECT w.id, w.word, w.phonetic, w.translation, w.example,
              p.stage, p.next_review_at, p.correct_count, p.wrong_count
@@ -158,7 +166,6 @@ class Scheduler {
       LIMIT 200
     `).all(now, MAX_STAGE);
 
-    // 2. 新单词（未在 progress 表中，受每日上限控制）
     const remaining = Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount);
     let newWords = [];
     if (remaining > 0) {
@@ -173,7 +180,6 @@ class Scheduler {
       `).all(remaining);
     }
 
-    // 合并队列：复习词优先
     this.queue = [...dueReviews, ...newWords];
 
     console.log('[Scheduler] Queue reloaded | due:', dueReviews.length,
@@ -186,7 +192,7 @@ class Scheduler {
   markKnown() {
     if (!this.currentWord) return;
     this._updateProgress(true);
-    this._nextWord();
+    this._advanceToNext();
   }
 
   /**
@@ -195,7 +201,7 @@ class Scheduler {
   markUnknown() {
     if (!this.currentWord) return;
     this._updateProgress(false);
-    this._nextWord();
+    this._advanceToNext();
   }
 
   /**
@@ -206,24 +212,17 @@ class Scheduler {
     const word = this.currentWord;
     const existing = db.prepare('SELECT * FROM progress WHERE word_id = ?').get(word.id);
 
-    let newStage, nextInterval;
+    let newStage;
     const currentStage = existing ? existing.stage : 0;
 
     if (existing) {
-      if (known) {
-        // 认识：进入下一阶段
-        newStage = Math.min(currentStage + 1, MAX_STAGE);
-      } else {
-        // 不认识：回退到 Stage 0，重新开始
-        newStage = 0;
-      }
+      newStage = known ? Math.min(currentStage + 1, MAX_STAGE) : 0;
     } else {
-      // 新词
       newStage = known ? 1 : 0;
       this.dailyNewWordsCount++;
     }
 
-    nextInterval = STAGE_INTERVALS[newStage] || 0;
+    const nextInterval = STAGE_INTERVALS[newStage] || 0;
     const nextReviewAt = Date.now() + nextInterval;
 
     db.prepare(`
@@ -238,7 +237,6 @@ class Scheduler {
     `).run(word.id, newStage, nextReviewAt, Date.now(),
       known ? 1 : 0, known ? 0 : 1);
 
-    // 记录每日统计
     db.prepare(`
       INSERT INTO daily_stats (date, words_reviewed, words_learned)
       VALUES (date('now', 'localtime'), 1, ?)
@@ -249,42 +247,33 @@ class Scheduler {
 
     console.log('[Scheduler] Word:', word.word,
       '| known:', known,
-      '| stage:', currentStage, '→', newStage,
+      '| stage:', currentStage, '\u2192', newStage,
       '| next:', new Date(nextReviewAt).toISOString());
   }
 
   /**
-   * 进入下一个单词
+   * 进入下一个单词（等 popupInterval 后再弹出）
    */
-  _nextWord() {
+  _advanceToNext() {
     this.currentWord = null;
     popupManager.hide();
 
+    if (this._onStatsUpdate) this._onStatsUpdate();
+
     // 按配置的间隔弹出下一个
-    setTimeout(() => {
-      this.tick();
-      // 通知统计更新
-      if (this._onStatsUpdate) this._onStatsUpdate();
-    }, this.popupInterval);
+    this.nextPopupTimer = setTimeout(() => this._popNext(), this.popupInterval);
   }
 
   /**
-   * 重置每日新词计数（跨天处理）
+   * 重置每日新词计数
    */
   _resetDailyCountIfNeeded() {
     const db = getDb();
-    const today = new Date().toISOString().split('T')[0];
-
-    // 检查今天是否已有统计记录
     const todayStats = db.prepare(
       "SELECT words_learned FROM daily_stats WHERE date = date('now', 'localtime')"
     ).get();
 
-    if (todayStats) {
-      this.dailyNewWordsCount = todayStats.words_learned || 0;
-    } else {
-      this.dailyNewWordsCount = 0;
-    }
+    this.dailyNewWordsCount = todayStats ? (todayStats.words_learned || 0) : 0;
   }
 
   /**
@@ -297,7 +286,6 @@ class Scheduler {
     if (config.popupInterval !== undefined) {
       this.popupInterval = config.popupInterval;
     }
-    // 重新加载队列以反映每日上限变化
     if (config.dailyNewWords !== undefined) {
       this.reloadQueue();
     }
@@ -316,15 +304,11 @@ class Scheduler {
     };
   }
 
-  /**
-   * 设置统计更新回调
-   */
   onStatsUpdate(callback) {
     this._onStatsUpdate = callback;
   }
 }
 
-// 单例
 const scheduler = new Scheduler();
 
 module.exports = scheduler;

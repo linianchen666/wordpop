@@ -187,7 +187,7 @@ function openSetupWindow() {
   setupWindow.loadFile(path.join(__dirname, '..', 'renderer', 'settings', 'index.html'));
   setupWindow.setMenu(null);
 
-  setupWindow.on('closed', () => {
+  setupWindow.on('closed', async () => {
     setupWindow = null;
     // 设置窗口关闭后启动主功能
     const config = loadConfig();
@@ -195,6 +195,10 @@ function openSetupWindow() {
       // 用户关闭了设置窗口但未完成设置，使用默认配置
       saveConfig({ setupComplete: true });
     }
+
+    // 确保词库已导入
+    const latestConfig = loadConfig();
+    await ensureWordlistsImported(latestConfig);
 
     popupManager.createPopupWindow();
     scheduler.start();

@@ -2,6 +2,9 @@ const { BrowserWindow, screen } = require('electron');
 const path = require('path');
 
 let popupWindow = null;
+let popupReady = false;  // 窗口是否已加载完毕
+let pendingWordData = null;  // 等待发送的单词数据
+
 let popupConfig = {
   position: 'bottom-right',
   fontSize: 'medium',
@@ -18,6 +21,7 @@ function createPopupWindow() {
     return popupWindow;
   }
 
+  popupReady = false;
   const bounds = getPopupBounds(popupConfig.position);
 
   popupWindow = new BrowserWindow({
@@ -28,8 +32,8 @@ function createPopupWindow() {
     frame: false,
     resizable: false,
     skipTaskbar: true,
-    alwaysOnTop: false,       // PRD 要求：不强制置顶
-    focusable: false,         // 不抢焦点
+    alwaysOnTop: false,
+    focusable: false,
     show: false,
     transparent: true,
     type: 'toolbar',
@@ -44,22 +48,40 @@ function createPopupWindow() {
 
   popupWindow.loadFile(path.join(__dirname, '..', 'renderer', 'popup', 'index.html'));
 
-  // 窗口准备好后显示（避免白屏）
   popupWindow.once('ready-to-show', () => {
-    // 不自动显示，等待调度器推送
-  });
-
-  // 阻止窗口获取焦点
-  popupWindow.on('focus', () => {
-    // 立即让出焦点，但不在 Windows 上完全阻止
-    // 这里使用 focusable: false 已经满足大部分需求
+    popupReady = true;
+    // 如果有等待发送的数据，立即发送
+    if (pendingWordData) {
+      const data = pendingWordData;
+      pendingWordData = null;
+      _sendWordData(data);
+    }
   });
 
   popupWindow.on('closed', () => {
     popupWindow = null;
+    popupReady = false;
   });
 
   return popupWindow;
+}
+
+/**
+ * 发送单词数据到弹窗并显示
+ */
+function _sendWordData(wordData) {
+  if (!popupWindow || popupWindow.isDestroyed()) return;
+
+  popupWindow.webContents.send('popup:word', {
+    ...wordData,
+    config: {
+      showExample: popupConfig.showExample,
+      fontSize: popupConfig.fontSize,
+      theme: popupConfig.theme
+    }
+  });
+
+  popupWindow.showInactive();
 }
 
 /**
@@ -92,22 +114,16 @@ function getPopupBounds(position) {
 function show(wordData) {
   const win = createPopupWindow();
 
-  // 更新位置（以防设置变更）
+  // 更新位置
   const bounds = getPopupBounds(popupConfig.position);
   win.setBounds({ ...bounds, width: 360, height: 220 });
 
-  // 发送单词数据到渲染进程
-  win.webContents.send('popup:word', {
-    ...wordData,
-    config: {
-      showExample: popupConfig.showExample,
-      fontSize: popupConfig.fontSize,
-      theme: popupConfig.theme
-    }
-  });
-
-  // 显示窗口（带淡入效果由 CSS 处理）
-  win.showInactive();  // 不激活窗口，不抢焦点
+  if (popupReady) {
+    _sendWordData(wordData);
+  } else {
+    // 页面还没加载完，暂存数据等 ready-to-show
+    pendingWordData = wordData;
+  }
 }
 
 /**
