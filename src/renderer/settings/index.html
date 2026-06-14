@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="light">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WordPop - 设置</title>
+  <link rel="stylesheet" href="../shared/common.css">
+  <link rel="stylesheet" href="settings.css">
+</head>
+<body>
+  <div class="settings-container">
+    <!-- 标题栏 -->
+    <div class="settings-header">
+      <h1>⚙ 设置</h1>
+      <span class="settings-subtitle">配置你的学习偏好</span>
+    </div>
+
+    <!-- 设置内容 -->
+    <div class="settings-content">
+      <!-- 每日新词数 -->
+      <div class="form-group">
+        <label class="form-label">📅 每日新词数量</label>
+        <select class="form-select" id="dailyNewWords">
+          <option value="5">5 个（轻松模式）</option>
+          <option value="10">10 个</option>
+          <option value="20" selected>20 个（推荐）</option>
+          <option value="30">30 个</option>
+          <option value="50">50 个（冲刺模式）</option>
+        </select>
+        <span class="form-hint">每天新学的单词数量，复习单词不在此限制内</span>
+      </div>
+
+      <!-- 弹窗位置 -->
+      <div class="form-group">
+        <label class="form-label">📍 弹窗位置</label>
+        <div class="position-selector" id="position-selector">
+          <div class="position-option" data-pos="top-left">左上</div>
+          <div class="position-option" data-pos="top-right">右上</div>
+          <div class="position-option" data-pos="bottom-left">左下</div>
+          <div class="position-option active" data-pos="bottom-right">右下</div>
+        </div>
+      </div>
+
+      <!-- 弹窗间隔 -->
+      <div class="form-group">
+        <label class="form-label">⏱ 弹窗间隔</label>
+        <select class="form-select" id="popupInterval">
+          <option value="180000">3 分钟</option>
+          <option value="300000" selected>5 分钟（推荐）</option>
+          <option value="600000">10 分钟</option>
+          <option value="900000">15 分钟</option>
+        </select>
+        <span class="form-hint">完成一个单词后，等待此间隔再弹出下一个</span>
+      </div>
+
+      <!-- 词库选择 -->
+      <div class="form-group">
+        <label class="form-label">📚 学习词库</label>
+        <div class="wordlist-options" id="wordlist-options">
+          <!-- 动态填充 -->
+        </div>
+        <div class="wordlist-actions">
+          <button class="btn btn-sm btn-ghost" id="btn-import-custom">📂 导入自定义词表</button>
+        </div>
+      </div>
+
+      <!-- 显示选项 -->
+      <div class="form-group">
+        <label class="form-label">👁 显示选项</label>
+        <div class="toggle-row">
+          <span>显示例句</span>
+          <label class="toggle">
+            <input type="checkbox" id="showExample" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <div class="toggle-row">
+          <span>自动发音</span>
+          <label class="toggle">
+            <input type="checkbox" id="autoPronounce">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+
+      <!-- 字体大小 -->
+      <div class="form-group">
+        <label class="form-label">🔤 字体大小</label>
+        <select class="form-select" id="fontSize">
+          <option value="small">小</option>
+          <option value="medium" selected>中</option>
+          <option value="large">大</option>
+        </select>
+      </div>
+
+      <!-- 开机自启 -->
+      <div class="form-group">
+        <div class="toggle-row">
+          <span>🚀 开机自动启动</span>
+          <label class="toggle">
+            <input type="checkbox" id="autoStart">
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部按钮 -->
+    <div class="settings-footer">
+      <button class="btn btn-ghost" id="btn-cancel">取消</button>
+      <button class="btn btn-primary" id="btn-save">💾 保存设置</button>
+    </div>
+  </div>
+
+  <script src="../shared/utils.js"></script>
+  <script src="settings.js"></script>
+</body>
+</html>

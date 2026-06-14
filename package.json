@@ -1,0 +1,22 @@
+{
+  "name": "wordpop",
+  "version": "1.0.0",
+  "description": "艾宾浩斯背单词桌面应用 — 基于遗忘曲线的 Windows 桌面弹窗背单词工具",
+  "main": "src/main/index.js",
+  "author": "WordPop Team",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder",
+    "postinstall": "electron-rebuild -f -w better-sqlite3"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^3.6.0",
+    "electron": "^28.0.0",
+    "electron-builder": "^24.9.0"
+  },
+  "dependencies": {
+    "better-sqlite3": "^9.4.3"
+  }
+}

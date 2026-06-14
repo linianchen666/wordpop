@@ -1,0 +1,174 @@
+/* === WordPop 设置面板样式 === */
+
+.settings-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.settings-header {
+  padding: 20px 24px 12px;
+  border-bottom: 1px solid var(--color-border);
+  -webkit-app-region: drag;
+}
+
+.settings-header h1 {
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--color-text);
+}
+
+.settings-subtitle {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-top: 2px;
+}
+
+.settings-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px 24px;
+}
+
+/* === 位置选择器 === */
+.position-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.position-option {
+  padding: 12px;
+  text-align: center;
+  border: 2px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  transition: all var(--transition-fast);
+  background: var(--color-bg-secondary);
+}
+
+.position-option:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+.position-option.active {
+  border-color: var(--color-primary);
+  background: rgba(74, 144, 217, 0.08);
+  color: var(--color-primary);
+  font-weight: 600;
+}
+
+/* === 开关行 === */
+.toggle-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-bg-tertiary);
+}
+
+.toggle-row span {
+  font-size: 14px;
+  color: var(--color-text);
+}
+
+/* === 表单提示 === */
+.form-hint {
+  display: block;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-top: 4px;
+}
+
+/* === 词库选项 === */
+.wordlist-options {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.wordlist-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.wordlist-item:hover {
+  background: var(--color-bg-tertiary);
+}
+
+.wordlist-item.selected {
+  border-color: var(--color-primary);
+  background: rgba(74, 144, 217, 0.06);
+}
+
+.wordlist-item input[type="checkbox"] {
+  accent-color: var(--color-primary);
+}
+
+.wordlist-info {
+  flex: 1;
+}
+
+.wordlist-name {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text);
+}
+
+.wordlist-count {
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.wordlist-status {
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 10px;
+  font-weight: 500;
+}
+
+.wordlist-status.imported {
+  background: rgba(39, 174, 96, 0.1);
+  color: var(--color-success);
+}
+
+.wordlist-status.not-imported {
+  background: rgba(231, 76, 60, 0.1);
+  color: var(--color-danger);
+}
+
+.wordlist-actions {
+  margin-top: 4px;
+}
+
+/* === 底部 === */
+.settings-footer {
+  display: flex;
+  gap: 12px;
+  padding: 16px 24px;
+  border-top: 1px solid var(--color-border);
+  justify-content: flex-end;
+  -webkit-app-region: drag;
+}
+
+.settings-footer button {
+  -webkit-app-region: no-drag;
+}
+
+/* === 滚动 === */
+.settings-content::-webkit-scrollbar {
+  width: 4px;
+}
