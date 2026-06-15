@@ -110,6 +110,12 @@ positionSelector.addEventListener('click', (e) => {
 
 // === 保存设置 ===
 btnSave.addEventListener('click', async () => {
+  // 检查是否至少选择了一个词库
+  if (selectedWordlists.length === 0) {
+    alert('请至少选择一个词库！');
+    return;
+  }
+
   btnSave.disabled = true;
   btnSave.textContent = '保存中...';
 

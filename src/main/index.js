@@ -182,7 +182,19 @@ app.whenReady().then(async () => {
 
 async function ensureWordlistsImported(config) {
   const db = require('./db').getDb();
-  const lists = (config && config.selectedWordlists) || ['cet4'];
+  let lists = (config && config.selectedWordlists) || [];
+
+  // 如果词库列表为空，使用默认值并更新配置
+  if (lists.length === 0) {
+    log('[App] ⚠️ selectedWordlists is empty, using default [cet4]');
+    lists = ['cet4'];
+    try {
+      saveConfig({ selectedWordlists: lists });
+    } catch (e) {
+      log('[App] failed to update config with default wordlist:', e.message);
+    }
+  }
+
   log('[App] ensureWordlistsImported: wordlists =', JSON.stringify(lists));
 
   for (const id of lists) {

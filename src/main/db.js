@@ -10,6 +10,7 @@ let db = null;
  * - 创建数据库文件（存储在 userData 目录）
  * - 开启 WAL 模式和外键约束
  * - 执行 schema 迁移
+ * - 如果迁移失败（数据库结构严重损坏），删除后重建
  */
 function initDatabase() {
   const userDataPath = app.getPath('userData');
@@ -24,7 +25,38 @@ function initDatabase() {
   db.pragma('cache_size = -8000'); // 8MB 缓存
 
   // 执行迁移
-  migrate(db);
+  try {
+    migrate(db);
+  } catch (err) {
+    console.error('[DB] Migration failed:', err.message);
+    console.log('[DB] Attempting to recreate database (learning data will be lost)...');
+
+    // 迁移失败，关闭并删除损坏的数据库
+    try { db.close(); } catch (_) {}
+    db = null;
+
+    // 删除旧的数据库文件
+    try {
+      if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+      const walPath = dbPath + '-wal';
+      const shmPath = dbPath + '-shm';
+      if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+      if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+    } catch (e) {
+      console.error('[DB] Failed to delete old database:', e.message);
+    }
+
+    // 重新创建
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('cache_size = -8000');
+
+    // 在全新数据库上执行迁移（这次应该不会失败）
+    migrate(db);
+    console.log('[DB] Database recreated successfully');
+  }
 
   console.log('[DB] Database initialized at:', dbPath);
   return db;
@@ -33,13 +65,16 @@ function initDatabase() {
 /**
  * Schema 迁移
  * 通过 SQLite user_version 管理版本号
+ * 
+ * 重要：必须处理旧版本升级的情况——
+ * 旧版 words 表可能没有 wordlist 列，需要先加列再加索引
  */
 function migrate(db) {
   const currentVersion = db.pragma('user_version', { simple: true });
 
   if (currentVersion < 1) {
+    // 创建表（IF NOT EXISTS 对已存在的表安全）
     db.exec(`
-      -- 单词字典表
       CREATE TABLE IF NOT EXISTS words (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         word TEXT NOT NULL,
@@ -50,7 +85,6 @@ function migrate(db) {
         created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
       );
 
-      -- 学习进度表
       CREATE TABLE IF NOT EXISTS progress (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         word_id INTEGER NOT NULL UNIQUE,
@@ -62,14 +96,52 @@ function migrate(db) {
         FOREIGN KEY (word_id) REFERENCES words(id) ON DELETE CASCADE
       );
 
-      -- 每日统计表
       CREATE TABLE IF NOT EXISTS daily_stats (
         date TEXT PRIMARY KEY,
         words_reviewed INTEGER DEFAULT 0,
         words_learned INTEGER DEFAULT 0
       );
+    `);
 
-      -- 索引
+    // 旧版本升级：words 表可能没有 wordlist 列
+    // 必须在创建索引之前检查并添加缺失的列
+    const wordlistColExists = db.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('words') WHERE name='wordlist'"
+    ).get().cnt > 0;
+
+    if (!wordlistColExists) {
+      console.log('[DB] Migration: adding missing wordlist column to words table');
+      db.exec(`ALTER TABLE words ADD COLUMN wordlist TEXT NOT NULL DEFAULT 'custom'`);
+    }
+
+    // 同样检查 phonetic 和 example 列（旧版本可能没有）
+    const phoneticColExists = db.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('words') WHERE name='phonetic'"
+    ).get().cnt > 0;
+    if (!phoneticColExists) {
+      console.log('[DB] Migration: adding missing phonetic column to words table');
+      db.exec(`ALTER TABLE words ADD COLUMN phonetic TEXT DEFAULT ''`);
+    }
+
+    const exampleColExists = db.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('words') WHERE name='example'"
+    ).get().cnt > 0;
+    if (!exampleColExists) {
+      console.log('[DB] Migration: adding missing example column to words table');
+      db.exec(`ALTER TABLE words ADD COLUMN example TEXT DEFAULT ''`);
+    }
+
+    // 检查 progress 表是否缺少 last_review_at 列
+    const lastReviewColExists = db.prepare(
+      "SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='last_review_at'"
+    ).get().cnt > 0;
+    if (!lastReviewColExists) {
+      console.log('[DB] Migration: adding missing last_review_at column to progress table');
+      db.exec(`ALTER TABLE progress ADD COLUMN last_review_at INTEGER DEFAULT NULL`);
+    }
+
+    // 现在可以安全地创建索引了
+    db.exec(`
       CREATE INDEX IF NOT EXISTS idx_progress_next_review ON progress(next_review_at);
       CREATE INDEX IF NOT EXISTS idx_progress_stage ON progress(stage);
       CREATE INDEX IF NOT EXISTS idx_words_wordlist ON words(wordlist);
@@ -83,15 +155,23 @@ function migrate(db) {
   // v2: 增加 mastered_count 字段，追踪连续熟知次数
   if (currentVersion < 2) {
     try {
-      db.exec(`ALTER TABLE progress ADD COLUMN mastered_count INTEGER NOT NULL DEFAULT 0`);
+      // 先检查列是否已存在
+      const masteredColExists = db.prepare(
+        "SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='mastered_count'"
+      ).get().cnt > 0;
+      if (!masteredColExists) {
+        db.exec(`ALTER TABLE progress ADD COLUMN mastered_count INTEGER NOT NULL DEFAULT 0`);
+        console.log('[DB] Migration v2: added mastered_count column');
+      } else {
+        console.log('[DB] Migration v2: mastered_count column already exists, skipping');
+      }
     } catch (e) {
-      // 列可能已存在（比如开发环境反复安装），忽略错误
       if (!e.message.includes('duplicate column')) {
         console.error('[DB] Migration v2 ALTER error:', e.message);
       }
     }
     db.pragma('user_version = 2');
-    console.log('[DB] Migration v2 complete (added mastered_count)');
+    console.log('[DB] Migration v2 complete');
   }
 }
 
