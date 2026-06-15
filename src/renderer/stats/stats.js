@@ -13,25 +13,37 @@ const chartStage = document.getElementById('chart-stage');
 const btnRefresh = document.getElementById('btn-refresh');
 const btnSettings = document.getElementById('btn-settings');
 
+// === 安全的 IPC 调用（不抛异常） ===
+async function safeInvoke(apiFn, fallback) {
+  try {
+    return await apiFn();
+  } catch (err) {
+    console.error('IPC call failed:', err);
+    return fallback;
+  }
+}
+
 // === 加载统计数据 ===
 async function loadStats() {
-  try {
-    const [stats, dailyStats, stageDist] = await Promise.all([
-      window.wordpopAPI.getStats(),
-      window.wordpopAPI.getDailyStats(7),
-      window.wordpopAPI.getStageDistribution()
-    ]);
+  // 每个接口独立调用，互不影响
+  const stats = await safeInvoke(() => window.wordpopAPI.getStats(), {
+    today: { words_reviewed: 0, words_learned: 0 },
+    total: { words: 0, correct: 0, wrong: 0, mastered: 0 },
+    streak: 0
+  });
 
-    renderOverview(stats);
-    renderDailyChart(dailyStats);
-    renderStageChart(stageDist);
-  } catch (err) {
-    console.error('Failed to load stats:', err);
-  }
+  const dailyStats = await safeInvoke(() => window.wordpopAPI.getDailyStats(7), []);
+  const stageDist = await safeInvoke(() => window.wordpopAPI.getStageDistribution(), []);
+
+  renderOverview(stats);
+  renderDailyChart(dailyStats);
+  renderStageChart(stageDist);
 }
 
 // === 渲染概览数据 ===
 function renderOverview(stats) {
+  if (!stats) return;
+
   statTodayReviewed.textContent = stats.today?.words_reviewed || 0;
   statTodayLearned.textContent = stats.today?.words_learned || 0;
   statTotalWords.textContent = formatNumber(stats.total?.words || 0);
@@ -47,6 +59,8 @@ function renderOverview(stats) {
 
 // === 渲染每日趋势图 ===
 function renderDailyChart(dailyStats) {
+  if (!Array.isArray(dailyStats)) return;
+
   const last7Days = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date();
@@ -65,7 +79,9 @@ function renderDailyChart(dailyStats) {
 
 // === 渲染阶段分布图 ===
 function renderStageChart(stageDist) {
-  const stageNames = ['新学', '5分', '30分', '12时', '1天', '2天', '4天', '7天', '15天'];
+  if (!Array.isArray(stageDist)) return;
+
+  const stageNames = ['新学', '5分', '30分', '4时', '1天', '2天', '4天', '7天', '15天'];
   const colors = ['#E74C3C', '#E67E22', '#F39C12', '#F1C40F', '#2ECC71', '#27AE60', '#1ABC9C', '#3498DB', '#9B59B6'];
 
   const data = stageNames.map((name, i) => {
@@ -95,9 +111,7 @@ btnRefresh.addEventListener('click', () => {
 
 // === 打开设置 ===
 btnSettings.addEventListener('click', () => {
-  // 关闭当前窗口，通过 IPC 通知主进程打开设置
   window.close();
-  // 注意：主进程会在窗口关闭后自动打开设置（如果是从托盘打开的）
 });
 
 // === 窗口大小变化时重绘图表 ===
