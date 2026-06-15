@@ -1,5 +1,10 @@
 // WordPop 弹窗交互逻辑
 
+// === 两阶段交互状态 ===
+// phase = 'recall': 只显示英文单词+音标，等待用户主动回忆
+// phase = 'reveal': 显示释义+按钮，等待用户判断认识/不认识
+let phase = 'recall';
+
 // === DOM 引用 ===
 const container = document.getElementById('popup-container');
 const wordText = document.getElementById('word-text');
@@ -11,8 +16,32 @@ const progressFill = document.getElementById('progress-fill');
 const btnKnown = document.getElementById('btn-known');
 const btnUnknown = document.getElementById('btn-unknown');
 const btnMinimize = document.getElementById('btn-minimize');
+const btnReveal = document.getElementById('btn-reveal');
+const revealArea = document.getElementById('reveal-area');
+const wordDetail = document.getElementById('word-detail');
+const actionButtons = document.getElementById('action-buttons');
 
 let currentWord = null;
+
+// === 切换到回忆阶段（新单词出现时） ===
+function enterRecallPhase() {
+  phase = 'recall';
+  revealArea.classList.remove('hidden');
+  wordDetail.classList.add('hidden');
+  actionButtons.classList.add('hidden');
+}
+
+// === 切换到显示阶段（用户点击显示释义后） ===
+function enterRevealPhase() {
+  phase = 'reveal';
+  revealArea.classList.add('hidden');
+  wordDetail.classList.remove('hidden');
+  actionButtons.classList.remove('hidden');
+
+  // 启用按钮
+  btnKnown.disabled = false;
+  btnUnknown.disabled = false;
+}
 
 // === 接收单词数据 ===
 window.wordpopAPI.onWordData((data) => {
@@ -65,9 +94,8 @@ window.wordpopAPI.onWordData((data) => {
     wordText.style.animation = '';
   }
 
-  // 启用按钮
-  btnKnown.disabled = false;
-  btnUnknown.disabled = false;
+  // 进入回忆阶段：只显示单词，隐藏释义和按钮
+  enterRecallPhase();
 });
 
 // === 接收隐藏信号 ===
@@ -75,9 +103,15 @@ window.wordpopAPI.onHide(() => {
   container.classList.add('hiding');
 });
 
+// === 点击「显示释义」按钮 ===
+btnReveal.addEventListener('click', () => {
+  if (!currentWord) return;
+  enterRevealPhase();
+});
+
 // === 点击「认识」 ===
 btnKnown.addEventListener('click', () => {
-  if (!currentWord) return;
+  if (!currentWord || phase !== 'reveal') return;
   btnKnown.disabled = true;
   btnUnknown.disabled = true;
 
@@ -88,7 +122,6 @@ btnKnown.addEventListener('click', () => {
   window.wordpopAPI.markKnown();
   currentWord = null;
 
-  // 不添加 hiding 类！下一个单词会立即替换内容
   // 只在视觉上做一个快速闪烁表示反馈
   container.style.opacity = '0.7';
   setTimeout(() => { container.style.opacity = ''; }, 100);
@@ -96,7 +129,7 @@ btnKnown.addEventListener('click', () => {
 
 // === 点击「不认识」 ===
 btnUnknown.addEventListener('click', () => {
-  if (!currentWord) return;
+  if (!currentWord || phase !== 'reveal') return;
   btnKnown.disabled = true;
   btnUnknown.disabled = true;
 
@@ -106,7 +139,6 @@ btnUnknown.addEventListener('click', () => {
   window.wordpopAPI.markUnknown();
   currentWord = null;
 
-  // 不添加 hiding 类！
   container.style.opacity = '0.7';
   setTimeout(() => { container.style.opacity = ''; }, 100);
 });
@@ -140,20 +172,35 @@ wordText.addEventListener('click', () => {
 // === 键盘快捷键 ===
 document.addEventListener('keydown', (e) => {
   if (!currentWord) return;
+
   switch (e.key.toLowerCase()) {
+    case ' ':
+      e.preventDefault();
+      if (phase === 'recall') {
+        // 回忆阶段：空格键显示释义
+        btnReveal.click();
+      } else {
+        // 显示阶段：空格键发音
+        wordText.click();
+      }
+      break;
     case 'arrowleft':
     case 'a':
-      btnUnknown.click();
+      // 不认识 — 仅在显示阶段可用
+      if (phase === 'reveal' && !btnUnknown.disabled) {
+        btnUnknown.click();
+      }
       break;
     case 'arrowright':
     case 'd':
     case 'enter':
-      btnKnown.click();
-      break;
-    case ' ':
-      // 空格发音
-      e.preventDefault();
-      wordText.click();
+      if (phase === 'recall') {
+        // 回忆阶段：回车/右箭头 = 显示释义
+        btnReveal.click();
+      } else if (!btnKnown.disabled) {
+        // 显示阶段：认识
+        btnKnown.click();
+      }
       break;
     case 'escape':
       btnMinimize.click();

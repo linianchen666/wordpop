@@ -23,12 +23,17 @@
     <div class="popup-body">
       <div class="word-main" id="word-text">Loading...</div>
       <div class="word-phonetic" id="phonetic-text"></div>
-      <div class="word-translation" id="translation-text"></div>
-      <div class="word-example" id="example-text"></div>
+      <div class="word-reveal-area" id="reveal-area">
+        <button class="btn-reveal" id="btn-reveal">点击显示释义</button>
+      </div>
+      <div class="word-detail hidden" id="word-detail">
+        <div class="word-translation" id="translation-text"></div>
+        <div class="word-example" id="example-text"></div>
+      </div>
     </div>
 
     <!-- 操作按钮区 -->
-    <div class="popup-footer">
+    <div class="popup-footer hidden" id="action-buttons">
       <button class="btn btn-lg btn-danger btn-action" id="btn-unknown">
         ✗ 不认识
       </button>

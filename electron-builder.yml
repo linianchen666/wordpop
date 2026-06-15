@@ -23,7 +23,6 @@ win:
     - target: nsis
       arch:
         - x64
-  icon: assets/icon.ico
   # 在 Linux CI 中禁用 rcedit（需要 Wine 显示服务）
   rfc3161TimeStampServer: ""
   timeStampServer: ""
