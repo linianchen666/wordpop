@@ -49,6 +49,23 @@ function enterRevealPhase() {
   btnUnknown.disabled = false;
   btnFuzzy.disabled = false;
   btnMastered.disabled = false;
+
+  // 自动发音
+  if (currentWord && currentWord.config && currentWord.config.autoPronounce && currentWord.word) {
+    pronounceWord(currentWord.word, currentWord.config.pronounceAccent || 'en-US');
+  }
+}
+
+// === 发音函数 ===
+function pronounceWord(word, accent) {
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = accent || 'en-US';
+    utterance.rate = 0.8;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {}
 }
 
 // === 接收单词数据 ===
@@ -208,22 +225,12 @@ btnMinimize.addEventListener('click', () => {
 // === 点击单词发音（Web Speech API） ===
 wordText.addEventListener('click', () => {
   if (!currentWord || !currentWord.word) return;
-
-  // 停止之前的发音
-  window.speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(currentWord.word);
-  utterance.lang = 'en-US';
-  utterance.rate = 0.8;
-  utterance.pitch = 1.0;
+  const accent = (currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
+  pronounceWord(currentWord.word, accent);
 
   // 视觉反馈
   wordText.style.color = 'var(--color-primary)';
-  utterance.onend = () => {
-    wordText.style.color = '';
-  };
-
-  window.speechSynthesis.speak(utterance);
+  setTimeout(() => { wordText.style.color = ''; }, 500);
 });
 
 // === 键盘快捷键 ===

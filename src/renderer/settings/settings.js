@@ -7,6 +7,9 @@ const showExample = document.getElementById('showExample');
 const autoPronounce = document.getElementById('autoPronounce');
 const fontSize = document.getElementById('fontSize');
 const autoStart = document.getElementById('autoStart');
+const autoCheckUpdate = document.getElementById('autoCheckUpdate');
+const pronounceAccent = document.getElementById('pronounceAccent');
+const pronounceAccentRow = document.getElementById('pronounce-accent-row');
 const wordlistOptions = document.getElementById('wordlist-options');
 const positionSelector = document.getElementById('position-selector');
 const btnSave = document.getElementById('btn-save');
@@ -67,10 +70,18 @@ async function init() {
 
   showExample.checked = currentConfig.showExample !== false;
   autoPronounce.checked = currentConfig.autoPronounce || false;
+  pronounceAccent.value = currentConfig.pronounceAccent || 'en-US';
+  pronounceAccentRow.style.display = autoPronounce.checked ? 'flex' : 'none';
   fontSize.value = currentConfig.fontSize || 'medium';
   autoStart.checked = currentConfig.autoStart || false;
+  autoCheckUpdate.checked = currentConfig.autoCheckUpdate !== false;
   selectedWordlists = [...(currentConfig.selectedWordlists || ['cet4'])];
   selectedPosition = currentConfig.popupPosition || 'bottom-right';
+
+  // 自动发音开关联动
+  autoPronounce.addEventListener('change', () => {
+    pronounceAccentRow.style.display = autoPronounce.checked ? 'flex' : 'none';
+  });
 
   // 渲染词库列表
   renderWordlists();
@@ -325,8 +336,10 @@ btnSave.addEventListener('click', async () => {
     selectedWordlists: selectedWordlists,
     showExample: showExample.checked,
     autoPronounce: autoPronounce.checked,
+    pronounceAccent: pronounceAccent.value,
     fontSize: fontSize.value,
     autoStart: autoStart.checked,
+    autoCheckUpdate: autoCheckUpdate.checked,
     setupComplete: true,
     targetDate: targetDateInput.value || null
   };

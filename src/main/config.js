@@ -9,12 +9,14 @@ const DEFAULT_CONFIG = {
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
   selectedWordlists: ['cet4'],     // 启用的词库列表
   autoPronounce: false,            // 自动发音
+  pronounceAccent: 'en-US',       // 发音口音：en-US (美式) | en-GB (英式)
   autoStart: false,                // 开机自启
   showExample: true,               // 显示例句
   fontSize: 'medium',              // small | medium | large
   theme: 'light',                  // light | dark
   setupComplete: false,            // 是否已完成初始化设置
-  targetDate: null                 // 目标完成日期，格式 'YYYY-MM-DD'，null表示未设置
+  targetDate: null,                 // 目标完成日期，格式 'YYYY-MM-DD'，null表示未设置
+  autoCheckUpdate: true            // 自动检查更新（每天一次）
 };
 
 let configPath = null;

@@ -9,7 +9,9 @@ let popupConfig = {
   position: 'bottom-right',
   fontSize: 'medium',
   showExample: true,
-  theme: 'light'
+  theme: 'light',
+  autoPronounce: false,
+  pronounceAccent: 'en-US'
 };
 
 /**
@@ -154,7 +156,9 @@ function _displayWord(wordData) {
       config: {
         showExample: popupConfig.showExample,
         fontSize: popupConfig.fontSize,
-        theme: popupConfig.theme
+        theme: popupConfig.theme,
+        autoPronounce: popupConfig.autoPronounce,
+        pronounceAccent: popupConfig.pronounceAccent
       }
     });
 
@@ -216,6 +220,8 @@ function updateConfig(cfg) {
   if (cfg.fontSize !== undefined) popupConfig.fontSize = cfg.fontSize;
   if (cfg.showExample !== undefined) popupConfig.showExample = cfg.showExample;
   if (cfg.theme !== undefined) popupConfig.theme = cfg.theme;
+  if (cfg.autoPronounce !== undefined) popupConfig.autoPronounce = cfg.autoPronounce;
+  if (cfg.pronounceAccent !== undefined) popupConfig.pronounceAccent = cfg.pronounceAccent;
 }
 
 function isVisible() {

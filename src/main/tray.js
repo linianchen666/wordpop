@@ -7,6 +7,7 @@ let tray = null;
 let isPaused = false;
 let trayOptions = {};
 let lastStatus = null; // 缓存最近一次状态
+let autoUpdateTimer = null; // 自动检查更新定时器
 
 /**
  * 检查更新：通过 GitHub API 获取最新 release 版本
@@ -367,4 +368,30 @@ function updateStatus(status) {
 
 function destroyTray() { if (tray) { try { tray.destroy(); } catch (e) {} tray = null; } }
 
-module.exports = { createTray, setPaused, updateStatus, destroyTray };
+/**
+ * 启动自动检查更新定时器（每天检查一次）
+ * @param {boolean} enabled - 是否开启
+ */
+function startAutoUpdateCheck(enabled) {
+  // 清除已有定时器
+  if (autoUpdateTimer) {
+    clearInterval(autoUpdateTimer);
+    autoUpdateTimer = null;
+  }
+
+  if (!enabled) return;
+
+  // 启动后延迟 30 秒首次检查（静默模式，仅发现新版时才弹窗）
+  setTimeout(() => {
+    checkForUpdates(true);
+  }, 30000);
+
+  // 每 24 小时检查一次
+  autoUpdateTimer = setInterval(() => {
+    checkForUpdates(true);
+  }, 24 * 60 * 60 * 1000);
+
+  console.log('[Tray] Auto update check enabled (daily)');
+}
+
+module.exports = { createTray, setPaused, updateStatus, destroyTray, startAutoUpdateCheck };

@@ -3,7 +3,7 @@ const path = require('path');
 const fs   = require('fs');
 const { initDatabase, importWordlist, getWordlistIndex } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
-const { createTray, destroyTray, updateStatus } = require('./tray');
+const { createTray, destroyTray, updateStatus, startAutoUpdateCheck } = require('./tray');
 const popupManager = require('./popup-manager');
 const scheduler = require('./scheduler');
 const { registerIpcHandlers } = require('./ipc-handlers');
@@ -126,6 +126,9 @@ app.whenReady().then(async () => {
     onOpenStats:    () => { try { openStatsWindow(); } catch (_) {} },
     onQuit:         () => { try { scheduler.stop(); app.quit(); } catch (_) { app.quit(); } }
   }));
+
+  // 4.1 自动检查更新
+  startAutoUpdateCheck(config.autoCheckUpdate !== false);
 
   if (!trayOk) {
     log('[App] ❌ Tray creation FAILED');

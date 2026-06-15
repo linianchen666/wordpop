@@ -3,6 +3,7 @@ const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgre
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
 const popupManager = require('./popup-manager');
+const { startAutoUpdateCheck } = require('./tray');
 
 // ═════════════════════════╗
 //  日志读取 / 打开（新增）
@@ -53,6 +54,10 @@ ipcMain.handle('config:save', (_ev, config) => {
   if (result.success) {
     scheduler.applyConfig(result.config);
     popupManager.updateConfig(result.config);
+    // 同步自动检查更新状态
+    if ('autoCheckUpdate' in config) {
+      startAutoUpdateCheck(config.autoCheckUpdate);
+    }
     BrowserWindow.getAllWindows().forEach(w => {
       if (!w.isDestroyed()) w.webContents.send('config:changed', result.config);
     });
