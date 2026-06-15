@@ -231,6 +231,22 @@ class Scheduler {
     }
   }
 
+  markFuzzy() {
+    if (!this.currentWord) {
+      console.log('[Scheduler] markFuzzy: no currentWord, skipping');
+      return;
+    }
+    console.log('[Scheduler] markFuzzy:', this.currentWord.word);
+    try {
+      this._updateProgress('fuzzy');
+      this._advanceToNext();
+    } catch (e) {
+      console.error('[Scheduler] markFuzzy ERROR:', e.message, e.stack);
+      this.currentWord = null;
+      this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
+    }
+  }
+
   markMastered() {
     if (!this.currentWord) {
       console.log('[Scheduler] markMastered: no currentWord, skipping');
@@ -284,11 +300,10 @@ class Scheduler {
         this.dailyNewWordsCount++;
       }
     } else {
-      // unknown
+      // unknown / fuzzy：回退1个阶段，保留在原来阶段附近
       isCorrect = 0;
       isWrong = 1;
       if (existing) {
-        // 不认识：回退1个阶段
         newStage = Math.max(0, currentStage - 1);
       } else {
         newStage = 0;

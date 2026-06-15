@@ -33,6 +33,7 @@ ipcMain.handle('app:open-log-folder', async () => {
 
 ipcMain.on('word:known',     () => scheduler.markKnown());
 ipcMain.on('word:unknown',   () => scheduler.markUnknown());
+ipcMain.on('word:fuzzy',     () => scheduler.markFuzzy());
 ipcMain.on('word:mastered',  () => scheduler.markMastered());
 
 ipcMain.on('word:pronounce', (_ev, word) => {

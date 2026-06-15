@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   onHide:          (cb) => ipcRenderer.on('popup:hide',         () => cb()),
   markKnown:       ()  => ipcRenderer.send('word:known'),
   markUnknown:     ()  => ipcRenderer.send('word:unknown'),
+  markFuzzy:       ()  => ipcRenderer.send('word:fuzzy'),
   markMastered:    ()  => ipcRenderer.send('word:mastered'),
   pronounce:       (w) => ipcRenderer.send('word:pronounce', w),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),

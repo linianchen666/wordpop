@@ -34,6 +34,7 @@ nsis:
   createDesktopShortcut: true
   createStartMenuShortcut: true
   shortcutName: WordPop
+  include: assets/installer.nsh
 
 asar: true
 compression: maximum

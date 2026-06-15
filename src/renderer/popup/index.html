@@ -15,6 +15,7 @@
       <span class="popup-title">📖 WordPop</span>
       <span class="popup-progress" id="progress-text">--</span>
       <div class="popup-actions">
+        <button class="popup-btn-icon btn-mastered-icon hidden" id="btn-mastered" title="熟知：标记为已掌握，不再复习">★</button>
         <button class="popup-btn-icon" id="btn-minimize" title="最小化到托盘">─</button>
       </div>
     </div>
@@ -37,11 +38,11 @@
       <button class="btn btn-lg btn-danger btn-action" id="btn-unknown">
         ✗ 不认识
       </button>
+      <button class="btn btn-lg btn-warning btn-action" id="btn-fuzzy">
+        ~ 模糊
+      </button>
       <button class="btn btn-lg btn-success btn-action" id="btn-known">
         ✓ 认识
-      </button>
-      <button class="btn btn-lg btn-mastered btn-action" id="btn-mastered" title="直接标记为已掌握，不再复习">
-        ★ 熟知
       </button>
     </div>
 
