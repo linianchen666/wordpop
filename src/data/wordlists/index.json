@@ -1,5 +1,20 @@
 [
-  { "id": "cet4", "name": "CET-4 四级", "file": "cet4.json", "count": 2000 },
-  { "id": "cet6", "name": "CET-6 六级", "file": "cet6.json", "count": 1532 },
-  { "id": "kaoyan", "name": "考研词汇", "file": "kaoyan.json", "count": 250 }
+  {
+    "id": "cet4",
+    "name": "CET-4 四级",
+    "file": "cet4.json",
+    "count": 4544
+  },
+  {
+    "id": "cet6",
+    "name": "CET-6 六级",
+    "file": "cet6.json",
+    "count": 3991
+  },
+  {
+    "id": "kaoyan",
+    "name": "考研词汇",
+    "file": "kaoyan.json",
+    "count": 5047
+  }
 ]
