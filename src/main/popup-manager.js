@@ -222,9 +222,17 @@ function isVisible() {
   return popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible();
 }
 
+/**
+ * 判断弹窗是否有当前单词可显示
+ * 用于托盘「显示弹窗」按钮：有单词则恢复，无单词则不操作
+ */
+function hasCurrentWord() {
+  return popupWindow && !popupWindow.isDestroyed();
+}
+
 function destroy() { closeImmediately(); }
 
 module.exports = {
   createPopupWindow, show, hide, restore, closeImmediately,
-  updateConfig, isVisible, waitForReady, destroy
+  updateConfig, isVisible, hasCurrentWord, waitForReady, destroy
 };

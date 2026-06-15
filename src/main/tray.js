@@ -1,18 +1,50 @@
 const { Tray, Menu, nativeImage, app } = require('electron');
+const path = require('path');
+const fs = require('fs');
 
 let tray = null;
 let isPaused = false;
 
 /**
- * 生成托盘图标 Buffer（纯内存，不读文件）
- * - 32×32 像素
- * - 蓝色背景 (#4A90E2) + 白色 "W" 字母
- * - 永远成功，不依赖任何外部文件
+ * 获取托盘图标
+ * 优先使用 tray-icon.png 文件（与应用图标一致）
+ * 如果文件不存在，fallback 到像素生成的 W 字母图标
  */
-function createTrayIconBuffer(size = 32) {
+function getTrayIcon() {
+  // 1. 尝试从文件加载
+  let iconPath = null;
+  if (app.isPackaged) {
+    // 打包后：resources/tray-icon.png（通过 extraResources 复制）
+    iconPath = path.join(process.resourcesPath, 'tray-icon.png');
+  } else {
+    // 开发模式：assets/tray-icon.png
+    iconPath = path.join(__dirname, '..', '..', 'assets', 'tray-icon.png');
+  }
+
+  if (fs.existsSync(iconPath)) {
+    try {
+      const icon = nativeImage.createFromPath(iconPath);
+      if (!icon.isEmpty()) {
+        console.log('[Tray] Using file icon:', iconPath);
+        return icon;
+      }
+    } catch (e) {
+      console.error('[Tray] Failed to load file icon:', e.message);
+    }
+  }
+
+  // 2. Fallback: 像素生成 W 字母图标
+  console.log('[Tray] File icon not found, generating pixel icon');
+  return generatePixelIcon();
+}
+
+/**
+ * 像素生成 W 字母图标（fallback）
+ */
+function generatePixelIcon(size = 32) {
   const b = Buffer.alloc(size * size * 4);
-  const margin = Math.round(size * 0.125);   // 4px @32px
-  const thick = Math.round(size * 0.1875);   // 6px @32px
+  const margin = Math.round(size * 0.125);
+  const thick = Math.round(size * 0.1875);
   const cx = Math.round(size / 2);
 
   for (let y = 0; y < size; y++) {
@@ -22,8 +54,6 @@ function createTrayIconBuffer(size = 32) {
         x >= margin && x < size - margin &&
         y >= margin && y < size - margin;
 
-      // 简化的 "W" 字形：用几条线段近似
-      // 左竖线
       const leftX = margin;
       const rightX = size - margin - 1;
       const topY = margin;
@@ -32,7 +62,7 @@ function createTrayIconBuffer(size = 32) {
 
       let inW = false;
 
-      // 左竖线（从上到下，但底部留空给斜线）
+      // 左竖线
       if (x >= leftX && x < leftX + thick &&
           y >= topY && y <= botY - Math.round(size * 0.25)) {
         inW = true;
@@ -42,18 +72,16 @@ function createTrayIconBuffer(size = 32) {
           y >= topY && y <= botY - Math.round(size * 0.25)) {
         inW = true;
       }
-      // 中间 V 形（连接左竖线和右竖线的底部）
-      // 左斜线：从左竖线底部到右竖线中部
+      // 中间 V 形
       if (x >= leftX && x < cx && y > botY - Math.round(size * 0.3)) {
         const expectedY = botY - Math.round((x - leftX) * (botY - midY) / (cx - leftX - 1 || 1));
         if (Math.abs(y - expectedY) < thick) inW = true;
       }
-      // 右斜线：从右竖线底部到左竖线中部
       if (x >= cx && x <= rightX && y > botY - Math.round(size * 0.3)) {
         const expectedY = botY - Math.round((rightX - x) * (botY - midY) / (rightX - cx - 1 || 1));
         if (Math.abs(y - expectedY) < thick) inW = true;
       }
-      // 顶部横线连接左右竖线
+      // 顶部横线
       if (y >= topY && y < topY + Math.round(thick * 0.6) &&
           x >= leftX && x <= rightX) {
         inW = true;
@@ -64,11 +92,32 @@ function createTrayIconBuffer(size = 32) {
       } else if (inBounds) {
         b[idx] = 74; b[idx + 1] = 144; b[idx + 2] = 226; b[idx + 3] = 255;
       } else {
-        b[idx + 3] = 0; // 透明
+        b[idx + 3] = 0;
       }
     }
   }
-  return b;
+  return nativeImage.createFromBuffer(b, { width: size, height: size });
+}
+
+/**
+ * 生成纯色圆形图标（最终 fallback）
+ */
+function generateFallbackCircle(size = 32) {
+  const b = Buffer.alloc(size * size * 4);
+  const cx = Math.round(size / 2), cy = Math.round(size / 2);
+  for (let y = 0; y < size; y++) {
+    for (let x = 0; x < size; x++) {
+      const idx = (y * size + x) * 4;
+      const dx = x - cx, dy = y - cy;
+      const dist = Math.sqrt(dx * dx + dy * dy);
+      if (dist < size / 2 - 1) {
+        b[idx] = 74; b[idx + 1] = 144; b[idx + 2] = 226; b[idx + 3] = 255;
+      } else {
+        b[idx + 3] = 0;
+      }
+    }
+  }
+  return nativeImage.createFromBuffer(b, { width: size, height: size });
 }
 
 /**
@@ -78,33 +127,14 @@ function createTray(options = {}) {
   if (tray) return tray;
 
   try {
-    const size = 32;
-    const buf = createTrayIconBuffer(size);
-    const icon = nativeImage.createFromBuffer(buf, { width: size, height: size });
+    const icon = getTrayIcon();
 
-    // 验证图标是否有效
     if (icon.isEmpty()) {
-      console.error('[Tray] Generated icon is empty! Using fallback circle icon...');
-      // 创建一个简单的纯色圆形作为 fallback
-      const fallbackBuf = Buffer.alloc(size * size * 4);
-      const cx2 = Math.round(size / 2), cy2 = Math.round(size / 2);
-      for (let y = 0; y < size; y++) {
-        for (let x = 0; x < size; x++) {
-          const idx = (y * size + x) * 4;
-          const dx = x - cx2, dy = y - cy2;
-          const dist = Math.sqrt(dx * dx + dy * dy);
-          if (dist < size / 2 - 1) {
-            fallbackBuf[idx] = 74; fallbackBuf[idx + 1] = 144; fallbackBuf[idx + 2] = 226; fallbackBuf[idx + 3] = 255;
-          } else {
-            fallbackBuf[idx + 3] = 0;
-          }
-        }
-      }
-      const fallbackIcon = nativeImage.createFromBuffer(fallbackBuf, { width: size, height: size });
+      console.error('[Tray] Icon is empty! Using fallback circle icon...');
+      const fallbackIcon = generateFallbackCircle();
       if (!fallbackIcon.isEmpty()) {
         tray = new Tray(fallbackIcon);
       } else {
-        // 最后兜底：用 1x1 像素图标
         const tinyBuf = Buffer.from([74, 144, 226, 255]);
         tray = new Tray(nativeImage.createFromBuffer(tinyBuf, { width: 1, height: 1 }));
       }

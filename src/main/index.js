@@ -354,15 +354,15 @@ function showPopup() {
   try {
     const status = scheduler.getStatus();
     if (status.isPaused) {
-      // 如果暂停了，先恢复
+      // 暂停状态 → 恢复学习
       scheduler.resume();
     } else if (status.currentWord) {
-      // 有当前单词，直接恢复弹窗
+      // 有当前单词（用户最小化了弹窗）→ 恢复显示
       popupManager.restore();
     } else {
-      // 没有当前单词，重新弹出下一个
-      popupManager.restore();
-      scheduler._popNext();
+      // 没有当前单词（单词已进入间隔等待中）
+      // 不强行弹出，因为此时没有可显示的单词
+      log('[App] showPopup: no current word, popup stays hidden until next word is due');
     }
   } catch (err) {
     log('[App] showPopup error:', err.message);

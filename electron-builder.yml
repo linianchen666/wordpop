@@ -17,6 +17,8 @@ extraResources:
     to: wordlists
     filter:
       - "**/*.json"
+  - from: assets/tray-icon.png
+    to: .
 
 win:
   target:
