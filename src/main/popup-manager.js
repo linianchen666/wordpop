@@ -148,6 +148,8 @@ function _displayWord(wordData) {
     const bounds = getPopupBounds(popupConfig.position);
     popupWindow.setBounds({ ...bounds, width: 360, height: 240 });
 
+    console.log('[Popup] Sending word data:', wordData.word, '| stage:', wordData.progress ? wordData.progress.stage : 'new');
+
     popupWindow.webContents.send('popup:word', {
       ...wordData,
       config: {
@@ -163,7 +165,7 @@ function _displayWord(wordData) {
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
 
-    console.log('[Popup] displayWord:', wordData.word, '| visible:', popupWindow.isVisible());
+    console.log('[Popup] displayWord DONE:', wordData.word, '| visible:', popupWindow.isVisible());
   } catch (err) {
     console.error('[Popup] _displayWord ERROR:', err.message, err.stack);
   }

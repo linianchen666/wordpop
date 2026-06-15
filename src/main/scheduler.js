@@ -61,7 +61,7 @@ class Scheduler {
    * 启动调度器
    */
   start() {
-    const config = loadConfig();
+    const config = loadConfig() || {};
     this.dailyNewWordsLimit = config.dailyNewWords || 20;
 
     // 读取今日已学新词数
@@ -235,18 +235,24 @@ class Scheduler {
    * 用户点击「认识」
    */
   markKnown() {
-    if (!this.currentWord) return;
-    this._updateProgress(true);
-    this._advanceToNext();
+    if (!this.currentWord) { console.log('[Scheduler] markKnown: no currentWord!'); return; }
+    console.log('[Scheduler] markKnown:', this.currentWord.word, '| stage:', this.currentWord.stage);
+    try {
+      this._updateProgress(true);
+      this._advanceToNext();
+    } catch (e) { console.error('[Scheduler] markKnown ERROR:', e.message, e.stack); }
   }
 
   /**
    * 用户点击「不认识」
    */
   markUnknown() {
-    if (!this.currentWord) return;
-    this._updateProgress(false);
-    this._advanceToNext();
+    if (!this.currentWord) { console.log('[Scheduler] markUnknown: no currentWord!'); return; }
+    console.log('[Scheduler] markUnknown:', this.currentWord.word, '| stage:', this.currentWord.stage);
+    try {
+      this._updateProgress(false);
+      this._advanceToNext();
+    } catch (e) { console.error('[Scheduler] markUnknown ERROR:', e.message, e.stack); }
   }
 
   /**
