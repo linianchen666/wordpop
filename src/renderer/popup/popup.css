@@ -101,12 +101,14 @@
 /* === 单词内容区 === */
 .popup-body {
   flex: 1;
+  min-height: 0; /* 允许 flex 子元素收缩，使 overflow-y 生效 */
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
   padding: 12px 20px;
   gap: 4px;
+  overflow-y: auto; /* 释义过多时可滚动 */
 }
 
 .word-main {
@@ -178,6 +180,10 @@
   text-align: center;
   font-weight: 500;
   margin-top: 2px;
+  max-height: 80px;
+  overflow-y: auto;
+  word-break: break-word;
+  line-height: 1.4;
 }
 
 .word-example {
@@ -206,6 +212,7 @@
   gap: 8px;
   padding: 8px 12px 12px;
   justify-content: center;
+  flex-shrink: 0; /* 按钮区不被压缩，始终可见 */
 }
 
 .popup-footer.hidden {

@@ -38,7 +38,7 @@ function createPopupWindow() {
 
     popupWindow = new BrowserWindow({
       width: 360,
-      height: 240,
+      height: 280,
       x: bounds.x,
       y: bounds.y,
       frame: false,
@@ -147,7 +147,7 @@ function _displayWord(wordData) {
 
   try {
     const bounds = getPopupBounds(popupConfig.position);
-    popupWindow.setBounds({ ...bounds, width: 360, height: 240 });
+    popupWindow.setBounds({ ...bounds, width: 360, height: 280 });
 
     popupWindow.webContents.send('popup:word', {
       ...wordData,
@@ -201,7 +201,7 @@ function closeImmediately() {
 function getPopupBounds(position) {
   try {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    const W = 360, H = 240, M = 20;
+    const W = 360, H = 280, M = 20;
     switch (position) {
       case 'top-left':     return { x: M, y: M };
       case 'top-right':    return { x: width - W - M, y: M };
