@@ -1,5 +1,5 @@
 const { ipcMain, dialog, BrowserWindow, app, fs } = require('electron');
-const { getDb, importWordlist, getWordlistIndex, importCustomWordlist } = require('./db');
+const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary, diagnoseDatabase, repairDatabase } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
 const popupManager = require('./popup-manager');
@@ -31,8 +31,10 @@ ipcMain.handle('app:open-log-folder', async () => {
 //  单词反馈
 // ═════════════════════════╝
 
-ipcMain.on('word:known',   () => scheduler.markKnown());
-ipcMain.on('word:unknown', () => scheduler.markUnknown());
+ipcMain.on('word:known',     () => scheduler.markKnown());
+ipcMain.on('word:unknown',   () => scheduler.markUnknown());
+ipcMain.on('word:fuzzy',     () => scheduler.markFuzzy());
+ipcMain.on('word:mastered',  () => scheduler.markMastered());
 
 ipcMain.on('word:pronounce', (_ev, word) => {
   // 发音由渲染进程 Web Speech API 处理；此处为预留通道
@@ -103,65 +105,110 @@ ipcMain.handle('wordlist:import-custom', async () => {
 });
 
 // ═════════════════════════╗
+//  学习进度摘要（预测用）
+// ═════════════════════════╝
+
+ipcMain.handle('stats:progress-summary', (_ev, wordlistIds) => {
+  try {
+    return getProgressSummary(wordlistIds);
+  } catch (err) {
+    console.error('[IPC] stats:progress-summary error:', err.message);
+    return { totalWords: 0, learnedWords: 0, masteredWords: 0, remainingWords: 0 };
+  }
+});
+
+// ═════════════════════════╗
+//  数据库诊断与修复
+// ═════════════════════════╝
+
+ipcMain.handle('db:diagnose', () => {
+  return diagnoseDatabase();
+});
+
+ipcMain.handle('db:repair', () => {
+  return repairDatabase();
+});
+
+// ═════════════════════════╗
 //  统计
 // ═════════════════════════╝//
 
 ipcMain.handle('stats:get', () => {
-  const db = getDb();
-  const today = db.prepare(
-    "SELECT words_reviewed, words_learned FROM daily_stats WHERE date = date('now','localtime')"
-  ).get() || { words_reviewed:0, words_learned:0 };
+  try {
+    const db = getDb();
+    const today = db.prepare(
+      "SELECT words_reviewed, words_learned FROM daily_stats WHERE date = date('now','localtime')"
+    ).get() || { words_reviewed:0, words_learned:0 };
 
-  const total = db.prepare(`
-    SELECT
-      COUNT(DISTINCT p.word_id) total_words,
-      SUM(p.correct_count) total_correct,
-      SUM(p.wrong_count)   total_wrong,
-      COUNT(DISTINCT CASE WHEN p.stage >= 9 THEN p.word_id END) mastered
-    FROM progress p
-  `).get();
+    const total = db.prepare(`
+      SELECT
+        COUNT(DISTINCT p.word_id) total_words,
+        SUM(p.correct_count) total_correct,
+        SUM(p.wrong_count)   total_wrong,
+        COUNT(DISTINCT CASE WHEN p.stage >= 9 THEN p.word_id END) mastered
+      FROM progress p
+    `).get();
 
-  // 连续打卡天数
-  const streak = db.prepare(`
-    WITH RECURSIVE d(day) AS (
-      SELECT date('now','localtime')
-      UNION ALL
-      SELECT date(day,'-1 day') FROM d WHERE day >= date('now','-365 days')
-    )
-    SELECT COUNT(*) streak FROM d
-    WHERE EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = d.day)
-    ORDER BY d DESC
-  `).get();
+    // 连续打卡天数（从今天往前数，遇到无记录的日期即停止）
+    const streak = db.prepare(`
+      WITH RECURSIVE d(day) AS (
+        SELECT date('now','localtime')
+        UNION ALL
+        SELECT date(day,'-1 day') FROM d
+        WHERE day > date('now','-365 days')
+          AND EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = date(day,'-1 day'))
+      )
+      SELECT COUNT(*) streak FROM d
+      WHERE EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = d.day)
+    `).get();
 
-  return {
-    today: today,
-    total: {
-      words:    total.total_words   || 0,
-      correct:  total.total_correct  || 0,
-      wrong:    total.total_wrong    || 0,
-      mastered: total.mastered     || 0
-    },
-    streak: streak ? streak.streak : 0
-  };
+    return {
+      today: today,
+      total: {
+        words:    total.total_words   || 0,
+        correct:  total.total_correct  || 0,
+        wrong:    total.total_wrong    || 0,
+        mastered: total.mastered     || 0
+      },
+      streak: streak ? streak.streak : 0
+    };
+  } catch (err) {
+    console.error('[IPC] stats:get error:', err.message);
+    return {
+      today: { words_reviewed: 0, words_learned: 0 },
+      total: { words: 0, correct: 0, wrong: 0, mastered: 0 },
+      streak: 0
+    };
+  }
 });
 
 ipcMain.handle('stats:daily', (_ev, days=7) => {
-  return getDb().prepare(`
-    SELECT date, words_reviewed, words_learned
-    FROM daily_stats
-    WHERE date >= date('now','localtime','-' || ? || ' days')
-    ORDER BY date ASC
-  `).all(days);
+  try {
+    return getDb().prepare(`
+      SELECT date, words_reviewed, words_learned
+      FROM daily_stats
+      WHERE date >= date('now','localtime','-' || ? || ' days')
+      ORDER BY date ASC
+    `).all(days);
+  } catch (err) {
+    console.error('[IPC] stats:daily error:', err.message);
+    return [];
+  }
 });
 
 ipcMain.handle('stats:stage-distribution', () => {
-  return getDb().prepare(`
-    SELECT stage, COUNT(*) count
-    FROM progress
-    WHERE stage < 9
-    GROUP BY stage
-    ORDER BY stage ASC
-  `).all();
+  try {
+    return getDb().prepare(`
+      SELECT stage, COUNT(*) count
+      FROM progress
+      WHERE stage < 9
+      GROUP BY stage
+      ORDER BY stage ASC
+    `).all();
+  } catch (err) {
+    console.error('[IPC] stats:stage-distribution error:', err.message);
+    return [];
+  }
 });
 
 // ═════════════════════════╗

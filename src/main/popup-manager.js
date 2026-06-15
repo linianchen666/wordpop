@@ -50,6 +50,8 @@ function createPopupWindow() {
       transparent: false,
       hasShadow: true,
       backgroundColor: '#FFFFFF',
+      // 关键：允许窗口在不获取焦点的情况下显示
+      // 弹窗自动弹出时不抢焦点，用户点击时才获得焦点
       webPreferences: {
         preload: getAsarPath('src', 'preload', 'preload.js'),
         contextIsolation: true,
@@ -156,9 +158,10 @@ function _displayWord(wordData) {
       }
     });
 
-    // Windows 显示窗口的关键：show → focus → setAlwaysOnTop → moveTop
-    if (!popupWindow.isVisible()) popupWindow.show();
-    popupWindow.focus();
+    // 弹窗显示但不抢焦点：用 showInactive() 让弹窗可见但不中断用户当前操作
+    // alwaysOnTop 确保弹窗在最前面可见
+    // 用户想操作弹窗时点击即可获得焦点
+    if (!popupWindow.isVisible()) popupWindow.showInactive();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
 
@@ -180,8 +183,8 @@ function restore() {
       createPopupWindow();
       return;
     }
-    if (!popupWindow.isVisible()) popupWindow.show();
-    popupWindow.focus();
+    // 恢复弹窗但不抢焦点
+    if (!popupWindow.isVisible()) popupWindow.showInactive();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
   } catch (e) {
@@ -219,9 +222,17 @@ function isVisible() {
   return popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible();
 }
 
+/**
+ * 判断弹窗是否有当前单词可显示
+ * 用于托盘「显示弹窗」按钮：有单词则恢复，无单词则不操作
+ */
+function hasCurrentWord() {
+  return popupWindow && !popupWindow.isDestroyed();
+}
+
 function destroy() { closeImmediately(); }
 
 module.exports = {
   createPopupWindow, show, hide, restore, closeImmediately,
-  updateConfig, isVisible, waitForReady, destroy
+  updateConfig, isVisible, hasCurrentWord, waitForReady, destroy
 };

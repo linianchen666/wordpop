@@ -13,7 +13,8 @@ const DEFAULT_CONFIG = {
   showExample: true,               // 显示例句
   fontSize: 'medium',              // small | medium | large
   theme: 'light',                  // light | dark
-  setupComplete: false             // 是否已完成初始化设置
+  setupComplete: false,            // 是否已完成初始化设置
+  targetDate: null                 // 目标完成日期，格式 'YYYY-MM-DD'，null表示未设置
 };
 
 let configPath = null;
@@ -92,5 +93,10 @@ module.exports = {
   loadConfig,
   saveConfig,
   getConfig,
-  DEFAULT_CONFIG
+  DEFAULT_CONFIG,
+  /**
+   * 清除配置缓存，下次 loadConfig() 将重新从磁盘读取
+   * 在设置窗口关闭等场景中调用
+   */
+  clearCache() { cachedConfig = null; }
 };

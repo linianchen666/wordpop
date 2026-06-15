@@ -15,6 +15,7 @@
       <span class="popup-title">📖 WordPop</span>
       <span class="popup-progress" id="progress-text">--</span>
       <div class="popup-actions">
+        <button class="popup-btn-icon btn-mastered-icon hidden" id="btn-mastered" title="熟知：标记为已掌握，不再复习">★</button>
         <button class="popup-btn-icon" id="btn-minimize" title="最小化到托盘">─</button>
       </div>
     </div>
@@ -23,14 +24,22 @@
     <div class="popup-body">
       <div class="word-main" id="word-text">Loading...</div>
       <div class="word-phonetic" id="phonetic-text"></div>
-      <div class="word-translation" id="translation-text"></div>
-      <div class="word-example" id="example-text"></div>
+      <div class="word-reveal-area" id="reveal-area">
+        <button class="btn-reveal" id="btn-reveal">点击显示释义</button>
+      </div>
+      <div class="word-detail hidden" id="word-detail">
+        <div class="word-translation" id="translation-text"></div>
+        <div class="word-example" id="example-text"></div>
+      </div>
     </div>
 
     <!-- 操作按钮区 -->
-    <div class="popup-footer">
+    <div class="popup-footer hidden" id="action-buttons">
       <button class="btn btn-lg btn-danger btn-action" id="btn-unknown">
         ✗ 不认识
+      </button>
+      <button class="btn btn-lg btn-warning btn-action" id="btn-fuzzy">
+        ~ 模糊
       </button>
       <button class="btn btn-lg btn-success btn-action" id="btn-known">
         ✓ 认识

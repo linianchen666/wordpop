@@ -67,9 +67,16 @@
       </div>
     </div>
 
+    <!-- 数据库状态提示 -->
+    <div class="db-warning" id="db-warning" style="display:none">
+      <div class="db-warning-text" id="db-warning-text"></div>
+      <button class="btn btn-sm btn-danger" id="btn-repair-db">🔧 修复数据库</button>
+    </div>
+
     <!-- 刷新按钮 -->
     <div class="stats-footer">
       <button class="btn btn-sm btn-ghost" id="btn-refresh">🔄 刷新数据</button>
+      <button class="btn btn-sm btn-ghost" id="btn-diagnose">🩺 诊断</button>
       <button class="btn btn-sm btn-primary" id="btn-settings">⚙ 打开设置</button>
     </div>
   </div>

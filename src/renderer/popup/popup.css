@@ -18,6 +18,18 @@
   transform: translateY(8px);
 }
 
+/* 新词出现时的边框提醒动画（不抢焦点也能注意到） */
+.popup-container.new-word-alert {
+  animation: borderPulse 2s ease;
+}
+
+@keyframes borderPulse {
+  0%   { border-color: var(--color-primary); box-shadow: 0 8px 32px var(--color-shadow), 0 0 0 2px rgba(74,144,217,0.4); }
+  30%  { border-color: var(--color-border); box-shadow: 0 8px 32px var(--color-shadow); }
+  60%  { border-color: var(--color-primary); box-shadow: 0 8px 32px var(--color-shadow), 0 0 0 2px rgba(74,144,217,0.3); }
+  100% { border-color: var(--color-border); box-shadow: 0 8px 32px var(--color-shadow); }
+}
+
 /* === 标题栏 === */
 .popup-header {
   display: flex;
@@ -69,6 +81,23 @@
   color: var(--color-text);
 }
 
+/* === 熟知按钮（右上角标题栏） === */
+.btn-mastered-icon {
+  color: var(--color-text-muted);
+  font-size: 13px;
+  opacity: 0.6;
+}
+
+.btn-mastered-icon:hover {
+  color: #f59e0b;
+  opacity: 1;
+  background: #fef3c7;
+}
+
+.btn-mastered-icon.hidden {
+  display: none !important;
+}
+
 /* === 单词内容区 === */
 .popup-body {
   flex: 1;
@@ -104,6 +133,45 @@
   text-align: center;
 }
 
+/* === 显示释义按钮 === */
+.word-reveal-area {
+  margin-top: 10px;
+  transition: all 0.2s ease;
+}
+
+.btn-reveal {
+  font-size: 14px;
+  color: var(--color-primary);
+  background: transparent;
+  border: 1px dashed var(--color-primary);
+  border-radius: var(--radius-md);
+  padding: 8px 24px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+  opacity: 0.7;
+}
+
+.btn-reveal:hover {
+  opacity: 1;
+  background: var(--color-primary);
+  color: white;
+  border-style: solid;
+}
+
+.btn-reveal:active {
+  transform: scale(0.95);
+}
+
+/* === 释义详情区（默认隐藏，点击后显示） === */
+.word-detail {
+  margin-top: 4px;
+  animation: slideDown 0.25s ease;
+}
+
+.word-detail.hidden {
+  display: none;
+}
+
 .word-translation {
   font-size: 15px;
   color: var(--color-text-secondary);
@@ -127,19 +195,43 @@
   white-space: nowrap;
 }
 
+/* === 通用隐藏工具类 === */
+.hidden {
+  display: none !important;
+}
+
 /* === 操作按钮区 === */
 .popup-footer {
   display: flex;
-  gap: 12px;
-  padding: 8px 16px 12px;
+  gap: 8px;
+  padding: 8px 12px 12px;
   justify-content: center;
+}
+
+.popup-footer.hidden {
+  display: none !important;
 }
 
 .btn-action {
   flex: 1;
-  max-width: 140px;
-  font-size: 15px;
-  padding: 10px 16px;
+  max-width: 110px;
+  font-size: 14px;
+  padding: 8px 8px;
+}
+
+/* === 模糊按钮（橙色） === */
+.btn-warning {
+  background: #f59e0b;
+  color: white;
+  border: none;
+}
+
+.btn-warning:hover {
+  background: #d97706;
+}
+
+.btn-warning:active {
+  transform: scale(0.95);
 }
 
 /* === 进度条 === */
@@ -166,9 +258,22 @@
   animation: wordPopIn 0.4s ease;
 }
 
+@keyframes slideDown {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* === 响应式（在弹窗小尺寸下保持可用性） === */
 @media (max-width: 320px) {
   .popup-body { padding: 8px 12px; }
   .word-main { font-size: 18px; }
-  .btn-action { padding: 8px 12px; font-size: 13px; }
+  .btn-action { padding: 8px 6px; font-size: 13px; }
+  .btn-reveal { padding: 6px 16px; font-size: 13px; }
+  .popup-footer { gap: 6px; padding: 6px 8px 10px; }
 }

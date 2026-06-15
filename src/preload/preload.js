@@ -6,6 +6,8 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   onHide:          (cb) => ipcRenderer.on('popup:hide',         () => cb()),
   markKnown:       ()  => ipcRenderer.send('word:known'),
   markUnknown:     ()  => ipcRenderer.send('word:unknown'),
+  markFuzzy:       ()  => ipcRenderer.send('word:fuzzy'),
+  markMastered:    ()  => ipcRenderer.send('word:mastered'),
   pronounce:       (w) => ipcRenderer.send('word:pronounce', w),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),
 
@@ -24,6 +26,11 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   getStats:            ()  => ipcRenderer.invoke('stats:get'),
   getDailyStats:       (d) => ipcRenderer.invoke('stats:daily', d),
   getStageDistribution: ()  => ipcRenderer.invoke('stats:stage-distribution'),
+  getProgressSummary:  (ids) => ipcRenderer.invoke('stats:progress-summary', ids),
+
+  // === 数据库诊断与修复 ===
+  diagnoseDatabase:   ()  => ipcRenderer.invoke('db:diagnose'),
+  repairDatabase:     ()  => ipcRenderer.invoke('db:repair'),
 
   // === 调度器操作 ===
   getSchedulerStatus:  ()  => ipcRenderer.invoke('scheduler:status'),
