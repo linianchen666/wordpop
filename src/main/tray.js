@@ -4,6 +4,8 @@ const fs = require('fs');
 
 let tray = null;
 let isPaused = false;
+let trayOptions = {};
+let lastStatus = null; // 缓存最近一次状态
 
 /**
  * 获取托盘图标
@@ -125,6 +127,7 @@ function generateFallbackCircle(size = 32) {
  */
 function createTray(options = {}) {
   if (tray) return tray;
+  trayOptions = options;
 
   try {
     const icon = getTrayIcon();
@@ -142,44 +145,80 @@ function createTray(options = {}) {
       tray = new Tray(icon);
     }
 
-    function buildMenu() {
+    function buildMenu(status) {
+      // 计算下次弹窗提示文本
+      let nextLabel = '';
+      if (status && status.isPaused) {
+        nextLabel = '⏸ 学习已暂停';
+      } else if (status && status.currentWord) {
+        nextLabel = '📖 正在显示单词...';
+      } else if (status && status.nextReviewAt) {
+        const diff = status.nextReviewAt - Date.now();
+        if (diff <= 0) {
+          nextLabel = '⏱ 即将弹出...';
+        } else {
+          const mins = Math.floor(diff / 60000);
+          const hours = Math.floor(mins / 60);
+          const days = Math.floor(hours / 24);
+
+          if (days > 0) {
+            const remainHours = hours % 24;
+            nextLabel = `✅ 今日单词已背完，下次复习: ${days}天${remainHours > 0 ? remainHours + '小时后' : '后'}`;
+          } else if (hours > 0) {
+            nextLabel = `⏱ 下个单词: ${hours}时${mins % 60}分后`;
+          } else {
+            nextLabel = `⏱ 下个单词: ${mins}分钟后`;
+          }
+        }
+      } else if (status && !status.hasUnmasteredWords) {
+        nextLabel = '🎉 所有单词已掌握！';
+      } else if (status && !status.hasNewWordsQuota) {
+        // 没有到期的复习词，也没有新词配额
+        nextLabel = '✅ 今日单词已背完';
+      } else {
+        nextLabel = '⏱ 等待中...';
+      }
+
       const items = [
         { label: 'WordPop v' + app.getVersion(), enabled: false },
         { type: 'separator' },
+        { label: nextLabel, enabled: false },
+        { type: 'separator' },
         {
           label: '📖 显示弹窗',
-          click: () => { try { if (options.onShowPopup) options.onShowPopup(); } catch (e) {} }
+          click: () => { try { if (trayOptions.onShowPopup) trayOptions.onShowPopup(); } catch (e) {} }
         },
         {
           label: isPaused ? '▶ 恢复学习' : '⏸ 暂停学习',
           click: () => {
             try {
               isPaused = !isPaused;
-              if (options.onPauseToggle) options.onPauseToggle(isPaused);
-              if (tray) tray.setContextMenu(buildMenu());
+              if (lastStatus) lastStatus.isPaused = isPaused;
+              if (trayOptions.onPauseToggle) trayOptions.onPauseToggle(isPaused);
+              if (tray) tray.setContextMenu(buildMenu(lastStatus));
             } catch (e) { console.error('[Tray] pause error:', e.message); }
           }
         },
         {
           label: '📊 今日统计',
-          click: () => { try { if (options.onOpenStats) options.onOpenStats(); } catch (e) {} }
+          click: () => { try { if (trayOptions.onOpenStats) trayOptions.onOpenStats(); } catch (e) {} }
         },
         { type: 'separator' },
         {
           label: '⚙ 设置',
-          click: () => { try { if (options.onOpenSettings) options.onOpenSettings(); } catch (e) {} }
+          click: () => { try { if (trayOptions.onOpenSettings) trayOptions.onOpenSettings(); } catch (e) {} }
         },
         { type: 'separator' },
         {
           label: '❌ 退出 WordPop',
-          click: () => { try { if (options.onQuit) options.onQuit(); } catch (e) { app.quit(); } }
+          click: () => { try { if (trayOptions.onQuit) trayOptions.onQuit(); } catch (e) { app.quit(); } }
         }
       ];
       return Menu.buildFromTemplate(items);
     }
 
     tray.setToolTip('WordPop - 艾宾浩斯背单词');
-    tray.setContextMenu(buildMenu());
+    tray.setContextMenu(buildMenu(null));
 
     tray.on('double-click', () => {
       try { if (options.onShowPopup) options.onShowPopup(); } catch (e) {}
@@ -194,6 +233,46 @@ function createTray(options = {}) {
 }
 
 function setPaused(p) { isPaused = p; }
+
+/**
+ * 更新托盘状态（由主进程定时调用）
+ * @param {object} status - scheduler.getStatus() 的返回值
+ */
+function updateStatus(status) {
+  if (!tray) return;
+  lastStatus = status;
+  try {
+    tray.setContextMenu(buildMenu(status));
+
+    // 同时更新 tooltip
+    if (status && status.isPaused) {
+      tray.setToolTip('WordPop - 学习已暂停');
+    } else if (status && status.currentWord) {
+      tray.setToolTip('WordPop - 正在学习');
+    } else if (status && status.nextReviewAt) {
+      const diff = status.nextReviewAt - Date.now();
+      const mins = Math.max(0, Math.floor(diff / 60000));
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+      if (days > 0) {
+        tray.setToolTip('WordPop - 今日单词已背完');
+      } else if (hours > 0) {
+        tray.setToolTip(`WordPop - 下个单词: ${hours}时${mins % 60}分后`);
+      } else {
+        tray.setToolTip(`WordPop - 下个单词: ${mins}分钟后`);
+      }
+    } else if (status && !status.hasUnmasteredWords) {
+      tray.setToolTip('WordPop - 所有单词已掌握！');
+    } else if (status && !status.hasNewWordsQuota) {
+      tray.setToolTip('WordPop - 今日单词已背完');
+    } else {
+      tray.setToolTip('WordPop - 艾宾浩斯背单词');
+    }
+  } catch (e) {
+    console.error('[Tray] updateStatus error:', e.message);
+  }
+}
+
 function destroyTray() { if (tray) { try { tray.destroy(); } catch (e) {} tray = null; } }
 
-module.exports = { createTray, setPaused, destroyTray };
+module.exports = { createTray, setPaused, updateStatus, destroyTray };

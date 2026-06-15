@@ -149,16 +149,17 @@ ipcMain.handle('stats:get', () => {
       FROM progress p
     `).get();
 
-    // 连续打卡天数
+    // 连续打卡天数（从今天往前数，遇到无记录的日期即停止）
     const streak = db.prepare(`
       WITH RECURSIVE d(day) AS (
         SELECT date('now','localtime')
         UNION ALL
-        SELECT date(day,'-1 day') FROM d WHERE day >= date('now','-365 days')
+        SELECT date(day,'-1 day') FROM d
+        WHERE day > date('now','-365 days')
+          AND EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = date(day,'-1 day'))
       )
       SELECT COUNT(*) streak FROM d
       WHERE EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = d.day)
-      ORDER BY d DESC
     `).get();
 
     return {

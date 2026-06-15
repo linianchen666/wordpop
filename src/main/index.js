@@ -3,7 +3,7 @@ const path = require('path');
 const fs   = require('fs');
 const { initDatabase, importWordlist, getWordlistIndex } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
-const { createTray, destroyTray } = require('./tray');
+const { createTray, destroyTray, updateStatus } = require('./tray');
 const popupManager = require('./popup-manager');
 const scheduler = require('./scheduler');
 const { registerIpcHandlers } = require('./ipc-handlers');
@@ -136,6 +136,16 @@ app.whenReady().then(async () => {
 
   // 5. 菜单
   safeStep('setMenu', () => Menu.setApplicationMenu(null));
+
+  // 5.1 定时刷新托盘状态（显示下次弹窗倒计时）
+  setInterval(() => {
+    try { updateStatus(scheduler.getStatus()); } catch (_) {}
+  }, 30000); // 每30秒刷新一次
+
+  // 5.2 每次学完单词也刷新托盘状态
+  scheduler.onStatsUpdate(() => {
+    try { updateStatus(scheduler.getStatus()); } catch (_) {}
+  });
 
   // 5.5 开机自启：每次启动时根据配置重新注册（确保 exe 路径更新后自启仍然有效）
   if (config.autoStart) {

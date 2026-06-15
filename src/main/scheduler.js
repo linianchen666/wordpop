@@ -438,13 +438,57 @@ class Scheduler {
     }
   }
 
+  /**
+   * 获取下一个到期单词的复习时间
+   * @returns {number|null} 下次弹窗的时间戳（ms），null 表示没有待复习单词
+   */
+  getNextReviewTime() {
+    try {
+      const db = getDb();
+      const row = db.prepare(`
+        SELECT MIN(next_review_at) as next_at
+        FROM progress
+        WHERE stage < ? AND next_review_at > 0
+      `).get(MASTERED_STAGE);
+      return row && row.next_at ? row.next_at : null;
+    } catch (e) {
+      console.error('[Scheduler] getNextReviewTime error:', e.message);
+      return null;
+    }
+  }
+
+  /**
+   * 判断今天是否还有新词配额
+   */
+  hasNewWordsQuotaToday() {
+    return this.dailyNewWordsCount < this.dailyNewWordsLimit;
+  }
+
+  /**
+   * 判断是否还有未掌握的单词可以学
+   */
+  hasUnmasteredWords() {
+    try {
+      const db = getDb();
+      const row = db.prepare('SELECT COUNT(*) c FROM progress WHERE stage < ?').get(MASTERED_STAGE);
+      const totalWords = db.prepare('SELECT COUNT(*) c FROM words').get().c;
+      const masteredOrLearning = db.prepare('SELECT COUNT(*) c FROM progress').get().c;
+      return (row.c > 0) || (totalWords > masteredOrLearning);
+    } catch (e) {
+      return false;
+    }
+  }
+
   getStatus() {
     return {
       isPaused: this.isPaused,
       queueSize: this.queue.length,
       currentWord: this.currentWord ? this.currentWord.word : null,
       dailyNewWordsCount: this.dailyNewWordsCount,
-      dailyNewWordsLimit: this.dailyNewWordsLimit
+      dailyNewWordsLimit: this.dailyNewWordsLimit,
+      nextReviewAt: this.currentWord ? Date.now() : this.getNextReviewTime(),
+      hasNewWordsQuota: this.hasNewWordsQuotaToday(),
+      hasUnmasteredWords: this.hasUnmasteredWords()
     };
   }
 
