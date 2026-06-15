@@ -30,14 +30,32 @@ async function safeInvoke(apiFn, fallback) {
 // === 加载统计数据 ===
 async function loadStats() {
   // 每个接口独立调用，互不影响
-  const stats = await safeInvoke(() => window.wordpopAPI.getStats(), {
-    today: { words_reviewed: 0, words_learned: 0 },
-    total: { words: 0, correct: 0, wrong: 0, mastered: 0 },
-    streak: 0
-  });
+  let stats;
+  try {
+    stats = await window.wordpopAPI.getStats();
+    console.log('[Stats] getStats result:', JSON.stringify(stats));
+  } catch (err) {
+    console.error('[Stats] getStats FAILED:', err);
+    stats = { today: { words_reviewed: 0, words_learned: 0 }, total: { words: 0, correct: 0, wrong: 0, mastered: 0 }, streak: 0 };
+  }
 
-  const dailyStats = await safeInvoke(() => window.wordpopAPI.getDailyStats(7), []);
-  const stageDist = await safeInvoke(() => window.wordpopAPI.getStageDistribution(), []);
+  let dailyStats;
+  try {
+    dailyStats = await window.wordpopAPI.getDailyStats(7);
+    console.log('[Stats] getDailyStats result:', JSON.stringify(dailyStats));
+  } catch (err) {
+    console.error('[Stats] getDailyStats FAILED:', err);
+    dailyStats = [];
+  }
+
+  let stageDist;
+  try {
+    stageDist = await window.wordpopAPI.getStageDistribution();
+    console.log('[Stats] getStageDistribution result:', JSON.stringify(stageDist));
+  } catch (err) {
+    console.error('[Stats] getStageDistribution FAILED:', err);
+    stageDist = [];
+  }
 
   renderOverview(stats);
   renderDailyChart(dailyStats);
@@ -46,12 +64,14 @@ async function loadStats() {
 
 // === 渲染概览数据 ===
 function renderOverview(stats) {
-  if (!stats) return;
+  if (!stats) { console.error('[Stats] renderOverview: stats is null'); return; }
 
-  statTodayReviewed.textContent = stats.today?.words_reviewed || 0;
-  statTodayLearned.textContent = stats.today?.words_learned || 0;
-  statTotalWords.textContent = formatNumber(stats.total?.words || 0);
-  statStreak.textContent = (stats.streak || 0) + ' 天';
+  console.log('[Stats] renderOverview:', JSON.stringify(stats));
+
+  statTodayReviewed.textContent = stats.today?.words_reviewed ?? 0;
+  statTodayLearned.textContent = stats.today?.words_learned ?? 0;
+  statTotalWords.textContent = formatNumber(stats.total?.words ?? 0);
+  statStreak.textContent = (stats.streak ?? 0) + ' 天';
 
   statTotalCorrect.textContent = (stats.total?.correct || 0) + ' 次';
   statMastered.textContent = formatNumber(stats.total?.mastered || 0) + ' 个';
@@ -167,6 +187,17 @@ btnDiagnose.addEventListener('click', () => {
         diag.sampleProgress.forEach(p => {
           info += '  ' + (p.word || '?') + ' stage=' + p.stage + ' correct=' + p.correct_count + '\n';
         });
+      }
+      // 新增：统计查询结果
+      if (diag.statsQueryResult) {
+        info += '\n═══ 统计查询结果 ═══\n';
+        if (diag.statsQueryResult.error) {
+          info += '查询出错：' + diag.statsQueryResult.error + '\n';
+        } else {
+          info += 'today: ' + JSON.stringify(diag.statsQueryResult.today) + '\n';
+          info += 'total: ' + JSON.stringify(diag.statsQueryResult.total) + '\n';
+          info += 'raw_total: ' + JSON.stringify(diag.statsQueryResult.raw_total) + '\n';
+        }
       }
       alert(info);
     }

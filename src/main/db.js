@@ -367,12 +367,12 @@ function closeDatabase() {
 
 /**
  * 诊断数据库健康状态
- * @returns {{ healthy: boolean, wordCount: number, progressCount: number, statsCount: number, todayStats: object|null, sampleProgress: Array, error?: string }}
+ * 包含和 stats:get 完全一样的查询，用于排查统计显示0的问题
  */
 function diagnoseDatabase() {
   try {
     if (!db) {
-      return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, todayStats: null, sampleProgress: [], error: '数据库未初始化' };
+      return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, todayStats: null, sampleProgress: [], statsQueryResult: null, sqliteToday: null, error: '数据库未初始化' };
     }
     const wordCount = db.prepare('SELECT COUNT(*) c FROM words').get().c;
     const progressCount = db.prepare('SELECT COUNT(*) c FROM progress').get().c;
@@ -387,9 +387,39 @@ function diagnoseDatabase() {
     // 诊断用：查看几条 progress 记录
     const sampleProgress = db.prepare('SELECT p.*, w.word FROM progress p JOIN words w ON p.word_id = w.id LIMIT 5').all();
 
-    return { healthy: true, wordCount, progressCount, statsCount, todayStats, sampleProgress, sqliteToday };
+    // 诊断用：运行和 stats:get 完全一样的查询
+    let statsQueryResult = null;
+    try {
+      const today = db.prepare(
+        "SELECT words_reviewed, words_learned FROM daily_stats WHERE date = date('now','localtime')"
+      ).get() || { words_reviewed: 0, words_learned: 0 };
+
+      const total = db.prepare(`
+        SELECT
+          COUNT(DISTINCT p.word_id) total_words,
+          SUM(p.correct_count) total_correct,
+          SUM(p.wrong_count)   total_wrong,
+          COUNT(DISTINCT CASE WHEN p.stage >= 9 THEN p.word_id END) mastered
+        FROM progress p
+      `).get();
+
+      statsQueryResult = {
+        today: today,
+        total: {
+          words:    total.total_words   || 0,
+          correct:  total.total_correct  || 0,
+          wrong:    total.total_wrong    || 0,
+          mastered: total.mastered     || 0
+        },
+        raw_total: total
+      };
+    } catch (e) {
+      statsQueryResult = { error: e.message };
+    }
+
+    return { healthy: true, wordCount, progressCount, statsCount, todayStats, sampleProgress, sqliteToday, statsQueryResult };
   } catch (err) {
-    return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, todayStats: null, sampleProgress: [], error: err.message };
+    return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, todayStats: null, sampleProgress: [], statsQueryResult: null, sqliteToday: null, error: err.message };
   }
 }
 
