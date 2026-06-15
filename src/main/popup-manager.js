@@ -14,16 +14,11 @@ let popupConfig = {
 
 /**
  * 获取 asar 内资源的正确路径
- * 在打包环境中，__dirname = app.asar/src/main
- * 要用 process.resourcesPath 拼出正确路径
  */
 function getAsarPath(...segments) {
   if (app.isPackaged) {
-    // process.resourcesPath = C:\Program Files\WordPop\resources
-    // app.asar 在 resources 内
     return path.join(process.resourcesPath, 'app.asar', ...segments);
   }
-  // 开发环境：__dirname = project/src/main，需要回到项目根目录
   return path.join(__dirname, '..', '..', ...segments);
 }
 
@@ -63,22 +58,25 @@ function createPopupWindow() {
       }
     });
 
-    // 加载 HTML —— 用正确的 asar 路径
     const htmlPath = getAsarPath('src', 'renderer', 'popup', 'index.html');
     console.log('[Popup] Loading:', htmlPath);
     popupWindow.loadFile(htmlPath);
 
     popupWindow.once('ready-to-show', () => {
       popupReady = true;
-      console.log('[Popup] ready-to-show');
+      console.log('[Popup] ready-to-show fired');
       if (pendingWordData) {
         const d = pendingWordData;
         pendingWordData = null;
-        setTimeout(() => { try { _displayWord(d); } catch (e) {} }, 200);
+        setTimeout(() => {
+          try { _displayWord(d); } catch (e) {
+            console.error('[Popup] pending displayWord error:', e.message);
+          }
+        }, 300);
       }
     });
 
-    popupWindow.once('closed', () => {
+    popupWindow.on('closed', () => {
       popupWindow = null;
       popupReady = false;
       console.log('[Popup] closed');
@@ -94,9 +92,10 @@ function createPopupWindow() {
 }
 
 /**
- * 等待弹窗就绪（超时 10s）
+ * 等待弹窗就绪
  */
-function waitForReady(timeout = 10000) {
+function waitForReady(timeout) {
+  timeout = timeout || 10000;
   return new Promise((resolve) => {
     if (popupReady) { resolve(); return; }
     const t0 = Date.now();
@@ -106,7 +105,7 @@ function waitForReady(timeout = 10000) {
         console.log('[Popup] waitForReady done, ready=', popupReady);
         resolve();
       }
-    }, 50);
+    }, 100);
   });
 }
 
@@ -114,20 +113,19 @@ function waitForReady(timeout = 10000) {
  * 显示弹窗并传入单词数据
  */
 function show(wordData) {
-  console.log('[Popup] show(), ready=', popupReady, 'win=', !!popupWindow);
+  console.log('[Popup] show() called, ready=', popupReady, 'win=', !!popupWindow);
   try {
     if (popupWindow && !popupWindow.isDestroyed() && popupReady) {
       _displayWord(wordData);
     } else if (popupWindow && !popupWindow.isDestroyed() && !popupReady) {
+      // 窗口存在但还没 ready，暂存数据
       pendingWordData = wordData;
-      console.log('[Popup] win exists but not ready, pending');
+      console.log('[Popup] win exists but not ready, data pending');
     } else {
+      // 窗口不存在，创建新的
       createPopupWindow();
-      if (popupReady) {
-        _displayWord(wordData);
-      } else {
-        pendingWordData = wordData;
-      }
+      pendingWordData = wordData;
+      console.log('[Popup] new window created, data pending');
     }
   } catch (err) {
     console.error('[Popup] show() ERROR:', err.message);
@@ -139,6 +137,7 @@ function show(wordData) {
  */
 function _displayWord(wordData) {
   if (!popupWindow || popupWindow.isDestroyed()) {
+    console.log('[Popup] _displayWord: window invalid, recreating...');
     createPopupWindow();
     pendingWordData = wordData;
     return;
@@ -147,8 +146,6 @@ function _displayWord(wordData) {
   try {
     const bounds = getPopupBounds(popupConfig.position);
     popupWindow.setBounds({ ...bounds, width: 360, height: 240 });
-
-    console.log('[Popup] Sending word data:', wordData.word, '| stage:', wordData.progress ? wordData.progress.stage : 'new');
 
     popupWindow.webContents.send('popup:word', {
       ...wordData,
@@ -159,13 +156,13 @@ function _displayWord(wordData) {
       }
     });
 
-    // Windows 显示窗口的关键顺序：show → focus → setAlwaysOnTop
+    // Windows 显示窗口的关键：show → focus → setAlwaysOnTop → moveTop
     if (!popupWindow.isVisible()) popupWindow.show();
     popupWindow.focus();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
 
-    console.log('[Popup] displayWord DONE:', wordData.word, '| visible:', popupWindow.isVisible());
+    console.log('[Popup] displayWord:', wordData.word, '| visible:', popupWindow.isVisible());
   } catch (err) {
     console.error('[Popup] _displayWord ERROR:', err.message, err.stack);
   }
@@ -179,12 +176,17 @@ function hide() {
 
 function restore() {
   try {
-    if (!popupWindow || popupWindow.isDestroyed()) { createPopupWindow(); return; }
+    if (!popupWindow || popupWindow.isDestroyed()) {
+      createPopupWindow();
+      return;
+    }
     if (!popupWindow.isVisible()) popupWindow.show();
     popupWindow.focus();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
-  } catch (e) { console.error('[Popup] restore ERROR:', e.message); }
+  } catch (e) {
+    console.error('[Popup] restore ERROR:', e.message);
+  }
 }
 
 function closeImmediately() {
@@ -201,16 +203,16 @@ function getPopupBounds(position) {
       case 'top-left':     return { x: M, y: M };
       case 'top-right':    return { x: width - W - M, y: M };
       case 'bottom-left':  return { x: M, y: height - H - M };
-      default:               return { x: width - W - M, y: height - H - M };
+      default:             return { x: width - W - M, y: height - H - M };
     }
   } catch (e) { return { x: 100, y: 100 }; }
 }
 
 function updateConfig(cfg) {
   if (cfg.popupPosition !== undefined) popupConfig.position = cfg.popupPosition;
-  if (cfg.fontSize       !== undefined) popupConfig.fontSize = cfg.fontSize;
-  if (cfg.showExample   !== undefined) popupConfig.showExample = cfg.showExample;
-  if (cfg.theme          !== undefined) popupConfig.theme = cfg.theme;
+  if (cfg.fontSize !== undefined) popupConfig.fontSize = cfg.fontSize;
+  if (cfg.showExample !== undefined) popupConfig.showExample = cfg.showExample;
+  if (cfg.theme !== undefined) popupConfig.theme = cfg.theme;
 }
 
 function isVisible() {
@@ -219,5 +221,7 @@ function isVisible() {
 
 function destroy() { closeImmediately(); }
 
-module.exports = { createPopupWindow, show, hide, restore, closeImmediately,
-                        updateConfig, isVisible, waitForReady, destroy };
+module.exports = {
+  createPopupWindow, show, hide, restore, closeImmediately,
+  updateConfig, isVisible, waitForReady, destroy
+};
