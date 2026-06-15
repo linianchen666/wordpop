@@ -37,6 +37,35 @@ process.on('uncaughtException', (error) => {
 });
 
 /**
+ * 启动调度器和弹窗（等弹窗就绪后）
+ */
+function startScheduler() {
+  log('[App] Starting scheduler...');
+
+  // 等弹窗就绪后启动调度器
+  // 关键：Windows 上必须等 ready-to-show 后才能正确显示弹窗
+  popupManager.waitForReady(10000).then(() => {
+    log('[App] Popup ready, starting scheduler');
+    scheduler.start();
+
+    scheduler.onStatsUpdate(() => {
+      if (statsWindow && !statsWindow.isDestroyed()) {
+        statsWindow.webContents.send('stats:updated');
+      }
+    });
+  }).catch((err) => {
+    log(`[App] Popup wait failed: ${err.message}, starting scheduler anyway`);
+    // 即使弹窗没就绪，也要启动调度器，否则完全卡死
+    scheduler.start();
+    scheduler.onStatsUpdate(() => {
+      if (statsWindow && !statsWindow.isDestroyed()) {
+        statsWindow.webContents.send('stats:updated');
+      }
+    });
+  });
+}
+
+/**
  * 应用入口
  */
 app.whenReady().then(async () => {
@@ -54,7 +83,7 @@ app.whenReady().then(async () => {
     // 3. 注册 IPC 处理器
     registerIpcHandlers();
 
-    // 4. 创建系统托盘
+    // 4. 创建系统托盘（必须在调度器之前，确保菜单可用）
     createTray({
       onPauseToggle: (paused) => {
         if (paused) {
@@ -70,6 +99,7 @@ app.whenReady().then(async () => {
         app.quit();
       }
     });
+    log('[App] Tray created');
 
     // 5. 移除应用菜单
     Menu.setApplicationMenu(null);
@@ -82,26 +112,18 @@ app.whenReady().then(async () => {
       // 确保词库已导入
       await ensureWordlistsImported(config);
 
-      // 创建弹窗并等待就绪后再启动调度器
-      // 关键：Windows 上必须等 ready-to-show 后才能正确显示弹窗
+      // 创建弹窗
       popupManager.createPopupWindow();
-      log('[App] Popup window created, waiting for ready...');
+      log('[App] Popup window created');
 
-      popupManager.waitForReady().then(() => {
-        log('[App] Popup ready, starting scheduler');
-        scheduler.start();
-
-        scheduler.onStatsUpdate(() => {
-          if (statsWindow && !statsWindow.isDestroyed()) {
-            statsWindow.webContents.send('stats:updated');
-          }
-        });
-      });
+      // 等弹窗就绪后启动调度器
+      startScheduler();
     }
 
     log('[App] WordPop ready');
   } catch (err) {
     log(`[FATAL] Startup error: ${err.message}\n${err.stack}`);
+    // 即使启动失败，托盘也应该可用（至少能退出）
   }
 });
 
@@ -171,7 +193,8 @@ function openSettingsWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false
     }
   });
 
@@ -200,7 +223,8 @@ function openStatsWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false
     }
   });
 
@@ -224,7 +248,8 @@ function openSetupWindow() {
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: false
     }
   });
 
@@ -243,18 +268,9 @@ function openSetupWindow() {
     await ensureWordlistsImported(latestConfig);
 
     popupManager.createPopupWindow();
-    log('[App] Popup window created after setup, waiting for ready...');
+    log('[App] Popup window created after setup');
 
-    popupManager.waitForReady().then(() => {
-      log('[App] Popup ready, starting scheduler after setup');
-      scheduler.start();
-
-      scheduler.onStatsUpdate(() => {
-        if (statsWindow && !statsWindow.isDestroyed()) {
-          statsWindow.webContents.send('stats:updated');
-        }
-      });
-    });
+    startScheduler();
   });
 }
 

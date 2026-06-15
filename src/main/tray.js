@@ -1,52 +1,103 @@
 const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
+const fs = require('fs');
 
 let tray = null;
 let isPaused = false;
 
-// 托盘图标：使用简单的 16x16 像素 PNG 作为默认图标
-// 在实际 Windows 构建中，assets/tray-icon.png 应该是一个 16x16 或 32x32 的 PNG
-
+/**
+ * 创建托盘图标
+ * 在打包环境中，assets 在 asar 内部，Windows 托盘需要从 asar 中正确读取 PNG
+ * 使用 process.resourcesPath + app.asar 路径确保在打包后也能找到图标
+ */
 function createTrayIcon(size = 16) {
-  // 创建一个简单的书本图标（纯色方块 + 文字模拟）
-  // 在生产环境中应替换为实际的 .ico/.png 文件
-  const iconPath = path.join(__dirname, '..', '..', 'assets', 'tray-icon.png');
-  try {
-    return nativeImage.createFromPath(iconPath).resize({ width: size, height: size });
-  } catch (e) {
-    // 如果图标文件不存在，创建一个简单的默认图标
-    return createDefaultTrayIcon(size);
+  // 尝试多个路径查找图标
+  const iconPaths = [
+    // 打包后：asar 内部路径
+    path.join(__dirname, '..', '..', 'assets', 'tray-icon.png'),
+    // 打包后：process.resourcesPath 外部路径（如果 assets 被 extraResources 复制出来）
+    path.join(process.resourcesPath, 'assets', 'tray-icon.png'),
+    // 开发环境路径
+    path.join(__dirname, '..', '..', 'assets', 'tray-icon.png'),
+  ];
+
+  for (const iconPath of iconPaths) {
+    try {
+      // Electron 支持 asar 路径读取，但需要验证图片是否有效
+      if (fs.existsSync(iconPath) || iconPath.includes('.asar')) {
+        const img = nativeImage.createFromPath(iconPath);
+        if (!img.isEmpty()) {
+          return img.resize({ width: size, height: size });
+        }
+      }
+    } catch (e) {
+      // 继续尝试下一个路径
+    }
   }
+
+  // 所有路径都失败，创建可靠的默认图标
+  return createDefaultTrayIcon(size);
 }
 
-function createDefaultTrayIcon(size = 16) {
-  // 使用 nativeImage 创建一个简单的 16x16 图标
+/**
+ * 创建默认托盘图标
+ * 使用 32x32 尺寸（Windows 推荐的托盘图标大小）
+ * 使用更鲜明的颜色确保在 Windows 任务栏中可见
+ */
+function createDefaultTrayIcon(size = 32) {
   const canvas = Buffer.alloc(size * size * 4);
+
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const idx = (y * size + x) * 4;
-      // 简单渐变色作为默认图标
-      const isEdge = x === 0 || y === 0 || x === size - 1 || y === size - 1;
-      const isCenter = x >= 4 && x <= 11 && y >= 4 && y <= 11;
-      if (isCenter) {
+
+      // 绘制一个 "W" 形状的蓝色图标
+      const center = size / 2;
+      const margin = 4;
+
+      // 背景圆角矩形
+      const inBounds = x >= margin && x < size - margin &&
+                       y >= margin && y < size - margin;
+
+      // W 字形区域
+      const inW = inBounds && (
+        // 左竖线
+        (x >= margin + 4 && x <= margin + 6 && y >= margin + 6 && y <= size - margin - 4) ||
+        // 右竖线
+        (x >= size - margin - 6 && x <= size - margin - 4 && y >= margin + 6 && y <= size - margin - 4) ||
+        // V 字底部连接
+        (y >= size - margin - 6 && y <= size - margin - 4 &&
+         x >= margin + 4 + (y - (size - margin - 6)) &&
+         x <= size - margin - 4 - (y - (size - margin - 6)))
+      );
+
+      if (inW) {
+        // W 字：白色
+        canvas[idx] = 255;
+        canvas[idx + 1] = 255;
+        canvas[idx + 2] = 255;
+        canvas[idx + 3] = 255;
+      } else if (inBounds) {
+        // 背景：蓝色圆角矩形
         canvas[idx] = 74;      // R
         canvas[idx + 1] = 144; // G
         canvas[idx + 2] = 226; // B
         canvas[idx + 3] = 255; // A
-      } else if (isEdge) {
-        canvas[idx] = 40;
-        canvas[idx + 1] = 80;
-        canvas[idx + 2] = 120;
-        canvas[idx + 3] = 255;
       } else {
-        canvas[idx] = 60;
-        canvas[idx + 1] = 100;
-        canvas[idx + 2] = 160;
-        canvas[idx + 3] = 255;
+        // 透明区域
+        canvas[idx] = 0;
+        canvas[idx + 1] = 0;
+        canvas[idx + 2] = 0;
+        canvas[idx + 3] = 0;
       }
     }
   }
-  return nativeImage.createFromBuffer(canvas, { width: size, height: size });
+
+  return nativeImage.createFromBuffer(canvas, {
+    width: size,
+    height: size,
+    dpiAware: false  // Windows DPI 适配
+  });
 }
 
 /**
@@ -56,7 +107,7 @@ function createDefaultTrayIcon(size = 16) {
 function createTray(options = {}) {
   if (tray) return tray;
 
-  const icon = createTrayIcon(16);
+  const icon = createTrayIcon(32);
   tray = new Tray(icon);
 
   function buildContextMenu() {
@@ -117,17 +168,6 @@ function createTray(options = {}) {
  */
 function setPaused(paused) {
   isPaused = paused;
-  if (tray) {
-    // 更新托盘图标
-    const iconPath = paused
-      ? path.join(__dirname, '..', '..', 'assets', 'tray-icon-paused.png')
-      : path.join(__dirname, '..', '..', 'assets', 'tray-icon.png');
-    try {
-      tray.setImage(nativeImage.createFromPath(iconPath).resize({ width: 16, height: 16 }));
-    } catch (e) {
-      // 使用默认图标
-    }
-  }
 }
 
 /**
