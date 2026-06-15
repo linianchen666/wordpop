@@ -120,7 +120,8 @@ app.whenReady().then(async () => {
 
   // 4. 托盘
   const trayOk = safeStep('createTray', () => createTray({
-    onPauseToggle: (p) => { try { p ? scheduler.pause() : scheduler.resume(); } catch (_) {} },
+    onShowPopup:    () => { try { showPopup(); } catch (_) {} },
+    onPauseToggle:  (p) => { try { p ? scheduler.pause() : scheduler.resume(); } catch (_) {} },
     onOpenSettings: () => { try { openSettingsWindow(); } catch (_) {} },
     onOpenStats:    () => { try { openStatsWindow(); } catch (_) {} },
     onQuit:         () => { try { scheduler.stop(); app.quit(); } catch (_) { app.quit(); } }
@@ -343,6 +344,29 @@ function openSetupWindow() {
       }
     });
   } catch (err) { log('[App] openSetup ERROR:', err.message); }
+}
+
+// ════════════════════════════════════════════╗
+//  显示弹窗（托盘「显示弹窗」/ 双击托盘图标）
+// ════════════════════════════════════════════╝
+
+function showPopup() {
+  try {
+    const status = scheduler.getStatus();
+    if (status.isPaused) {
+      // 如果暂停了，先恢复
+      scheduler.resume();
+    } else if (status.currentWord) {
+      // 有当前单词，直接恢复弹窗
+      popupManager.restore();
+    } else {
+      // 没有当前单词，重新弹出下一个
+      popupManager.restore();
+      scheduler._popNext();
+    }
+  } catch (err) {
+    log('[App] showPopup error:', err.message);
+  }
 }
 
 // ════════════════════════════════════════════╗

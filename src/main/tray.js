@@ -114,8 +114,12 @@ function createTray(options = {}) {
 
     function buildMenu() {
       const items = [
-        { label: 'WordPop v1.0.12 (预览)', enabled: false },
+        { label: 'WordPop v' + app.getVersion(), enabled: false },
         { type: 'separator' },
+        {
+          label: '📖 显示弹窗',
+          click: () => { try { if (options.onShowPopup) options.onShowPopup(); } catch (e) {} }
+        },
         {
           label: isPaused ? '▶ 恢复学习' : '⏸ 暂停学习',
           click: () => {
@@ -148,7 +152,7 @@ function createTray(options = {}) {
     tray.setContextMenu(buildMenu());
 
     tray.on('double-click', () => {
-      try { if (options.onOpenStats) options.onOpenStats(); } catch (e) {}
+      try { if (options.onShowPopup) options.onShowPopup(); } catch (e) {}
     });
 
     console.log('[Tray] Tray created successfully');
