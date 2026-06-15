@@ -1,6 +1,6 @@
 const { app, BrowserWindow, Menu, dialog } = require('electron');
 const path = require('path');
-const fs = require('fs');
+const fs   = require('fs');
 const { initDatabase, importWordlist, getWordlistIndex } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
 const { createTray, destroyTray } = require('./tray');
@@ -8,388 +8,283 @@ const popupManager = require('./popup-manager');
 const scheduler = require('./scheduler');
 const { registerIpcHandlers } = require('./ipc-handlers');
 
-// 窗口引用
-let settingsWindow = null;
-let statsWindow = null;
-let setupWindow = null;
+// ─┘ 日志系统 ═┘
+const LOG_FILE = path.join(app.getPath('userData'), 'wordpop.log');
+let   logFd = null;               // 文件描述符（持续打开，减少 I/O）
+let   logLines = 0;            // 日志行数 → 超过 5000 行自动截断
 
-// 日志文件路径（初始化前不能用 app.getPath）
-let logPath = null;
-let startupErrors = [];
-
-function log(msg) {
-  const line = `[${new Date().toISOString()}] ${msg}\n`;
-  console.log(line.trim());
-  if (logPath) {
-    try { fs.appendFileSync(logPath, line); } catch (e) {}
+function initLog() {
+  const dir = path.dirname(LOG_FILE);
+  if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+  // 启动时截断超大日志（> 5000 行）
+  if (fs.existsSync(LOG_FILE)) {
+    const lines = fs.readFileSync(LOG_FILE, 'utf8').split('\n').length;
+    logLines = lines;
+    if (lines > 5000) {
+      const kept = fs.readFileSync(LOG_FILE, 'utf8').split('\n').slice(-3000).join('\n');
+      fs.writeFileSync(LOG_FILE, kept);
+      logLines = kept.split('\n').length;
+    }
   }
 }
-
-// 防止多实例
-const gotTheLock = app.requestSingleInstanceLock();
-if (!gotTheLock) {
-  app.quit();
-} else {
-  app.on('second-instance', () => {
-    openStatsWindow();
+function log(...args) {
+  const msg = `[${new Date().toISOString()}] ${args.join(' ')}`;
+  console.log(msg);
+  try {
+    fs.appendFileSync(LOG_FILE, msg + '\n');
+    logLines++;
+  } catch (_) {}
+}
+function getLogs() {
+  try { return fs.readFileSync(LOG_FILE, 'utf8'); } catch (_) { return '(no log)'; }
+}
+function openLogInNotepad() {
+  // Windows：用 notepad 打开日志
+  const { exec } = require('child_process');
+  exec(`notepad "${LOG_FILE.replace(/\//g, '\\')}"`, (err) => {
+    if (err) dialog.showErrorBox('无法打开日志', err.message);
   });
 }
 
-// 全局异常处理——写日志 + 记录错误
-process.on('uncaughtException', (error) => {
-  const msg = `[FATAL] Uncaught Exception: ${error.message}\n${error.stack}`;
-  log(msg);
-  startupErrors.push(msg);
+// ─┘ 窗口引用 ═┘
+let settingsWindow = null;
+let statsWindow   = null;
+let setupWindow   = null;
+
+// ─┘ 启动步骤错误收集 ═┘
+let startupErrors = [];
+
+// ════════════════════════════════════════════╗
+//  app 生命周期
+// ════════════════════════════════════════════╝
+
+// 单例锁
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => { try { openStatsWindow(); } catch (_) {} });
+}
+
+process.on('uncaughtException', (err) => {
+  log('[FATAL]', err.message, '\n', err.stack);
+  startupErrors.push(`[FATAL] ${err.message}\n${err.stack}`);
 });
 
 /**
- * 显示错误兜底窗口
- * 如果启动过程中出现严重错误，显示一个简单的窗口告知用户
+ * 安全执行一个启动步骤；失败只记录，不阻断其他步骤
  */
-function showErrorWindow(errors) {
-  const win = new BrowserWindow({
-    width: 500,
-    height: 400,
-    title: 'WordPop - 启动错误',
-    alwaysOnTop: true,
-    webPreferences: {
-      contextIsolation: false,
-      nodeIntegration: true
-    }
-  });
-
-  const errorHtml = `
-    <html>
-    <body style="font-family: 'Segoe UI', sans-serif; padding: 20px; background: #f5f5f5;">
-      <h2 style="color: #d32f2f;">WordPop 启动遇到问题</h2>
-      <p>应用启动过程中出现了以下错误：</p>
-      <pre style="background: #fff; padding: 12px; border-radius: 8px; font-size: 12px;
-                  overflow: auto; max-height: 200px; border: 1px solid #e0e0e0;">
-${errors.join('\n\n')}
-      </pre>
-      <p style="color: #666; font-size: 12px;">
-        日志文件位置: ${logPath || '未知'}
-      </p>
-      <p style="color: #666; font-size: 12px;">
-        你可以尝试：删除 %AppData%\\wordpop 文件夹后重新启动
-      </p>
-      <button onclick="require('electron').app.quit()" style="margin-top: 12px;
-        padding: 8px 24px; background: #d32f2f; color: white; border: none;
-        border-radius: 4px; cursor: pointer; font-size: 14px;">
-        退出应用
-      </button>
-    </body>
-    </html>
-  `;
-
-  win.loadURL('data:text/html;charset=utf-8,' + encodeURIComponent(errorHtml));
-}
-
-/**
- * 安全执行某个步骤，失败时记录错误但不阻断
- */
-function safeStep(stepName, fn) {
+function safeStep(name, fn) {
   try {
-    const result = fn();
-    log(`[App] ${stepName} completed successfully`);
-    return result;
+    const r = fn();
+    log(`[App] ✅ ${name} ok`);
+    return r;
   } catch (err) {
-    const msg = `${stepName} failed: ${err.message}\n${err.stack}`;
-    log(`[App] ERROR: ${msg}`);
+    const msg = `[App] ❌ ${name} FAILED: ${err.message}`;
+    log(msg, '\n', err.stack);
     startupErrors.push(msg);
     return null;
   }
 }
 
 /**
- * 启动调度器和弹窗（等弹窗就绪后）
+ * 显示「启动错误」窗口（仅当托盘创建失败时使用）
  */
-function startScheduler() {
-  log('[App] Starting scheduler...');
-
-  popupManager.waitForReady(10000).then(() => {
-    log('[App] Popup ready, starting scheduler');
-    try {
-      scheduler.start();
-      scheduler.onStatsUpdate(() => {
-        if (statsWindow && !statsWindow.isDestroyed()) {
-          statsWindow.webContents.send('stats:updated');
-        }
-      });
-    } catch (err) {
-      log(`[App] Scheduler start error: ${err.message}`);
-    }
-  }).catch(() => {
-    // 超时也要启动
-    log('[App] Popup wait timed out, starting scheduler anyway');
-    try {
-      scheduler.start();
-      scheduler.onStatsUpdate(() => {
-        if (statsWindow && !statsWindow.isDestroyed()) {
-          statsWindow.webContents.send('stats:updated');
-        }
-      });
-    } catch (err) {
-      log(`[App] Scheduler start error: ${err.message}`);
-    }
-  });
+function showErrorWindow() {
+  try {
+    const win = new BrowserWindow({
+      width: 520, height: 400, title: 'WordPop — 启动错误',
+      autoHideMenuBar: true,
+      webPreferences: { contextIsolation: false, nodeIntegration: true }
+    });
+    const html = `<!DOCTYPE html>
+<html><body style="font-family:sans-serif;padding:20px;background:#f5f5f5">
+  <h2 style="color:#d32f2f">WordPop 启动遇到问题</h2>
+  <p>以下错误阻止了应用正常启动：</p>
+  <pre style="background:#fff;padding:12px;border-radius:6px;font-size:12px;max-height:180px;overflow:auto">${startupErrors.join('\n\n')}</pre>
+  <p style="color:#666;font-size:12px">日志位置：${LOG_FILE.replace(/\\/g, '\\\\')}</p>
+  <button onclick="require('electron').shell.openPath('${LOG_FILE.replace(/\\/g, '\\\\')}')" style="margin:8px 8px 0 0;padding:8px 18px;background:#1976d2;color:#fff;border:none;border-radius:4px;cursor:pointer">📂 打开日志文件夹</button>
+  <button onclick="require('electron').app.quit()" style="margin:8px 0 0 0;padding:8px 18px;background:#d32f2f;color:#fff;border:none;border-radius:4px;cursor:pointer">❌ 退出</button>
+</body></html>`;
+    win.loadURL('data:text/html;charset=utf8,' + encodeURIComponent(html));
+  } catch (_) {}
 }
 
-/**
- * 应用入口
- */
 app.whenReady().then(async () => {
-  // 初始化日志路径（app.whenReady 后才能用 app.getPath）
-  logPath = path.join(app.getPath('userData'), 'wordpop.log');
-  log('[App] WordPop starting...');
+  initLog();
+  log('[App] ═══╗ WordPop starting');
+  log('[App] Electron', process.versions.electron, '| Node', process.version);
+  log('[App] platform', process.platform, '| arch', process.arch);
+  log('[App] userData:', app.getPath('userData'));
 
-  // === 每个步骤独立错误处理，不互相阻断 ===
+  // ── 1. 数据库 ═─
+  safeStep('initDatabase', initDatabase);
 
-  // 1. 初始化数据库
-  safeStep('Database init', () => initDatabase());
-
-  // 2. 加载配置
-  const config = safeStep('Config load', () => loadConfig()) || {
-    setupComplete: false,
-    selectedWordlists: ['cet4'],
-    dailyNewWords: 20
+  // ── 2. 配置 ═─
+  const config = safeStep('loadConfig', loadConfig) || {
+    setupComplete: false, selectedWordlists: ['cet4'], dailyNewWords: 20
   };
-  log(`[App] Config: setupComplete=${config.setupComplete}, wordlists=${JSON.stringify(config.selectedWordlists)}`);
+  log(`[App] config:`, JSON.stringify(config));
 
-  // 3. 注册 IPC 处理器
-  safeStep('IPC handlers', () => registerIpcHandlers());
+  // ── 3. IPC ═─
+  safeStep('registerIpc', registerIpcHandlers);
 
-  // 4. 创建系统托盘（最关键！即使其他都失败，托盘必须能用）
-  const trayResult = safeStep('Tray creation', () => {
-    return createTray({
-      onPauseToggle: (paused) => {
-        try {
-          if (paused) { scheduler.pause(); }
-          else { scheduler.resume(); }
-        } catch (err) {
-          log(`[App] Pause toggle error: ${err.message}`);
-        }
-      },
-      onOpenSettings: openSettingsWindow,
-      onOpenStats: openStatsWindow,
-      onQuit: () => {
-        scheduler.stop();
-        app.quit();
-      }
-    });
-  });
+  // ── 4. 托盘 ═─
+  const trayOk = safeStep('createTray', () => createTray({
+    onPauseToggle: (p) => { try { p ? scheduler.pause() : scheduler.resume(); } catch (_) {} },
+    onOpenSettings:  () => { try { openSettingsWindow(); } catch (_) {} },
+    onOpenStats:     () => { try { openStatsWindow();   } catch (_) {} },
+    onQuit:          () => { try { scheduler.stop(); app.quit(); } catch (_) { app.quit(); } }
+  }));
 
-  // 如果托盘创建失败，这是一个严重问题，因为用户无法退出应用
-  if (!trayResult) {
-    startupErrors.push('系统托盘创建失败 - 应用可能无法正常退出');
+  if (!trayOk) {
+    log('[App] ❌ Tray creation FAILED — showing error window');
+    startupErrors.push('系统托盘创建失败，WordPop 无法在后台运行。');
+    showErrorWindow();
+    return;   // ← 不继续，否则用户无法退出
   }
 
-  // 5. 移除应用菜单
-  safeStep('Menu removal', () => Menu.setApplicationMenu(null));
+  // ── 5. 菜单 ═─
+  safeStep('setMenu', () => Menu.setApplicationMenu(null));
 
-  // 6. 根据是否首次启动，走不同流程
+  // ── 6. 首次启动 / 正常启动 ═─
   if (!config.setupComplete) {
-    log('[App] First launch, opening setup window');
-    openSetupWindow();
+    log('[App] first launch → openSetupWindow');
+    safeStep('openSetup', openSetupWindow);
   } else {
-    // 确保词库已导入
-    safeStep('Wordlist import', async () => await ensureWordlistsImported(config));
+    // 导入词库（失败不影响后续启动）
+    safeStep('ensureWordlists', async () => { await ensureWordlistsImported(config); });
 
     // 创建弹窗
-    safeStep('Popup creation', () => popupManager.createPopupWindow());
+    const popOk = safeStep('createPopup', () => popupManager.createPopupWindow());
 
-    // 等弹窗就绪后启动调度器
-    startScheduler();
+    // 启动调度器（无论弹窗是否成功都要启动，否则托盘暂停/恢复无响应）
+    safeStep('startScheduler', () => {
+      if (popOk !== null) {
+        popupManager.waitForReady(10000).then(() => {
+          log('[App] popup ready → start scheduler');
+          try { scheduler.start(); } catch (e) { log('[App] scheduler.start error:', e.message); }
+        }).catch(() => {
+          log('[App] popup waitForReady timed out → start scheduler anyway');
+          try { scheduler.start(); } catch (e) { log('[App] scheduler.start error:', e.message); }
+        });
+      } else {
+        log('[App] popup creation failed → start scheduler without popup');
+        try { scheduler.start(); } catch (e) { log('[App] scheduler.start error:', e.message); }
+      }
+    });
   }
 
-  // === 如果有严重错误，显示错误窗口 ===
-  if (startupErrors.length > 0 && !trayResult) {
-    // 托盘都没了，必须显示错误窗口让用户知道发生了什么
-    showErrorWindow(startupErrors);
-  }
-
-  log(`[App] WordPop ready (errors: ${startupErrors.length})`);
+  log('[App] ═══╗ WordPop ready (errors:', startupErrors.length, ')');
 });
 
-/**
- * 确保所选词库已导入数据库
- */
+// ════════════════════════════════════════════╗
+//  词库导入
+// ══════════════════════════════════════════════╝
+
 async function ensureWordlistsImported(config) {
-  const wordlists = config.selectedWordlists || ['cet4'];
-  log(`[App] Ensuring wordlists imported: ${JSON.stringify(wordlists)}`);
-
-  try {
-    const index = getWordlistIndex();
-    log(`[App] Available wordlists: ${JSON.stringify(index.map(e => e.id))}`);
-
-    const { getDb } = require('./db');
-    const db = getDb();
-
-    for (const wlId of wordlists) {
-      const entry = index.find(e => e.id === wlId);
-      if (!entry) {
-        log(`[App] WARNING: Wordlist ${wlId} not found in index`);
-        continue;
+  const db     = require('./db').getDb();
+  const lists = config.selectedWordlists || ['cet4'];
+  for (const id of lists) {
+    try {
+      const cnt = db.prepare('SELECT COUNT(*) c FROM words WHERE wordlist=?').get(id).c;
+      log(`[App] wordlist ${id}: ${cnt} words in DB`);
+      if (cnt === 0) {
+        log(`[App] importing ${id}...`);
+        const r = importWordlist(id);
+        log(`[App] imported ${r.imported} words`);
       }
-
-      const count = db.prepare('SELECT COUNT(*) as c FROM words WHERE wordlist = ?').get(wlId);
-      const expectedCount = entry.count || 0;
-      log(`[App] Wordlist ${wlId}: ${count.c} words in DB, expected ${expectedCount}`);
-
-      if (!count || count.c === 0 || count.c < expectedCount) {
-        try {
-          if (count.c > 0 && count.c < expectedCount) {
-            db.prepare('DELETE FROM words WHERE wordlist = ?').run(wlId);
-            db.prepare('DELETE FROM progress WHERE word_id NOT IN (SELECT id FROM words)').run();
-          }
-          const result = importWordlist(wlId);
-          log(`[App] Imported ${result.imported} words from ${wlId}`);
-        } catch (err) {
-          log(`[App] FAILED to import ${wlId}: ${err.message}`);
-        }
-      }
+    } catch (err) {
+      log(`[App] ❌ import ${id} failed:`, err.message);
     }
-
-    const totalCount = db.prepare('SELECT COUNT(*) as c FROM words').get();
-    log(`[App] Total words in DB: ${totalCount.c}`);
-  } catch (err) {
-    log(`[App] Wordlist import process error: ${err.message}`);
   }
 }
 
-/**
- * 打开设置窗口
- */
+// ════════════════════════════════════════════╗
+//  窗口工厂
+// ════════════════════════════════════════════╝
+
+/** 用 asar 兼容路径加载 HTML */
+function loadView(window, ...segments) {
+  const fp = app.isPackaged
+    ? path.join(process.resourcesPath, 'app.asar', ...segments)
+    : path.join(__dirname, '..', ...segments);
+  log(`[Window] loadFile: ${fp}`);
+  window.loadFile(fp);
+}
+
 function openSettingsWindow() {
+  if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.focus(); return; }
   try {
-    if (settingsWindow && !settingsWindow.isDestroyed()) {
-      settingsWindow.focus();
-      return;
-    }
-
     settingsWindow = new BrowserWindow({
-      width: 520,
-      height: 640,
-      resizable: false,
-      title: 'WordPop - 设置',
+      width: 520, height: 640, resizable: false, title: 'WordPop — 设置',
       autoHideMenuBar: true,
       webPreferences: {
-        preload: path.join(__dirname, '..', 'preload', 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
+        preload: app.isPackaged
+          ? path.join(process.resourcesPath, 'app.asar', 'src', 'preload', 'preload.js')
+          : path.join(__dirname, '..', 'src', 'preload', 'preload.js'),
+        contextIsolation: true, nodeIntegration: false, sandbox: false
       }
     });
-
-    settingsWindow.loadFile(path.join(__dirname, '..', 'renderer', 'settings', 'index.html'));
-
-    settingsWindow.on('closed', () => {
-      settingsWindow = null;
-    });
-  } catch (err) {
-    log(`[App] Settings window error: ${err.message}`);
-  }
+    loadView(settingsWindow, 'src', 'renderer', 'settings', 'index.html');
+    settingsWindow.on('closed', () => { settingsWindow = null; });
+  } catch (err) { log('[App] openSettings ERROR:', err.message); }
 }
 
-/**
- * 打开统计窗口
- */
 function openStatsWindow() {
+  if (statsWindow && !statsWindow.isDestroyed()) { statsWindow.focus(); return; }
   try {
-    if (statsWindow && !statsWindow.isDestroyed()) {
-      statsWindow.focus();
-      return;
-    }
-
     statsWindow = new BrowserWindow({
-      width: 520,
-      height: 600,
-      resizable: true,
-      title: 'WordPop - 学习统计',
+      width: 520, height: 600, resizable: true, title: 'WordPop — 学习统计',
       autoHideMenuBar: true,
       webPreferences: {
-        preload: path.join(__dirname, '..', 'preload', 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
+        preload: app.isPackaged
+          ? path.join(process.resourcesPath, 'app.asar', 'src', 'preload', 'preload.js')
+          : path.join(__dirname, '..', 'src', 'preload', 'preload.js'),
+        contextIsolation: true, nodeIntegration: false, sandbox: false
       }
     });
-
-    statsWindow.loadFile(path.join(__dirname, '..', 'renderer', 'stats', 'index.html'));
-
-    statsWindow.on('closed', () => {
-      statsWindow = null;
-    });
-  } catch (err) {
-    log(`[App] Stats window error: ${err.message}`);
-  }
+    loadView(statsWindow, 'src', 'renderer', 'stats', 'index.html');
+    statsWindow.on('closed', () => { statsWindow = null; });
+  } catch (err) { log('[App] openStats ERROR:', err.message); }
 }
 
-/**
- * 打开首次设置向导
- */
 function openSetupWindow() {
   try {
     setupWindow = new BrowserWindow({
-      width: 480,
-      height: 560,
-      resizable: false,
-      title: 'WordPop - 初始设置',
+      width: 480, height: 560, resizable: false, title: 'WordPop — 初始设置',
       autoHideMenuBar: true,
       webPreferences: {
-        preload: path.join(__dirname, '..', 'preload', 'preload.js'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false
+        preload: app.isPackaged
+          ? path.join(process.resourcesPath, 'app.asar', 'src', 'preload', 'preload.js')
+          : path.join(__dirname, '..', 'src', 'preload', 'preload.js'),
+        contextIsolation: true, nodeIntegration: false, sandbox: false
       }
     });
-
-    setupWindow.loadFile(path.join(__dirname, '..', 'renderer', 'settings', 'index.html'));
-
+    loadView(setupWindow, 'src', 'renderer', 'settings', 'index.html');
     setupWindow.on('closed', async () => {
       setupWindow = null;
-      log('[App] Setup window closed');
-
       try {
-        const config = loadConfig();
-        if (!config.setupComplete) {
-          saveConfig({ setupComplete: true });
-        }
-
-        const latestConfig = loadConfig();
-        await ensureWordlistsImported(latestConfig);
-
+        const c = loadConfig();
+        if (!c.setupComplete) saveConfig({ setupComplete: true });
+        await ensureWordlistsImported(loadConfig());
         popupManager.createPopupWindow();
-        startScheduler();
-      } catch (err) {
-        log(`[App] Setup close handler error: ${err.message}`);
-      }
+        popupManager.waitForReady(10000).then(() => {
+          try { scheduler.start(); } catch (_) {}
+        }).catch(() => {
+          try { scheduler.start(); } catch (_) {}
+        });
+      } catch (err) { log('[App] setup closed handler error:', err.message); }
     });
-  } catch (err) {
-    log(`[App] Setup window error: ${err.message}`);
-    startupErrors.push(`设置窗口创建失败: ${err.message}`);
-  }
+  } catch (err) { log('[App] openSetup ERROR:', err.message); }
 }
 
-// === 应用生命周期 ===
+// ════════════════════════════════════════════╗
+//  生命周期
+// ════════════════════════════════════════════╝
 
-app.on('window-all-closed', () => {
-  // 不退出，托盘常驻
-});
-
-app.on('activate', () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    openStatsWindow();
-  }
-});
-
-app.on('before-quit', () => {
-  try {
-    scheduler.stop();
-    destroyTray();
-    const { closeDatabase } = require('./db');
-    closeDatabase();
-  } catch (err) {
-    // 退出时不在乎错误
-  }
+app.on('window-all-closed', () => {});   // 托盘常驻
+app.on('activate',            () => { try { openStatsWindow(); } catch (_) {} });
+app.on('before-quit',          () => {
+  try { scheduler.stop(); destroyTray(); require('./db').closeDatabase(); } catch (_) {}
 });

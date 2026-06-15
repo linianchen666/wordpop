@@ -163,8 +163,6 @@ function getWordlistIndex() {
 
 /**
  * 导入用户自定义词表（CSV/TXT）
- * CSV 格式：word,phonetic,translation,example
- * TXT 格式：每行一个单词，用 tab 分隔
  */
 function importCustomWordlist(filePath, wordlistName) {
   const content = fs.readFileSync(filePath, 'utf-8');
@@ -179,7 +177,6 @@ function importCustomWordlist(filePath, wordlistName) {
       const parts = line.split(',').map(s => s.trim().replace(/^"|"$/g, ''));
       [word, phonetic = '', translation = '', example = ''] = parts;
     } else {
-      // TXT: tab 分隔
       const parts = line.split('\t').map(s => s.trim());
       [word, phonetic = '', translation = '', example = ''] = parts;
     }

@@ -9,7 +9,8 @@ const autoStart = document.getElementById('autoStart');
 const wordlistOptions = document.getElementById('wordlist-options');
 const positionSelector = document.getElementById('position-selector');
 const btnSave = document.getElementById('btn-save');
-const btnCancel = document.getElementById('btn-cancel');
+const btnCancel    = document.getElementById('btn-cancel');
+const btnLogs      = document.getElementById('btn-logs');
 const btnImportCustom = document.getElementById('btn-import-custom');
 
 let currentConfig = {};
@@ -189,3 +190,17 @@ btnImportCustom.addEventListener('click', async () => {
 
 // === 启动 ===
 init();
+
+// === 查看日志（新增）===
+if (btnLogs) {
+  btnLogs.addEventListener('click', async () => {
+    try {
+      const result = await window.wordpopAPI.getLogs();
+      if (result && result.logs) {
+        alert(result.logs.slice(-3000));
+      }
+    } catch (err) {
+      alert('读取日志失败：' + err.message);
+    }
+  });
+}

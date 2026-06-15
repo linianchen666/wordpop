@@ -168,7 +168,24 @@
   -webkit-app-region: no-drag;
 }
 
-/* === 滚动 === */
-.settings-content::-webkit-scrollbar {
-  width: 4px;
+/* === 按钮尺寸 === */
+.btn-sm {
+  padding: 6px 12px;
+  font-size: 12px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg-secondary);
+  color: var(--color-text);
+  transition: all var(--transition-fast);
+}
+.btn-sm:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+
+/* === 调试区域 === */
+.form-group:has(button#btn-logs) {
+  padding-top: 12px;
+  border-top: 1px solid var(--color-border);
 }

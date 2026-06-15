@@ -1,4 +1,4 @@
-const { BrowserWindow, screen } = require('electron');
+const { BrowserWindow, screen, app } = require('electron');
 const path = require('path');
 
 let popupWindow = null;
@@ -13,6 +13,21 @@ let popupConfig = {
 };
 
 /**
+ * 获取 asar 内资源的正确路径
+ * 在打包环境中，__dirname = app.asar/src/main
+ * 要用 process.resourcesPath 拼出正确路径
+ */
+function getAsarPath(...segments) {
+  if (app.isPackaged) {
+    // process.resourcesPath = C:\Program Files\WordPop\resources
+    // app.asar 在 resources 内
+    return path.join(process.resourcesPath, 'app.asar', ...segments);
+  }
+  // 开发环境：__dirname = project/src/main，需要回到项目根目录
+  return path.join(__dirname, '..', '..', ...segments);
+}
+
+/**
  * 创建弹窗窗口
  */
 function createPopupWindow() {
@@ -20,9 +35,10 @@ function createPopupWindow() {
     return popupWindow;
   }
 
+  popupReady = false;
+  pendingWordData = null;
+
   try {
-    popupReady = false;
-    pendingWordData = null;
     const bounds = getPopupBounds(popupConfig.position);
 
     popupWindow = new BrowserWindow({
@@ -40,42 +56,37 @@ function createPopupWindow() {
       hasShadow: true,
       backgroundColor: '#FFFFFF',
       webPreferences: {
-        preload: path.join(__dirname, '..', 'preload', 'preload.js'),
+        preload: getAsarPath('src', 'preload', 'preload.js'),
         contextIsolation: true,
         nodeIntegration: false,
         sandbox: false
       }
     });
 
-    popupWindow.loadFile(path.join(__dirname, '..', 'renderer', 'popup', 'index.html'));
+    // 加载 HTML —— 用正确的 asar 路径
+    const htmlPath = getAsarPath('src', 'renderer', 'popup', 'index.html');
+    console.log('[Popup] Loading:', htmlPath);
+    popupWindow.loadFile(htmlPath);
 
     popupWindow.once('ready-to-show', () => {
       popupReady = true;
-      console.log('[Popup] ready-to-show fired');
-
-      // 延迟 150ms 处理 pending data，避免 Windows 上回调内 show() 失效
+      console.log('[Popup] ready-to-show');
       if (pendingWordData) {
-        const data = pendingWordData;
+        const d = pendingWordData;
         pendingWordData = null;
-        setTimeout(() => {
-          try {
-            _displayWord(data);
-          } catch (e) {
-            console.error('[Popup] Error displaying pending word:', e.message);
-          }
-        }, 150);
+        setTimeout(() => { try { _displayWord(d); } catch (e) {} }, 200);
       }
     });
 
-    popupWindow.on('closed', () => {
+    popupWindow.once('closed', () => {
       popupWindow = null;
       popupReady = false;
-      console.log('[Popup] Window closed');
+      console.log('[Popup] closed');
     });
 
     return popupWindow;
   } catch (err) {
-    console.error('[Popup] FAILED to create window:', err.message);
+    console.error('[Popup] create ERROR:', err.message, err.stack);
     popupWindow = null;
     popupReady = false;
     return null;
@@ -83,19 +94,16 @@ function createPopupWindow() {
 }
 
 /**
- * 等待弹窗就绪
+ * 等待弹窗就绪（超时 10s）
  */
 function waitForReady(timeout = 10000) {
   return new Promise((resolve) => {
-    if (popupReady) {
-      resolve();
-      return;
-    }
-
-    const start = Date.now();
-    const check = setInterval(() => {
-      if (popupReady || (Date.now() - start > timeout)) {
-        clearInterval(check);
+    if (popupReady) { resolve(); return; }
+    const t0 = Date.now();
+    const id = setInterval(() => {
+      if (popupReady || Date.now() - t0 > timeout) {
+        clearInterval(id);
+        console.log('[Popup] waitForReady done, ready=', popupReady);
         resolve();
       }
     }, 50);
@@ -106,13 +114,13 @@ function waitForReady(timeout = 10000) {
  * 显示弹窗并传入单词数据
  */
 function show(wordData) {
-  console.log('[Popup] show() called, ready=', popupReady, 'window=', !!popupWindow);
-
+  console.log('[Popup] show(), ready=', popupReady, 'win=', !!popupWindow);
   try {
     if (popupWindow && !popupWindow.isDestroyed() && popupReady) {
       _displayWord(wordData);
     } else if (popupWindow && !popupWindow.isDestroyed() && !popupReady) {
       pendingWordData = wordData;
+      console.log('[Popup] win exists but not ready, pending');
     } else {
       createPopupWindow();
       if (popupReady) {
@@ -122,20 +130,12 @@ function show(wordData) {
       }
     }
   } catch (err) {
-    console.error('[Popup] show() error:', err.message);
-    // 重建窗口
-    try {
-      if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close();
-    } catch (_) {}
-    popupWindow = null;
-    popupReady = false;
-    createPopupWindow();
-    pendingWordData = wordData;
+    console.error('[Popup] show() ERROR:', err.message);
   }
 }
 
 /**
- * 发送单词数据到渲染进程并确保窗口可见
+ * 向渲染进程发送数据并显示窗口
  */
 function _displayWord(wordData) {
   if (!popupWindow || popupWindow.isDestroyed()) {
@@ -145,11 +145,9 @@ function _displayWord(wordData) {
   }
 
   try {
-    // 更新位置
     const bounds = getPopupBounds(popupConfig.position);
     popupWindow.setBounds({ ...bounds, width: 360, height: 240 });
 
-    // 发送数据到渲染进程
     popupWindow.webContents.send('popup:word', {
       ...wordData,
       config: {
@@ -159,127 +157,65 @@ function _displayWord(wordData) {
       }
     });
 
-    // === Windows 兼容的窗口显示逻辑 ===
-    popupWindow.show();
+    // Windows 显示窗口的关键顺序：show → focus → setAlwaysOnTop
+    if (!popupWindow.isVisible()) popupWindow.show();
     popupWindow.focus();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
 
-    console.log('[Popup] Displaying word:', wordData.word,
-      '| visible:', popupWindow.isVisible(),
-      '| focused:', popupWindow.isFocused());
+    console.log('[Popup] displayWord:', wordData.word, '| visible:', popupWindow.isVisible());
   } catch (err) {
-    console.error('[Popup] _displayWord error:', err.message);
+    console.error('[Popup] _displayWord ERROR:', err.message, err.stack);
   }
 }
 
-/**
- * 隐藏弹窗
- */
 function hide() {
   try {
-    if (popupWindow && !popupWindow.isDestroyed()) {
-      popupWindow.hide();
-      console.log('[Popup] Window hidden');
-    }
-  } catch (err) {
-    console.error('[Popup] hide error:', err.message);
-  }
+    if (popupWindow && !popupWindow.isDestroyed()) popupWindow.hide();
+  } catch (e) {}
 }
 
-/**
- * 恢复弹窗显示
- */
 function restore() {
   try {
-    if (!popupWindow || popupWindow.isDestroyed()) {
-      createPopupWindow();
-      return;
-    }
-
-    popupWindow.show();
+    if (!popupWindow || popupWindow.isDestroyed()) { createPopupWindow(); return; }
+    if (!popupWindow.isVisible()) popupWindow.show();
     popupWindow.focus();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
-    console.log('[Popup] Window restored, visible:', popupWindow.isVisible());
-  } catch (err) {
-    console.error('[Popup] restore error:', err.message);
-  }
+  } catch (e) { console.error('[Popup] restore ERROR:', e.message); }
 }
 
-/**
- * 强制关闭弹窗
- */
 function closeImmediately() {
-  try {
-    if (popupWindow && !popupWindow.isDestroyed()) {
-      popupWindow.close();
-    }
-  } catch (e) {
-    // 不在乎
-  }
+  try { if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close(); } catch (e) {}
   popupWindow = null;
   popupReady = false;
 }
 
-/**
- * 计算弹窗坐标
- */
 function getPopupBounds(position) {
   try {
-    const display = screen.getPrimaryDisplay();
-    const { width, height } = display.workAreaSize;
-    const popupW = 360;
-    const popupH = 240;
-    const margin = 20;
-
+    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const W = 360, H = 240, M = 20;
     switch (position) {
-      case 'top-left':
-        return { x: margin, y: margin };
-      case 'top-right':
-        return { x: width - popupW - margin, y: margin };
-      case 'bottom-left':
-        return { x: margin, y: height - popupH - margin };
-      case 'bottom-right':
-      default:
-        return { x: width - popupW - margin, y: height - popupH - margin };
+      case 'top-left':     return { x: M, y: M };
+      case 'top-right':    return { x: width - W - M, y: M };
+      case 'bottom-left':  return { x: M, y: height - H - M };
+      default:               return { x: width - W - M, y: height - H - M };
     }
-  } catch (e) {
-    return { x: 100, y: 100 };
-  }
+  } catch (e) { return { x: 100, y: 100 }; }
 }
 
-/**
- * 更新弹窗配置
- */
-function updateConfig(config) {
-  if (config.popupPosition !== undefined) popupConfig.position = config.popupPosition;
-  if (config.fontSize !== undefined) popupConfig.fontSize = config.fontSize;
-  if (config.showExample !== undefined) popupConfig.showExample = config.showExample;
-  if (config.theme !== undefined) popupConfig.theme = config.theme;
+function updateConfig(cfg) {
+  if (cfg.popupPosition !== undefined) popupConfig.position = cfg.popupPosition;
+  if (cfg.fontSize       !== undefined) popupConfig.fontSize = cfg.fontSize;
+  if (cfg.showExample   !== undefined) popupConfig.showExample = cfg.showExample;
+  if (cfg.theme          !== undefined) popupConfig.theme = cfg.theme;
 }
 
 function isVisible() {
   return popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible();
 }
 
-function isReady() {
-  return popupReady;
-}
+function destroy() { closeImmediately(); }
 
-function destroy() {
-  closeImmediately();
-}
-
-module.exports = {
-  createPopupWindow,
-  show,
-  hide,
-  restore,
-  closeImmediately,
-  updateConfig,
-  isVisible,
-  isReady,
-  waitForReady,
-  destroy
-};
+module.exports = { createPopupWindow, show, hide, restore, closeImmediately,
+                        updateConfig, isVisible, waitForReady, destroy };
