@@ -154,9 +154,11 @@ class Scheduler {
         '| stage:', word.stage,
         '| queue remaining:', this.queue.length);
     } else {
-      // 没有单词了，10 秒后重试
-      console.log('[Scheduler] No words available, retrying in 10s');
-      this.nextPopupTimer = setTimeout(() => this._popNext(), 10000);
+      // 没有单词了——通知弹窗显示完成状态，并隐藏弹窗
+      console.log('[Scheduler] All words done for now.');
+      popupManager.hide();
+      // 30 秒后再次检查（可能有新词到期）
+      this.nextPopupTimer = setTimeout(() => this._popNext(), 30000);
     }
   }
 
@@ -311,7 +313,10 @@ class Scheduler {
    * 检查日期变化，跨日自动重置每日新词计数
    */
   _checkDateChange() {
-    const today = new Date().toISOString().slice(0, 10);
+    const now = new Date();
+    const today = now.getFullYear() + '-' +
+      String(now.getMonth() + 1).padStart(2, '0') + '-' +
+      String(now.getDate()).padStart(2, '0');
     if (this._lastDate && this._lastDate !== today) {
       console.log('[Scheduler] Date changed:', this._lastDate, '\u2192', today, ', resetting daily count');
       this.dailyNewWordsCount = 0;

@@ -41,10 +41,10 @@ window.wordpopAPI.onWordData((data) => {
     document.documentElement.setAttribute('data-theme', data.config.theme);
   }
 
-  // 进度信息
+  // 进度信息（9 阶段：0-8，共 9 格）
   if (data.progress) {
-    progressText.textContent = `阶段 ${data.progress.stage}/8`;
-    progressFill.style.width = `${(data.progress.stage / 8) * 100}%`;
+    progressText.textContent = `阶段 ${data.progress.stage + 1}/9`;
+    progressFill.style.width = `${((data.progress.stage + 1) / 9) * 100}%`;
   } else {
     progressText.textContent = '新词';
     progressFill.style.width = '0%';
