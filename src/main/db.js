@@ -367,19 +367,29 @@ function closeDatabase() {
 
 /**
  * 诊断数据库健康状态
- * @returns {{ healthy: boolean, wordCount: number, progressCount: number, statsCount: number, error?: string }}
+ * @returns {{ healthy: boolean, wordCount: number, progressCount: number, statsCount: number, todayStats: object|null, sampleProgress: Array, error?: string }}
  */
 function diagnoseDatabase() {
   try {
     if (!db) {
-      return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, error: '数据库未初始化' };
+      return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, todayStats: null, sampleProgress: [], error: '数据库未初始化' };
     }
     const wordCount = db.prepare('SELECT COUNT(*) c FROM words').get().c;
     const progressCount = db.prepare('SELECT COUNT(*) c FROM progress').get().c;
     const statsCount = db.prepare('SELECT COUNT(*) c FROM daily_stats').get().c;
-    return { healthy: true, wordCount, progressCount, statsCount };
+
+    // 诊断用：查看 daily_stats 实际存储的日期
+    const todayStats = db.prepare("SELECT * FROM daily_stats ORDER BY date DESC LIMIT 5").all();
+
+    // 诊断用：查看 SQLite 认为的今天日期
+    const sqliteToday = db.prepare("SELECT date('now','localtime') as today, datetime('now','localtime') as now").get();
+
+    // 诊断用：查看几条 progress 记录
+    const sampleProgress = db.prepare('SELECT p.*, w.word FROM progress p JOIN words w ON p.word_id = w.id LIMIT 5').all();
+
+    return { healthy: true, wordCount, progressCount, statsCount, todayStats, sampleProgress, sqliteToday };
   } catch (err) {
-    return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, error: err.message };
+    return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, todayStats: null, sampleProgress: [], error: err.message };
   }
 }
 

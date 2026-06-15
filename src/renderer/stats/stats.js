@@ -148,7 +148,27 @@ btnDiagnose.addEventListener('click', () => {
   runDiagnose().then((diag) => {
     btnDiagnose.textContent = '🩺 诊断';
     if (diag && diag.healthy) {
-      alert('数据库状态正常\n\n词库单词：' + diag.wordCount + ' 个\n学习记录：' + diag.progressCount + ' 条\n统计记录：' + diag.statsCount + ' 条');
+      let info = '数据库状态正常\n\n';
+      info += '词库单词：' + diag.wordCount + ' 个\n';
+      info += '学习记录：' + diag.progressCount + ' 条\n';
+      info += '统计记录：' + diag.statsCount + ' 条\n\n';
+      info += 'SQLite 当前日期：' + (diag.sqliteToday?.today || '未知') + '\n';
+      info += 'SQLite 当前时间：' + (diag.sqliteToday?.now || '未知') + '\n\n';
+      if (diag.todayStats && diag.todayStats.length > 0) {
+        info += 'daily_stats 最近记录：\n';
+        diag.todayStats.forEach(s => {
+          info += '  ' + s.date + ' → 复习' + s.words_reviewed + ' 新学' + s.words_learned + '\n';
+        });
+      } else {
+        info += 'daily_stats 无记录\n';
+      }
+      if (diag.sampleProgress && diag.sampleProgress.length > 0) {
+        info += '\nprogress 样本：\n';
+        diag.sampleProgress.forEach(p => {
+          info += '  ' + (p.word || '?') + ' stage=' + p.stage + ' correct=' + p.correct_count + '\n';
+        });
+      }
+      alert(info);
     }
   });
 });
