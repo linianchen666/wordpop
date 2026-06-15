@@ -195,12 +195,27 @@ init();
 if (btnLogs) {
   btnLogs.addEventListener('click', async () => {
     try {
-      const result = await window.wordpopAPI.getLogs();
-      if (result && result.logs) {
-        alert(result.logs.slice(-3000));
-      }
+      // 先尝试直接打开日志文件夹（更可靠）
+      await window.wordpopAPI.openLogFolder();
     } catch (err) {
-      alert('读取日志失败：' + err.message);
+      // 如果失败，读取日志内容显示
+      try {
+        const result = await window.wordpopAPI.getLogs();
+        const logs = result && result.logs ? result.logs : (result || '');
+        // 用新窗口显示，避免 alert 被屏蔽
+        const win = window.open('', '_blank', 'width=600,height=500');
+        if (win) {
+          win.document.write(`
+            <pre style="white-space:pre-wrap;padding:12px;font-size:12px;background:#f5f5f5">
+              ${logs.slice(-5000).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')}
+            </pre>
+          `);
+        } else {
+          alert(logs.slice(-3000));
+        }
+      } catch (e2) {
+        alert('读取日志失败：' + e2.message);
+      }
     }
   });
 }

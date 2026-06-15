@@ -18,11 +18,12 @@ ipcMain.handle('app:get-logs', () => {
   }
 });
 
-ipcMain.on('app:open-log-folder', () => {
+ipcMain.handle('app:open-log-folder', async () => {
   try {
-    require('electron').shell.openPath(require('path').dirname(LOG_FILE));
+    await require('electron').shell.openPath(require('path').dirname(LOG_FILE));
+    return { success: true };
   } catch (err) {
-    dialog.showErrorBox('无法打开日志文件夹', err.message);
+    return { success: false, error: err.message };
   }
 });
 
