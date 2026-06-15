@@ -59,7 +59,17 @@ process.on('uncaughtException', (err) => {
 function safeStep(name, fn) {
   try {
     const r = fn();
-    log('[App] ✅', name, 'ok');
+    // 如果返回 Promise，记录但不 await（调用方需自行处理）
+    if (r && typeof r.then === 'function') {
+      log('[App] ⏳', name, 'returned Promise (async step)');
+      r.then(() => log('[App] ✅', name, 'async ok'))
+       .catch(err => {
+         log('[App] ❌', name, 'async FAILED:', err.message);
+         startupErrors.push(`[${name}] ${err.message}`);
+       });
+    } else {
+      log('[App] ✅', name, 'ok');
+    }
     return r;
   } catch (err) {
     log('[App] ❌', name, 'FAILED:', err.message);
@@ -126,14 +136,21 @@ app.whenReady().then(async () => {
   // 5. 菜单
   safeStep('setMenu', () => Menu.setApplicationMenu(null));
 
-  // 6. 启动
+  // 6. 启动（确保词库导入完成后再启动调度器）
   if (!config.setupComplete) {
     log('[App] first launch → openSetupWindow');
     safeStep('openSetup', openSetupWindow);
   } else {
-    safeStep('ensureWordlists', async () => { await ensureWordlistsImported(config); });
+    // 关键修复：确保词库导入完成后再创建弹窗和启动调度器
+    try {
+      log('[App] importing wordlists...');
+      await ensureWordlistsImported(config);
+      log('[App] wordlists import completed');
+    } catch (err) {
+      log('[App] ❌ wordlists import error:', err.message);
+    }
 
-    const popOk = safeStep('createPopup', () => popupManager.createPopupWindow());
+    safeStep('createPopup', () => popupManager.createPopupWindow());
 
     // 等弹窗 ready 再启动调度器
     log('[App] waiting for popup ready...');
@@ -165,7 +182,9 @@ app.whenReady().then(async () => {
 
 async function ensureWordlistsImported(config) {
   const db = require('./db').getDb();
-  const lists = config.selectedWordlists || ['cet4'];
+  const lists = (config && config.selectedWordlists) || ['cet4'];
+  log('[App] ensureWordlistsImported: wordlists =', JSON.stringify(lists));
+
   for (const id of lists) {
     try {
       const cnt = db.prepare('SELECT COUNT(*) c FROM words WHERE wordlist=?').get(id).c;
@@ -173,11 +192,22 @@ async function ensureWordlistsImported(config) {
       if (cnt === 0) {
         log('[App] importing', id, '...');
         const r = importWordlist(id);
-        log('[App] imported', r.imported, 'words');
+        log('[App] imported', r.imported, 'words from', id);
       }
     } catch (err) {
       log('[App] ❌ import', id, 'failed:', err.message);
     }
+  }
+
+  // 验证导入结果
+  try {
+    const totalWords = db.prepare('SELECT COUNT(*) c FROM words').get().c;
+    log('[App] total words in DB after import:', totalWords);
+    if (totalWords === 0) {
+      log('[App] ⚠️ WARNING: no words in database after import!');
+    }
+  } catch (e) {
+    log('[App] word count check failed:', e.message);
   }
 }
 
@@ -250,18 +280,44 @@ function openSetupWindow() {
     setupWindow.on('closed', async () => {
       setupWindow = null;
       try {
+        // 1. 清除配置缓存，确保读取到设置窗口保存的最新配置
+        const { clearCache } = require('./config');
+        clearCache();
+
+        // 2. 确保配置标记为已完成
         const c = loadConfig();
         if (!c || !c.setupComplete) saveConfig({ setupComplete: true });
-        await ensureWordlistsImported(loadConfig());
+
+        // 3. 重新读取配置（设置窗口可能修改了词库选择等配置）
+        const freshConfig = loadConfig();
+        log('[App] setup closed, config after refresh:', JSON.stringify(freshConfig));
+
+        // 4. 等待词库导入完成（关键！确保词库在DB中后才启动调度器）
+        log('[App] importing wordlists after setup...');
+        await ensureWordlistsImported(freshConfig);
+        log('[App] wordlists import completed after setup');
+
+        // 5. 创建弹窗窗口
         popupManager.createPopupWindow();
+
+        // 6. 等弹窗 ready 再启动调度器
         popupManager.waitForReady(10000).then(() => {
-          try { scheduler.start(); log('[App] scheduler started after setup'); } catch (e) {
+          log('[App] popup ready after setup → starting scheduler');
+          try {
+            scheduler.start();
+            log('[App] scheduler started after setup');
+          } catch (e) {
             log('[App] scheduler start after setup FAILED:', e.message);
           }
         }).catch(() => {
+          log('[App] popup waitForReady timed out after setup → starting scheduler anyway');
           try { scheduler.start(); } catch (_) {}
         });
-      } catch (err) { log('[App] setup closed handler error:', err.message); }
+      } catch (err) {
+        log('[App] setup closed handler error:', err.message, err.stack);
+        // 即使出错也尝试启动调度器
+        try { scheduler.start(); } catch (_) {}
+      }
     });
   } catch (err) { log('[App] openSetup ERROR:', err.message); }
 }

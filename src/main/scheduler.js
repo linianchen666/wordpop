@@ -108,11 +108,22 @@ class Scheduler {
     console.log('[Scheduler] Resumed | queue size:', this.queue.length);
 
     if (this.queue.length > 0) {
+      // 有单词：显示弹窗并弹出下一个
       try { popupManager.restore(); } catch (e) {}
       this._popNext();
     } else {
-      try { popupManager.restore(); } catch (e) {}
-      this.nextPopupTimer = setTimeout(() => this._popNext(), 1000);
+      // 没有单词：不显示弹窗（避免闪烁），延迟后重试
+      console.log('[Scheduler] Resumed but queue empty, will retry in 10s');
+      this.nextPopupTimer = setTimeout(() => {
+        this.reloadQueue();
+        if (this.queue.length > 0) {
+          try { popupManager.restore(); } catch (e) {}
+          this._popNext();
+        } else {
+          // 仍然没有单词，30秒后再试
+          this.nextPopupTimer = setTimeout(() => this._popNext(), 30000);
+        }
+      }, 10000);
     }
   }
 
@@ -133,8 +144,13 @@ class Scheduler {
       console.log('[Scheduler] Pop:', word.word, '| stage:', word.stage, '| remaining:', this.queue.length);
     } else {
       // 没有单词了，隐藏弹窗，30秒后重试
-      console.log('[Scheduler] No words available, hiding popup, retry in 30s');
-      try { popupManager.hide(); } catch (e) {}
+      // 注意：只在弹窗可见时才隐藏，避免不必要的操作
+      console.log('[Scheduler] No words available, retry in 30s');
+      try {
+        if (popupManager.isVisible()) {
+          popupManager.hide();
+        }
+      } catch (e) {}
       this.nextPopupTimer = setTimeout(() => this._popNext(), 30000);
     }
   }

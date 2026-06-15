@@ -92,5 +92,10 @@ module.exports = {
   loadConfig,
   saveConfig,
   getConfig,
-  DEFAULT_CONFIG
+  DEFAULT_CONFIG,
+  /**
+   * 清除配置缓存，下次 loadConfig() 将重新从磁盘读取
+   * 在设置窗口关闭等场景中调用
+   */
+  clearCache() { cachedConfig = null; }
 };
