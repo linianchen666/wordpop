@@ -15,12 +15,11 @@ let popupConfig = {
 /**
  * 创建弹窗窗口
  *
- * Windows 兼容性要点：
- * - focusable: true（Windows 要求可聚焦才能显示）
- * - transparent: false（Windows 上 transparent 会导致渲染异常）
- * - alwaysOnTop: true（确保弹窗不会被其他窗口遮挡）
- * - show: false（延迟显示，等 ready-to-show 后再 show）
- * - 不使用 showInactive()，直接用 show()
+ * 关键设计：
+ * - show: false 创建时不显示
+ * - 等 ready-to-show 事件后标记 popupReady = true
+ * - 延迟 100ms 后再处理 pendingWordData，确保 Electron 内部状态完全就绪
+ * - Windows 上不能在 ready-to-show 回调中直接调用 show()，会被忽略
  */
 function createPopupWindow() {
   if (popupWindow && !popupWindow.isDestroyed()) {
@@ -28,6 +27,7 @@ function createPopupWindow() {
   }
 
   popupReady = false;
+  pendingWordData = null;
   const bounds = getPopupBounds(popupConfig.position);
 
   popupWindow = new BrowserWindow({
@@ -44,8 +44,6 @@ function createPopupWindow() {
     transparent: false,
     hasShadow: true,
     backgroundColor: '#FFFFFF',
-    // Windows 兼容：设置 level 为 floating 确保始终置顶
-    alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
       contextIsolation: true,
@@ -54,19 +52,22 @@ function createPopupWindow() {
     }
   });
 
-  // 不显示在任务栏
-  popupWindow.setVisibleOnAllWorkspaces(true);
-
   popupWindow.loadFile(path.join(__dirname, '..', 'renderer', 'popup', 'index.html'));
 
+  // 核心修复：不在 ready-to-show 中直接 show()
+  // 而是：标记 ready → 延迟 → 再处理待显示的单词
   popupWindow.once('ready-to-show', () => {
     popupReady = true;
-    console.log('[Popup] Window ready-to-show');
+    console.log('[Popup] ready-to-show fired');
 
+    // 延迟 150ms 让 Electron 完成内部初始化
+    // Windows 上直接在回调中 show() 会被系统忽略
     if (pendingWordData) {
       const data = pendingWordData;
       pendingWordData = null;
-      _displayWord(data);
+      setTimeout(() => {
+        _displayWord(data);
+      }, 150);
     }
   });
 
@@ -80,8 +81,28 @@ function createPopupWindow() {
 }
 
 /**
+ * 等待弹窗就绪
+ * 返回 Promise，在 popupReady=true 时 resolve
+ */
+function waitForReady(timeout = 5000) {
+  return new Promise((resolve) => {
+    if (popupReady) {
+      resolve();
+      return;
+    }
+
+    const start = Date.now();
+    const check = setInterval(() => {
+      if (popupReady || (Date.now() - start > timeout)) {
+        clearInterval(check);
+        resolve();
+      }
+    }, 50);
+  });
+}
+
+/**
  * 显示弹窗并传入单词数据
- * 核心逻辑：窗口创建后永不销毁（除非应用退出），只在需要时显示/隐藏
  */
 function show(wordData) {
   console.log('[Popup] show() called, ready=', popupReady, 'window=', !!popupWindow);
@@ -89,8 +110,11 @@ function show(wordData) {
   if (popupWindow && !popupWindow.isDestroyed() && popupReady) {
     // 窗口已就绪，直接更新内容
     _displayWord(wordData);
+  } else if (popupWindow && !popupWindow.isDestroyed() && !popupReady) {
+    // 窗口已创建但未就绪，暂存数据（等 ready-to-show 延迟后自动处理）
+    pendingWordData = wordData;
   } else {
-    // 窗口未就绪或不存在，创建并暂存数据
+    // 窗口不存在，创建并暂存数据
     createPopupWindow();
     if (popupReady) {
       _displayWord(wordData);
@@ -103,16 +127,17 @@ function show(wordData) {
 /**
  * 发送单词数据到渲染进程并确保窗口可见
  *
- * Windows 关键：show() 之后必须 moveTop()，否则窗口可能被遮挡
+ * Windows 关键修复：
+ * - show() 必须在非回调上下文中调用
+ * - show() 后紧跟 focus() 确保 Windows 将窗口提升到前台
+ * - setAlwaysOnTop + moveTop 双重保障
  */
 function _displayWord(wordData) {
   if (!popupWindow || popupWindow.isDestroyed()) {
     // 窗口丢了，重建
     createPopupWindow();
-    if (!popupReady) {
-      pendingWordData = wordData;
-      return;
-    }
+    pendingWordData = wordData;
+    return;
   }
 
   // 更新位置
@@ -130,45 +155,30 @@ function _displayWord(wordData) {
   });
 
   // === Windows 兼容的窗口显示逻辑 ===
-  // 关键：必须按 show -> setAlwaysOnTop -> moveTop 顺序调用
   try {
-    if (!popupWindow.isVisible()) {
-      popupWindow.show();
-    }
+    // 先 show，让窗口从隐藏状态变为可见
+    popupWindow.show();
 
-    // 强制重新置顶（Windows 多显示器/Alt+Tab 后可能丢失置顶状态）
+    // show() 之后立即 focus()，这是 Windows 上的关键步骤
+    // Windows 要求窗口获得焦点才能正确显示在前台
+    popupWindow.focus();
+
+    // 重新确认置顶状态
     popupWindow.setAlwaysOnTop(true, 'floating');
 
-    // moveTop 将窗口提升到所有同级窗口之上
+    // moveTop 将窗口提升到 Z-order 顶部
     popupWindow.moveTop();
-
-    // 聚焦但不抢焦点（仅确保窗口在前台层级）
-    if (!popupWindow.isFocused()) {
-      // Windows 上 showInactive 不可靠，但 show + moveTop 组合更稳
-      // 不调用 focus() 避免抢夺用户正在输入的焦点
-    }
   } catch (e) {
     console.error('[Popup] Error showing window:', e.message);
-    // 终极回退：重建窗口
-    try {
-      popupWindow.close();
-    } catch (_) {}
-    popupWindow = null;
-    popupReady = false;
-    createPopupWindow();
-    pendingWordData = wordData;
   }
 
   console.log('[Popup] Displaying word:', wordData.word,
-    '| visible:', popupWindow ? popupWindow.isVisible() : false);
+    '| visible:', popupWindow.isVisible(),
+    '| focused:', popupWindow.isFocused());
 }
 
 /**
  * 隐藏弹窗
- * Windows 兼容：不使用 hide()，而是将窗口移出屏幕
- * 因为 hide() 后 show()/showInactive() 在 Windows 上不可靠
- *
- * 但为了功能正确，我们还是用 hide()，然后在恢复时用 show() + moveTop()
  */
 function hide() {
   if (popupWindow && !popupWindow.isDestroyed()) {
@@ -179,7 +189,6 @@ function hide() {
 
 /**
  * 恢复弹窗显示（从隐藏状态恢复）
- * 这是隐藏后恢复的关键路径
  */
 function restore() {
   if (!popupWindow || popupWindow.isDestroyed()) {
@@ -188,7 +197,9 @@ function restore() {
   }
 
   try {
+    // 与 _displayWord 相同的显示逻辑
     popupWindow.show();
+    popupWindow.focus();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
     console.log('[Popup] Window restored, visible:', popupWindow.isVisible());
@@ -249,6 +260,10 @@ function isVisible() {
   return popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible();
 }
 
+function isReady() {
+  return popupReady;
+}
+
 function destroy() {
   closeImmediately();
 }
@@ -261,5 +276,7 @@ module.exports = {
   closeImmediately,
   updateConfig,
   isVisible,
+  isReady,
+  waitForReady,
   destroy
 };

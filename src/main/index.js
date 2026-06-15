@@ -82,17 +82,20 @@ app.whenReady().then(async () => {
       // 确保词库已导入
       await ensureWordlistsImported(config);
 
-      // 创建弹窗
+      // 创建弹窗并等待就绪后再启动调度器
+      // 关键：Windows 上必须等 ready-to-show 后才能正确显示弹窗
       popupManager.createPopupWindow();
+      log('[App] Popup window created, waiting for ready...');
 
-      // 启动调度器
-      scheduler.start();
-      log('[App] Scheduler started');
+      popupManager.waitForReady().then(() => {
+        log('[App] Popup ready, starting scheduler');
+        scheduler.start();
 
-      scheduler.onStatsUpdate(() => {
-        if (statsWindow && !statsWindow.isDestroyed()) {
-          statsWindow.webContents.send('stats:updated');
-        }
+        scheduler.onStatsUpdate(() => {
+          if (statsWindow && !statsWindow.isDestroyed()) {
+            statsWindow.webContents.send('stats:updated');
+          }
+        });
       });
     }
 
@@ -240,13 +243,17 @@ function openSetupWindow() {
     await ensureWordlistsImported(latestConfig);
 
     popupManager.createPopupWindow();
-    scheduler.start();
-    log('[App] Scheduler started after setup');
+    log('[App] Popup window created after setup, waiting for ready...');
 
-    scheduler.onStatsUpdate(() => {
-      if (statsWindow && !statsWindow.isDestroyed()) {
-        statsWindow.webContents.send('stats:updated');
-      }
+    popupManager.waitForReady().then(() => {
+      log('[App] Popup ready, starting scheduler after setup');
+      scheduler.start();
+
+      scheduler.onStatsUpdate(() => {
+        if (statsWindow && !statsWindow.isDestroyed()) {
+          statsWindow.webContents.send('stats:updated');
+        }
+      });
     });
   });
 }
