@@ -53,8 +53,8 @@ class Scheduler {
     this.isPaused = false;
     this.dailyNewWordsLimit = 20;
     this.dailyNewWordsCount = 0;
-    this.popupInterval = 300000; // 默认 5 分钟
     this._onStatsUpdate = null;
+    this._lastDate = null; // 追踪日期变化，跨日自动重置计数
   }
 
   /**
@@ -63,16 +63,18 @@ class Scheduler {
   start() {
     const config = getConfig();
     this.dailyNewWordsLimit = config.dailyNewWords || 20;
-    this.popupInterval = config.popupInterval || 300000;
 
+    // 读取今日已学新词数
     this._resetDailyCountIfNeeded();
+
+    // 加载队列
     this.reloadQueue();
 
     console.log('[Scheduler] Started | daily limit:', this.dailyNewWordsLimit,
-      '| interval:', this.popupInterval, 'ms',
+      '| daily count:', this.dailyNewWordsCount,
       '| queue size:', this.queue.length);
 
-    // 立即弹出第一个单词（如果有的话）
+    // 立即弹出第一个单词
     this._popNext();
   }
 
@@ -98,9 +100,8 @@ class Scheduler {
       clearTimeout(this.nextPopupTimer);
       this.nextPopupTimer = null;
     }
-    if (this.currentWord) {
-      popupManager.hide();
-    }
+    // 隐藏弹窗（不是关闭，暂停时隐藏是合理的）
+    popupManager.hide();
     console.log('[Scheduler] Paused');
   }
 
@@ -109,10 +110,25 @@ class Scheduler {
    */
   resume() {
     this.isPaused = false;
+
+    // 重新加载队列
     this.reloadQueue();
+
     console.log('[Scheduler] Resumed | queue size:', this.queue.length);
-    // 立即弹出下一个
-    this._popNext();
+
+    // 恢复弹窗并弹出下一个单词
+    if (this.queue.length > 0) {
+      // 如果弹窗已隐藏，先恢复显示
+      if (!popupManager.isVisible()) {
+        popupManager.restore();
+      }
+      this._popNext();
+    } else {
+      // 没有单词，尝试恢复弹窗并提示
+      popupManager.restore();
+      // 1秒后重试
+      this.nextPopupTimer = setTimeout(() => this._popNext(), 1000);
+    }
   }
 
   /**
@@ -121,6 +137,9 @@ class Scheduler {
   _popNext() {
     if (this.isPaused) return;
     if (this.currentWord) return;
+
+    // 检查日期是否变化，跨日重置
+    this._checkDateChange();
 
     // 如果队列空了，重新加载
     if (this.queue.length === 0) {
@@ -131,7 +150,9 @@ class Scheduler {
     if (word) {
       this.currentWord = word;
       this._showWord(word);
-      console.log('[Scheduler] Popped word:', word.word, '| queue remaining:', this.queue.length);
+      console.log('[Scheduler] Popped word:', word.word,
+        '| stage:', word.stage,
+        '| queue remaining:', this.queue.length);
     } else {
       // 没有单词了，10 秒后重试
       console.log('[Scheduler] No words available, retrying in 10s');
@@ -164,21 +185,26 @@ class Scheduler {
 
   /**
    * 重新加载队列
+   *
+   * 队列由两部分组成：
+   * 1. 到期需复习的单词（按到期时间排序后随机打乱）
+   * 2. 今日配额内的新词（随机选取）
    */
   reloadQueue() {
     const db = getDb();
     const now = Date.now();
 
+    // 1. 获取到期需复习的单词
     const dueReviews = db.prepare(`
       SELECT w.id, w.word, w.phonetic, w.translation, w.example,
              p.stage, p.next_review_at, p.correct_count, p.wrong_count
       FROM words w
       JOIN progress p ON w.id = p.word_id
       WHERE p.next_review_at <= ? AND p.stage < ?
-      ORDER BY p.next_review_at ASC
       LIMIT 200
     `).all(now, MAX_STAGE);
 
+    // 2. 获取新词（今日配额 - 今日已学）
     const remaining = Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount);
     let newWords = [];
     if (remaining > 0) {
@@ -193,11 +219,14 @@ class Scheduler {
       `).all(remaining);
     }
 
-    // 复习词也随机排序，避免固定顺序
+    // 复习词随机排序，新词也是随机的，合并
     this.queue = [...shuffleArray(dueReviews), ...newWords];
 
-    console.log('[Scheduler] Queue reloaded | due:', dueReviews.length,
-      '| new:', newWords.length, '| total:', this.queue.length);
+    console.log('[Scheduler] Queue reloaded | due reviews:', dueReviews.length,
+      '| new words:', newWords.length,
+      '| daily count:', this.dailyNewWordsCount,
+      '| daily limit:', this.dailyNewWordsLimit,
+      '| total queue:', this.queue.length);
   }
 
   /**
@@ -262,6 +291,7 @@ class Scheduler {
     console.log('[Scheduler] Word:', word.word,
       '| known:', known,
       '| stage:', currentStage, '\u2192', newStage,
+      '| daily new count:', this.dailyNewWordsCount,
       '| next:', new Date(nextReviewAt).toISOString());
   }
 
@@ -270,16 +300,27 @@ class Scheduler {
    */
   _advanceToNext() {
     this.currentWord = null;
-    // 不隐藏窗口，直接弹出下一个单词（更新内容）
 
     if (this._onStatsUpdate) this._onStatsUpdate();
 
-    // 短暂延迟让渲染进程更新 UI
+    // 200ms 短暂延迟，让渲染进程更新 UI
     this.nextPopupTimer = setTimeout(() => this._popNext(), 200);
   }
 
   /**
-   * 重置每日新词计数
+   * 检查日期变化，跨日自动重置每日新词计数
+   */
+  _checkDateChange() {
+    const today = new Date().toISOString().slice(0, 10);
+    if (this._lastDate && this._lastDate !== today) {
+      console.log('[Scheduler] Date changed:', this._lastDate, '\u2192', today, ', resetting daily count');
+      this.dailyNewWordsCount = 0;
+    }
+    this._lastDate = today;
+  }
+
+  /**
+   * 重置每日新词计数（基于数据库记录）
    */
   _resetDailyCountIfNeeded() {
     const db = getDb();
@@ -288,6 +329,9 @@ class Scheduler {
     ).get();
 
     this.dailyNewWordsCount = todayStats ? (todayStats.words_learned || 0) : 0;
+    this._lastDate = new Date().toISOString().slice(0, 10);
+
+    console.log('[Scheduler] Daily count reset | today learned:', this.dailyNewWordsCount);
   }
 
   /**
@@ -296,11 +340,7 @@ class Scheduler {
   applyConfig(config) {
     if (config.dailyNewWords !== undefined) {
       this.dailyNewWordsLimit = config.dailyNewWords;
-    }
-    if (config.popupInterval !== undefined) {
-      this.popupInterval = config.popupInterval;
-    }
-    if (config.dailyNewWords !== undefined) {
+      console.log('[Scheduler] Daily new words limit updated to:', this.dailyNewWordsLimit);
       this.reloadQueue();
     }
   }

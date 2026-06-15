@@ -59,7 +59,6 @@ app.whenReady().then(async () => {
       onPauseToggle: (paused) => {
         if (paused) {
           scheduler.pause();
-          popupManager.closeImmediately();
         } else {
           scheduler.resume();
         }
@@ -105,6 +104,7 @@ app.whenReady().then(async () => {
 
 /**
  * 确保所选词库已导入数据库
+ * 如果词库中的词数少于 JSON 文件中的词数，则重新导入
  */
 async function ensureWordlistsImported(config) {
   const wordlists = config.selectedWordlists || ['cet4'];
@@ -124,10 +124,19 @@ async function ensureWordlistsImported(config) {
     }
 
     const count = db.prepare('SELECT COUNT(*) as c FROM words WHERE wordlist = ?').get(wlId);
-    log(`[App] Wordlist ${wlId}: ${count.c} words in DB`);
+    const expectedCount = entry.count || 0;
+    log(`[App] Wordlist ${wlId}: ${count.c} words in DB, expected ${expectedCount}`);
 
-    if (!count || count.c === 0) {
+    // 如果数据库中词数少于词库文件声明的数量，重新导入
+    if (!count || count.c === 0 || count.c < expectedCount) {
       try {
+        // 先删除旧数据再重新导入，确保数据完整
+        if (count.c > 0 && count.c < expectedCount) {
+          db.prepare('DELETE FROM words WHERE wordlist = ?').run(wlId);
+          // 同时清理对应的 progress 记录
+          db.prepare('DELETE FROM progress WHERE word_id NOT IN (SELECT id FROM words)').run();
+          log(`[App] Cleared incomplete wordlist ${wlId} (${count.c} words) for re-import`);
+        }
         const result = importWordlist(wlId);
         log(`[App] Imported ${result.imported} words from ${wlId}`);
       } catch (err) {

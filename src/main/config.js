@@ -7,7 +7,6 @@ const CONFIG_FILENAME = 'config.json';
 const DEFAULT_CONFIG = {
   dailyNewWords: 20,
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
-  popupInterval: 300000,           // 弹窗间隔（ms），默认 5 分钟
   selectedWordlists: ['cet4'],     // 启用的词库列表
   autoPronounce: false,            // 自动发音
   autoStart: false,                // 开机自启

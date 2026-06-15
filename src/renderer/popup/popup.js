@@ -13,7 +13,6 @@ const btnUnknown = document.getElementById('btn-unknown');
 const btnMinimize = document.getElementById('btn-minimize');
 
 let currentWord = null;
-let autoHideTimer = null;
 
 // === 接收单词数据 ===
 window.wordpopAPI.onWordData((data) => {
@@ -55,8 +54,16 @@ window.wordpopAPI.onWordData((data) => {
     progressText.textContent += ` | 剩余 ${data.queueRemaining}`;
   }
 
-  // 淡入
+  // 确保弹窗内容可见（移除 hiding 状态）
   container.classList.remove('hiding');
+
+  // 新词弹入动画
+  if (data.isNew) {
+    wordText.style.animation = 'none';
+    // 触发 reflow 重置动画
+    void wordText.offsetHeight;
+    wordText.style.animation = '';
+  }
 
   // 启用按钮
   btnKnown.disabled = false;
@@ -81,8 +88,10 @@ btnKnown.addEventListener('click', () => {
   window.wordpopAPI.markKnown();
   currentWord = null;
 
-  // 准备淡出
-  container.classList.add('hiding');
+  // 不添加 hiding 类！下一个单词会立即替换内容
+  // 只在视觉上做一个快速闪烁表示反馈
+  container.style.opacity = '0.7';
+  setTimeout(() => { container.style.opacity = ''; }, 100);
 });
 
 // === 点击「不认识」 ===
@@ -97,7 +106,9 @@ btnUnknown.addEventListener('click', () => {
   window.wordpopAPI.markUnknown();
   currentWord = null;
 
-  container.classList.add('hiding');
+  // 不添加 hiding 类！
+  container.style.opacity = '0.7';
+  setTimeout(() => { container.style.opacity = ''; }, 100);
 });
 
 // === 最小化 ===
