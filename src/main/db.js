@@ -365,6 +365,64 @@ function closeDatabase() {
   }
 }
 
+/**
+ * 诊断数据库健康状态
+ * @returns {{ healthy: boolean, wordCount: number, progressCount: number, statsCount: number, error?: string }}
+ */
+function diagnoseDatabase() {
+  try {
+    if (!db) {
+      return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, error: '数据库未初始化' };
+    }
+    const wordCount = db.prepare('SELECT COUNT(*) c FROM words').get().c;
+    const progressCount = db.prepare('SELECT COUNT(*) c FROM progress').get().c;
+    const statsCount = db.prepare('SELECT COUNT(*) c FROM daily_stats').get().c;
+    return { healthy: true, wordCount, progressCount, statsCount };
+  } catch (err) {
+    return { healthy: false, wordCount: 0, progressCount: 0, statsCount: 0, error: err.message };
+  }
+}
+
+/**
+ * 修复数据库：关闭 → 删除 → 重建
+ * 注意：这会丢失所有学习数据
+ * @returns {{ success: boolean, message: string }}
+ */
+function repairDatabase() {
+  const userDataPath = app.getPath('userData');
+  const dbPath = path.join(userDataPath, 'wordpop.db');
+
+  console.log('[DB] Repair: closing database...');
+  try { if (db) db.close(); } catch (_) {}
+  db = null;
+
+  console.log('[DB] Repair: deleting old database files...');
+  try {
+    if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
+    const walPath = dbPath + '-wal';
+    const shmPath = dbPath + '-shm';
+    if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
+    if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
+  } catch (e) {
+    return { success: false, message: '删除旧数据库失败: ' + e.message };
+  }
+
+  console.log('[DB] Repair: creating fresh database...');
+  try {
+    db = new Database(dbPath);
+    db.pragma('journal_mode = WAL');
+    db.pragma('foreign_keys = ON');
+    db.pragma('synchronous = NORMAL');
+    db.pragma('cache_size = -8000');
+    migrate(db);
+    console.log('[DB] Repair: database recreated successfully');
+    return { success: true, message: '数据库已修复，请重新导入词库' };
+  } catch (err) {
+    console.error('[DB] Repair failed:', err.message);
+    return { success: false, message: '修复失败: ' + err.message };
+  }
+}
+
 module.exports = {
   initDatabase,
   getDb,
@@ -373,5 +431,7 @@ module.exports = {
   getWordlistIndex,
   importCustomWordlist,
   getWordlistPath,
-  getProgressSummary
+  getProgressSummary,
+  diagnoseDatabase,
+  repairDatabase
 };

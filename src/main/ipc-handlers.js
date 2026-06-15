@@ -1,5 +1,5 @@
 const { ipcMain, dialog, BrowserWindow, app, fs } = require('electron');
-const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary } = require('./db');
+const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary, diagnoseDatabase, repairDatabase } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
 const popupManager = require('./popup-manager');
@@ -115,6 +115,18 @@ ipcMain.handle('stats:progress-summary', (_ev, wordlistIds) => {
     console.error('[IPC] stats:progress-summary error:', err.message);
     return { totalWords: 0, learnedWords: 0, masteredWords: 0, remainingWords: 0 };
   }
+});
+
+// ═════════════════════════╗
+//  数据库诊断与修复
+// ═════════════════════════╝
+
+ipcMain.handle('db:diagnose', () => {
+  return diagnoseDatabase();
+});
+
+ipcMain.handle('db:repair', () => {
+  return repairDatabase();
 });
 
 // ═════════════════════════╗

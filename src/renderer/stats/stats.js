@@ -12,6 +12,10 @@ const chartDaily = document.getElementById('chart-daily');
 const chartStage = document.getElementById('chart-stage');
 const btnRefresh = document.getElementById('btn-refresh');
 const btnSettings = document.getElementById('btn-settings');
+const btnDiagnose = document.getElementById('btn-diagnose');
+const dbWarning = document.getElementById('db-warning');
+const dbWarningText = document.getElementById('db-warning-text');
+const btnRepairDb = document.getElementById('btn-repair-db');
 
 // === 安全的 IPC 调用（不抛异常） ===
 async function safeInvoke(apiFn, fallback) {
@@ -114,6 +118,64 @@ btnSettings.addEventListener('click', () => {
   window.close();
 });
 
+// === 数据库诊断 ===
+async function runDiagnose() {
+  try {
+    const diag = await window.wordpopAPI.diagnoseDatabase();
+    if (!diag.healthy) {
+      dbWarningText.textContent = '数据库异常：' + (diag.error || '未知错误') + '。点击"修复数据库"重建（学习数据将丢失）。';
+      dbWarning.style.display = 'block';
+    } else if (diag.wordCount === 0) {
+      dbWarningText.textContent = '词库未导入（0 个单词）。请在设置中选择并导入词库。';
+      dbWarning.style.display = 'block';
+    } else if (diag.progressCount === 0) {
+      dbWarningText.textContent = '数据库正常（' + diag.wordCount + ' 个单词），但尚未开始学习。背几个单词后统计数据就会出现。';
+      dbWarning.style.display = 'block';
+    } else {
+      dbWarning.style.display = 'none';
+    }
+    return diag;
+  } catch (err) {
+    console.error('Diagnose failed:', err);
+    dbWarningText.textContent = '诊断失败：' + err.message;
+    dbWarning.style.display = 'block';
+    return null;
+  }
+}
+
+btnDiagnose.addEventListener('click', () => {
+  btnDiagnose.textContent = '诊断中...';
+  runDiagnose().then((diag) => {
+    btnDiagnose.textContent = '🩺 诊断';
+    if (diag && diag.healthy) {
+      alert('数据库状态正常\n\n词库单词：' + diag.wordCount + ' 个\n学习记录：' + diag.progressCount + ' 条\n统计记录：' + diag.statsCount + ' 条');
+    }
+  });
+});
+
+// === 修复数据库 ===
+btnRepairDb.addEventListener('click', async () => {
+  const confirmed = confirm('修复数据库将删除所有学习数据并重建。\n\n确定要继续吗？');
+  if (!confirmed) return;
+
+  btnRepairDb.textContent = '修复中...';
+  btnRepairDb.disabled = true;
+  try {
+    const result = await window.wordpopAPI.repairDatabase();
+    if (result.success) {
+      alert('修复成功！请重新打开设置导入词库。');
+      dbWarning.style.display = 'none';
+      loadStats();
+    } else {
+      alert('修复失败：' + result.message);
+    }
+  } catch (err) {
+    alert('修复出错：' + err.message);
+  }
+  btnRepairDb.textContent = '🔧 修复数据库';
+  btnRepairDb.disabled = false;
+});
+
 // === 窗口大小变化时重绘图表 ===
 let resizeTimer;
 window.addEventListener('resize', () => {
@@ -125,3 +187,4 @@ window.addEventListener('resize', () => {
 
 // === 初始化 ===
 loadStats();
+runDiagnose(); // 自动检查数据库健康状态

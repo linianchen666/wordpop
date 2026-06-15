@@ -103,6 +103,36 @@
   justify-content: center;
 }
 
+/* === 数据库警告 === */
+.db-warning {
+  margin: 0 20px 8px;
+  padding: 12px 16px;
+  background: rgba(231, 76, 60, 0.08);
+  border: 1px solid rgba(231, 76, 60, 0.3);
+  border-radius: var(--radius-sm);
+}
+
+.db-warning-text {
+  font-size: 13px;
+  color: var(--color-danger);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+
+.db-warning .btn-danger {
+  background: var(--color-danger);
+  color: white;
+  border: none;
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.db-warning .btn-danger:hover {
+  opacity: 0.9;
+}
+
 /* === 空状态 === */
 .stats-empty {
   text-align: center;

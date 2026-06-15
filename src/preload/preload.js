@@ -28,6 +28,10 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   getStageDistribution: ()  => ipcRenderer.invoke('stats:stage-distribution'),
   getProgressSummary:  (ids) => ipcRenderer.invoke('stats:progress-summary', ids),
 
+  // === 数据库诊断与修复 ===
+  diagnoseDatabase:   ()  => ipcRenderer.invoke('db:diagnose'),
+  repairDatabase:     ()  => ipcRenderer.invoke('db:repair'),
+
   // === 调度器操作 ===
   getSchedulerStatus:  ()  => ipcRenderer.invoke('scheduler:status'),
   togglePause:        ()  => ipcRenderer.invoke('scheduler:toggle-pause'),
