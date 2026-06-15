@@ -189,16 +189,29 @@
 .word-example {
   font-size: 12px;
   color: var(--color-text-muted);
-  font-style: italic;
   text-align: center;
   margin-top: 4px;
   padding: 6px 12px;
   background: var(--color-bg-tertiary);
   border-radius: var(--radius-sm);
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  max-height: 72px;
+  overflow-y: auto;
+}
+
+.example-en {
+  font-style: italic;
+  color: var(--color-text-muted);
+  word-break: break-word;
+  line-height: 1.4;
+}
+
+.example-cn {
+  color: var(--color-text-secondary);
+  font-size: 11px;
+  word-break: break-word;
+  line-height: 1.4;
+  margin-top: 2px;
 }
 
 /* === 通用隐藏工具类 === */

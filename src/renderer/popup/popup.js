@@ -22,6 +22,8 @@ const btnReveal = document.getElementById('btn-reveal');
 const revealArea = document.getElementById('reveal-area');
 const wordDetail = document.getElementById('word-detail');
 const actionButtons = document.getElementById('action-buttons');
+const exampleEn = document.getElementById('example-en');
+const exampleCn = document.getElementById('example-cn');
 
 let currentWord = null;
 
@@ -60,7 +62,16 @@ window.wordpopAPI.onWordData((data) => {
   translationText.textContent = data.translation || '';
 
   if (data.config && data.config.showExample && data.example) {
-    exampleText.textContent = data.example;
+    // 拆分英文和中文：找第一个中文字符的位置
+    const exampleStr = data.example;
+    const cnIndex = exampleStr.search(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/);
+    if (cnIndex > 0) {
+      exampleEn.textContent = exampleStr.substring(0, cnIndex).trim();
+      exampleCn.textContent = exampleStr.substring(cnIndex).trim();
+    } else {
+      exampleEn.textContent = exampleStr;
+      exampleCn.textContent = '';
+    }
     exampleText.style.display = 'block';
   } else {
     exampleText.style.display = 'none';
