@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   getStats:            ()  => ipcRenderer.invoke('stats:get'),
   getDailyStats:       (d) => ipcRenderer.invoke('stats:daily', d),
   getStageDistribution: ()  => ipcRenderer.invoke('stats:stage-distribution'),
+  getProgressSummary:  (ids) => ipcRenderer.invoke('stats:progress-summary', ids),
 
   // === 调度器操作 ===
   getSchedulerStatus:  ()  => ipcRenderer.invoke('scheduler:status'),

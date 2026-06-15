@@ -13,7 +13,8 @@ const DEFAULT_CONFIG = {
   showExample: true,               // 显示例句
   fontSize: 'medium',              // small | medium | large
   theme: 'light',                  // light | dark
-  setupComplete: false             // 是否已完成初始化设置
+  setupComplete: false,            // 是否已完成初始化设置
+  targetDate: null                 // 目标完成日期，格式 'YYYY-MM-DD'，null表示未设置
 };
 
 let configPath = null;

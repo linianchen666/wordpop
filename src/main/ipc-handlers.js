@@ -1,5 +1,5 @@
 const { ipcMain, dialog, BrowserWindow, app, fs } = require('electron');
-const { getDb, importWordlist, getWordlistIndex, importCustomWordlist } = require('./db');
+const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
 const popupManager = require('./popup-manager');
@@ -101,6 +101,19 @@ ipcMain.handle('wordlist:import-custom', async () => {
     return { success: true, ...result };
   } catch (err) {
     return { success: false, error: err.message };
+  }
+});
+
+// ═════════════════════════╗
+//  学习进度摘要（预测用）
+// ═════════════════════════╝
+
+ipcMain.handle('stats:progress-summary', (_ev, wordlistIds) => {
+  try {
+    return getProgressSummary(wordlistIds);
+  } catch (err) {
+    console.error('[IPC] stats:progress-summary error:', err.message);
+    return { totalWords: 0, learnedWords: 0, masteredWords: 0, remainingWords: 0 };
   }
 });
 

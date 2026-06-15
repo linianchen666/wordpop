@@ -188,6 +188,46 @@ function getWordlistPath() {
 }
 
 /**
+ * 获取学习进度摘要（用于预测背完天数）
+ * @param {string[]} wordlistIds - 选中的词库 ID 数组
+ * @returns {{ totalWords: number, learnedWords: number, masteredWords: number, remainingWords: number }}
+ */
+function getProgressSummary(wordlistIds) {
+  const d = getDb();
+  if (!wordlistIds || wordlistIds.length === 0) {
+    return { totalWords: 0, learnedWords: 0, masteredWords: 0, remainingWords: 0 };
+  }
+
+  const placeholders = wordlistIds.map(() => '?').join(',');
+
+  // 选中词库的总词数
+  const totalRow = d.prepare(
+    `SELECT COUNT(*) as total FROM words WHERE wordlist IN (${placeholders})`
+  ).get(...wordlistIds);
+
+  // 已学单词（stage 0-8，有 progress 记录但未掌握）
+  const learnedRow = d.prepare(`
+    SELECT COUNT(*) as learned FROM progress p
+    JOIN words w ON p.word_id = w.id
+    WHERE p.stage < 9 AND w.wordlist IN (${placeholders})
+  `).get(...wordlistIds);
+
+  // 已掌握（stage = 9）
+  const masteredRow = d.prepare(`
+    SELECT COUNT(*) as mastered FROM progress p
+    JOIN words w ON p.word_id = w.id
+    WHERE p.stage >= 9 AND w.wordlist IN (${placeholders})
+  `).get(...wordlistIds);
+
+  const total = totalRow.total || 0;
+  const learned = learnedRow.learned || 0;
+  const mastered = masteredRow.mastered || 0;
+  const remaining = total - learned - mastered;
+
+  return { totalWords: total, learnedWords: learned, masteredWords: mastered, remainingWords: remaining };
+}
+
+/**
  * 导入词库到数据库
  * @param {string} wordlistId - 词库 ID（如 cet4, cet6, kaoyan）
  * @returns {{ imported: number, skipped: number }}
@@ -332,5 +372,6 @@ module.exports = {
   importWordlist,
   getWordlistIndex,
   importCustomWordlist,
-  getWordlistPath
+  getWordlistPath,
+  getProgressSummary
 };

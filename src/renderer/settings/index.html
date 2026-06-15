@@ -20,14 +20,56 @@
       <!-- 每日新词数 -->
       <div class="form-group">
         <label class="form-label">📅 每日新词数量</label>
-        <select class="form-select" id="dailyNewWords">
-          <option value="5">5 个（轻松模式）</option>
-          <option value="10">10 个</option>
-          <option value="20" selected>20 个（推荐）</option>
-          <option value="30">30 个</option>
-          <option value="50">50 个（冲刺模式）</option>
-        </select>
+        <div class="daily-new-words-wrapper">
+          <select class="form-select" id="dailyNewWords">
+            <option value="5">5 个（轻松模式）</option>
+            <option value="10">10 个</option>
+            <option value="20" selected>20 个（推荐）</option>
+            <option value="30">30 个</option>
+            <option value="50">50 个（冲刺模式）</option>
+            <option value="custom">自定义</option>
+          </select>
+          <input type="number" class="form-input custom-daily-input" id="customDailyNewWords"
+                 min="1" max="200" style="display:none" placeholder="每日词量">
+        </div>
         <span class="form-hint">每天新学的单词数量，复习单词不在此限制内</span>
+      </div>
+
+      <!-- 预测卡片 -->
+      <div class="form-group prediction-card" id="prediction-card">
+        <div class="prediction-empty" id="prediction-empty">请先选择词库</div>
+        <div class="prediction-content" id="prediction-content" style="display:none">
+          <!-- 进度摘要条 -->
+          <div class="progress-summary">
+            <div class="progress-bar-wrapper">
+              <div class="progress-bar-fill" id="progress-bar-fill" style="width: 0%"></div>
+            </div>
+            <div class="progress-percent" id="progress-percent">0%</div>
+          </div>
+          <div class="progress-stats">
+            <span id="stat-total">总计 -- 个</span>
+            <span id="stat-learned">已学 -- 个</span>
+            <span id="stat-mastered">已掌握 -- 个</span>
+            <span id="stat-remaining">剩余 -- 个</span>
+          </div>
+
+          <!-- 预测天数 -->
+          <div class="prediction-row">
+            <span class="prediction-label">预计完成</span>
+            <span class="prediction-value" id="predicted-days">-- 天</span>
+            <span class="prediction-detail" id="predicted-date"></span>
+          </div>
+
+          <!-- 目标日期 -->
+          <div class="target-date-row">
+            <label class="form-label">🎯 目标完成日期</label>
+            <div class="target-date-input-wrapper">
+              <input type="date" class="form-input" id="targetDate">
+              <button class="btn btn-sm btn-ghost" id="btn-clear-target">清除</button>
+            </div>
+            <div class="target-result" id="target-result"></div>
+          </div>
+        </div>
       </div>
 
       <!-- 弹窗位置 -->

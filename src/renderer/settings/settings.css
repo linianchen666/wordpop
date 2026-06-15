@@ -189,3 +189,147 @@
   padding-top: 12px;
   border-top: 1px solid var(--color-border);
 }
+
+/* === 每日新词混合模式 === */
+.daily-new-words-wrapper {
+  display: flex;
+  gap: 8px;
+}
+
+.daily-new-words-wrapper .form-select {
+  flex: 1;
+}
+
+.custom-daily-input {
+  flex: 1;
+  max-width: 120px;
+}
+
+/* === 预测卡片 === */
+.prediction-card {
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  padding: 14px 16px;
+}
+
+.prediction-empty {
+  text-align: center;
+  color: var(--color-text-muted);
+  font-size: 13px;
+  padding: 16px 0;
+}
+
+.prediction-content {
+  /* shown when data is loaded */
+}
+
+/* 进度条 */
+.progress-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.progress-bar-wrapper {
+  flex: 1;
+  height: 8px;
+  background: var(--color-bg-tertiary);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-bar-fill {
+  height: 100%;
+  background: linear-gradient(90deg, var(--color-primary), var(--color-success));
+  border-radius: 4px;
+  transition: width var(--transition-normal);
+}
+
+.progress-percent {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-primary);
+  min-width: 36px;
+  text-align: right;
+}
+
+.progress-stats {
+  display: flex;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+/* 预测天数 */
+.prediction-row {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 10px 0;
+  border-top: 1px solid var(--color-bg-tertiary);
+}
+
+.prediction-label {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.prediction-value {
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-primary);
+}
+
+.prediction-value.completed {
+  color: var(--color-success);
+}
+
+.prediction-detail {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+/* 目标日期 */
+.target-date-row {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--color-bg-tertiary);
+}
+
+.target-date-row .form-label {
+  margin-bottom: 6px;
+}
+
+.target-date-input-wrapper {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.target-date-input-wrapper .form-input {
+  flex: 1;
+}
+
+.target-result {
+  margin-top: 6px;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-primary);
+  min-height: 18px;
+}
+
+.target-result.warning {
+  color: var(--color-danger);
+}
+
+.target-result.impossible {
+  color: var(--color-danger);
+}
+
+.target-result.success {
+  color: var(--color-success);
+}

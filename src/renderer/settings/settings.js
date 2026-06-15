@@ -2,6 +2,7 @@
 
 // === DOM 引用 ===
 const dailyNewWords = document.getElementById('dailyNewWords');
+const customDailyInput = document.getElementById('customDailyNewWords');
 const showExample = document.getElementById('showExample');
 const autoPronounce = document.getElementById('autoPronounce');
 const fontSize = document.getElementById('fontSize');
@@ -13,10 +14,35 @@ const btnCancel    = document.getElementById('btn-cancel');
 const btnLogs      = document.getElementById('btn-logs');
 const btnImportCustom = document.getElementById('btn-import-custom');
 
+// 预测卡片 DOM
+const predictionEmpty   = document.getElementById('prediction-empty');
+const predictionContent = document.getElementById('prediction-content');
+const progressBarFill   = document.getElementById('progress-bar-fill');
+const progressPercent   = document.getElementById('progress-percent');
+const statTotal         = document.getElementById('stat-total');
+const statLearned       = document.getElementById('stat-learned');
+const statMastered      = document.getElementById('stat-mastered');
+const statRemaining     = document.getElementById('stat-remaining');
+const predictedDays     = document.getElementById('predicted-days');
+const predictedDate     = document.getElementById('predicted-date');
+const targetDateInput   = document.getElementById('targetDate');
+const btnClearTarget    = document.getElementById('btn-clear-target');
+const targetResult      = document.getElementById('target-result');
+
 let currentConfig = {};
 let selectedWordlists = [];
 let selectedPosition = 'bottom-right';
 let availableWordlists = [];
+let progressData = null; // 缓存预测数据
+
+// === 防抖工具 ===
+function debounce(fn, delay) {
+  let timer = null;
+  return function(...args) {
+    clearTimeout(timer);
+    timer = setTimeout(() => fn.apply(this, args), delay);
+  };
+}
 
 // === 初始化：加载当前配置 ===
 async function init() {
@@ -28,8 +54,17 @@ async function init() {
     return;
   }
 
-  // 填充表单
-  dailyNewWords.value = currentConfig.dailyNewWords || 20;
+  // 填充表单 — 每日新词（支持自定义值）
+  const dailyVal = currentConfig.dailyNewWords || 20;
+  const presetValues = [5, 10, 20, 30, 50];
+  if (presetValues.includes(dailyVal)) {
+    dailyNewWords.value = dailyVal;
+  } else {
+    dailyNewWords.value = 'custom';
+    customDailyInput.value = dailyVal;
+    customDailyInput.style.display = 'block';
+  }
+
   showExample.checked = currentConfig.showExample !== false;
   autoPronounce.checked = currentConfig.autoPronounce || false;
   fontSize.value = currentConfig.fontSize || 'medium';
@@ -45,10 +80,21 @@ async function init() {
     el.classList.toggle('active', el.dataset.pos === selectedPosition);
   });
 
+  // 目标日期
+  const tomorrow = new Date();
+  tomorrow.setDate(tomorrow.getDate() + 1);
+  targetDateInput.min = tomorrow.toISOString().split('T')[0];
+  if (currentConfig.targetDate && new Date(currentConfig.targetDate) > new Date()) {
+    targetDateInput.value = currentConfig.targetDate;
+  }
+
   // 如果这是首次设置，显示提示
   if (!currentConfig.setupComplete) {
     document.querySelector('.settings-subtitle').textContent = '首次使用，请选择学习偏好';
   }
+
+  // 加载预测数据
+  loadPrediction();
 }
 
 // === 渲染词库列表 ===
@@ -95,6 +141,8 @@ function updateWordlistSelection() {
     const cb = item.querySelector('input');
     item.classList.toggle('selected', cb.checked);
   });
+  // 词库选择变更 → 防抖加载预测
+  debouncedLoadPrediction();
 }
 
 // === 位置选择 ===
@@ -106,6 +154,156 @@ positionSelector.addEventListener('click', (e) => {
   document.querySelectorAll('.position-option').forEach(el => {
     el.classList.toggle('active', el.dataset.pos === selectedPosition);
   });
+});
+
+// ════════════════════════════════════════════╗
+//  预测功能
+// ════════════════════════════════════════════╝
+
+const debouncedLoadPrediction = debounce(loadPrediction, 500);
+
+async function loadPrediction() {
+  if (selectedWordlists.length === 0) {
+    renderEmptyPrediction();
+    return;
+  }
+  try {
+    progressData = await window.wordpopAPI.getProgressSummary(selectedWordlists);
+    renderPrediction();
+  } catch (err) {
+    console.error('loadPrediction failed:', err);
+    renderEmptyPrediction();
+  }
+}
+
+function renderEmptyPrediction() {
+  progressData = null;
+  predictionEmpty.style.display = 'block';
+  predictionContent.style.display = 'none';
+  predictionEmpty.textContent = selectedWordlists.length === 0 ? '请先选择词库' : '数据加载失败';
+}
+
+function renderPrediction() {
+  if (!progressData) { renderEmptyPrediction(); return; }
+
+  const { totalWords, learnedWords, masteredWords, remainingWords } = progressData;
+
+  if (totalWords === 0) {
+    predictionEmpty.style.display = 'block';
+    predictionContent.style.display = 'none';
+    predictionEmpty.textContent = '词库尚未导入，请先保存设置后查看';
+    return;
+  }
+
+  predictionEmpty.style.display = 'none';
+  predictionContent.style.display = 'block';
+
+  // 进度条
+  const doneWords = learnedWords + masteredWords;
+  const percent = totalWords > 0 ? Math.round(doneWords / totalWords * 100) : 0;
+  progressBarFill.style.width = percent + '%';
+  progressPercent.textContent = percent + '%';
+
+  // 统计数字
+  statTotal.textContent = '总计 ' + totalWords + ' 个';
+  statLearned.textContent = '已学 ' + learnedWords + ' 个';
+  statMastered.textContent = '已掌握 ' + masteredWords + ' 个';
+  statRemaining.textContent = '剩余 ' + remainingWords + ' 个';
+
+  // 预测天数
+  const dailyNew = getDailyNewWordsValue();
+
+  if (remainingWords <= 0) {
+    predictedDays.textContent = '已完成!';
+    predictedDays.classList.add('completed');
+    predictedDate.textContent = '';
+  } else if (dailyNew <= 0) {
+    predictedDays.textContent = '-- 天';
+    predictedDays.classList.remove('completed');
+    predictedDate.textContent = '';
+  } else {
+    const days = Math.ceil(remainingWords / dailyNew);
+    predictedDays.textContent = days + ' 天';
+    predictedDays.classList.remove('completed');
+    const est = new Date();
+    est.setDate(est.getDate() + days);
+    predictedDate.textContent = '（约 ' + (est.getMonth()+1) + '月' + est.getDate() + '日）';
+  }
+
+  // 目标日期反推
+  updateTargetResult();
+}
+
+function getDailyNewWordsValue() {
+  if (dailyNewWords.value === 'custom') {
+    return Math.min(200, Math.max(1, parseInt(customDailyInput.value) || 0));
+  }
+  return parseInt(dailyNewWords.value) || 20;
+}
+
+function updateTargetResult() {
+  const targetDateStr = targetDateInput.value;
+  if (!targetDateStr || !progressData) {
+    targetResult.textContent = '';
+    targetResult.className = 'target-result';
+    return;
+  }
+
+  const targetDate = new Date(targetDateStr);
+  const today = new Date();
+  today.setHours(0,0,0,0);
+  targetDate.setHours(0,0,0,0);
+
+  const remainingDays = Math.ceil((targetDate - today) / 86400000);
+  const remaining = progressData.remainingWords;
+
+  if (remaining <= 0) {
+    targetResult.textContent = '所有单词已学完!';
+    targetResult.className = 'target-result success';
+    return;
+  }
+
+  if (remainingDays <= 0) {
+    targetResult.textContent = '目标日期已过，请选择未来的日期';
+    targetResult.className = 'target-result warning';
+    return;
+  }
+
+  const requiredDaily = Math.ceil(remaining / remainingDays);
+
+  if (requiredDaily > 200) {
+    targetResult.textContent = '需每天学 ' + requiredDaily + ' 个（超出合理范围）';
+    targetResult.className = 'target-result impossible';
+  } else {
+    targetResult.textContent = '需每天学 ' + requiredDaily + ' 个新词即可完成';
+    targetResult.className = 'target-result';
+  }
+}
+
+// === 自定义每日词量 ===
+dailyNewWords.addEventListener('change', () => {
+  if (dailyNewWords.value === 'custom') {
+    customDailyInput.style.display = 'block';
+    customDailyInput.focus();
+  } else {
+    customDailyInput.style.display = 'none';
+  }
+  renderPrediction();
+});
+
+customDailyInput.addEventListener('input', () => {
+  renderPrediction();
+});
+
+// === 目标日期联动 ===
+targetDateInput.addEventListener('change', () => {
+  updateTargetResult();
+});
+
+btnClearTarget.addEventListener('click', () => {
+  targetDateInput.value = '';
+  targetResult.textContent = '';
+  targetResult.className = 'target-result';
 });
 
 // === 保存设置 ===
@@ -120,14 +318,17 @@ btnSave.addEventListener('click', async () => {
   btnSave.textContent = '保存中...';
 
   const newConfig = {
-    dailyNewWords: parseInt(dailyNewWords.value),
+    dailyNewWords: dailyNewWords.value === 'custom'
+      ? Math.min(200, Math.max(1, parseInt(customDailyInput.value) || 20))
+      : parseInt(dailyNewWords.value),
     popupPosition: selectedPosition,
     selectedWordlists: selectedWordlists,
     showExample: showExample.checked,
     autoPronounce: autoPronounce.checked,
     fontSize: fontSize.value,
     autoStart: autoStart.checked,
-    setupComplete: true
+    setupComplete: true,
+    targetDate: targetDateInput.value || null
   };
 
   // 先导入未导入的词库
@@ -197,18 +398,15 @@ btnImportCustom.addEventListener('click', async () => {
 // === 启动 ===
 init();
 
-// === 查看日志（新增）===
+// === 查看日志 ===
 if (btnLogs) {
   btnLogs.addEventListener('click', async () => {
     try {
-      // 先尝试直接打开日志文件夹（更可靠）
       await window.wordpopAPI.openLogFolder();
     } catch (err) {
-      // 如果失败，读取日志内容显示
       try {
         const result = await window.wordpopAPI.getLogs();
         const logs = result && result.logs ? result.logs : (result || '');
-        // 用新窗口显示，避免 alert 被屏蔽
         const win = window.open('', '_blank', 'width=600,height=500');
         if (win) {
           win.document.write(`

@@ -136,6 +136,17 @@ app.whenReady().then(async () => {
   // 5. 菜单
   safeStep('setMenu', () => Menu.setApplicationMenu(null));
 
+  // 5.5 开机自启：每次启动时根据配置重新注册（确保 exe 路径更新后自启仍然有效）
+  if (config.autoStart) {
+    safeStep('autoStart', () => {
+      app.setLoginItemSettings({
+        openAtLogin: true,
+        path: app.getPath('exe')
+      });
+      log('[App] autoStart registered, exe:', app.getPath('exe'));
+    });
+  }
+
   // 6. 启动（确保词库导入完成后再启动调度器）
   if (!config.setupComplete) {
     log('[App] first launch → openSetupWindow');
