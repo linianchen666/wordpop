@@ -83,9 +83,11 @@ function migrate(db) {
 
 /**
  * 获取词库目录路径（兼容开发/生产环境）
+ * 打包后 wordlists 被复制到 resources/wordlists/
  */
 function getWordlistPath() {
   if (app.isPackaged) {
+    // electron-builder extraResources 把 wordlists/ 复制到 resources/wordlists/
     return path.join(process.resourcesPath, 'wordlists');
   }
   return path.join(__dirname, '..', 'data', 'wordlists');

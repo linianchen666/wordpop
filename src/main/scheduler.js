@@ -1,5 +1,5 @@
 const { getDb } = require('./db');
-const { getConfig } = require('./config');
+const { loadConfig, saveConfig, getConfig } = require('./config');
 const popupManager = require('./popup-manager');
 
 /**
@@ -61,7 +61,7 @@ class Scheduler {
    * 启动调度器
    */
   start() {
-    const config = getConfig();
+    const config = loadConfig();
     this.dailyNewWordsLimit = config.dailyNewWords || 20;
 
     // 读取今日已学新词数
@@ -187,7 +187,7 @@ class Scheduler {
    * 重新加载队列
    *
    * 队列由两部分组成：
-   * 1. 到期需复习的单词（按到期时间排序后随机打乱）
+   * 1. 到期需复习的单词（随机打乱）
    * 2. 今日配额内的新词（随机选取）
    */
   reloadQueue() {
