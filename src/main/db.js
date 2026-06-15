@@ -79,6 +79,20 @@ function migrate(db) {
     db.pragma('user_version = 1');
     console.log('[DB] Migration v1 complete');
   }
+
+  // v2: 增加 mastered_count 字段，追踪连续熟知次数
+  if (currentVersion < 2) {
+    try {
+      db.exec(`ALTER TABLE progress ADD COLUMN mastered_count INTEGER NOT NULL DEFAULT 0`);
+    } catch (e) {
+      // 列可能已存在（比如开发环境反复安装），忽略错误
+      if (!e.message.includes('duplicate column')) {
+        console.error('[DB] Migration v2 ALTER error:', e.message);
+      }
+    }
+    db.pragma('user_version = 2');
+    console.log('[DB] Migration v2 complete (added mastered_count)');
+  }
 }
 
 /**

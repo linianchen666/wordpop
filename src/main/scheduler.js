@@ -17,7 +17,11 @@ const popupManager = require('./popup-manager');
  *   Stage 8: 15天（长期巩固）
  *   Stage 9: 已掌握（不再推送）
  * 
- * 「熟知」按钮：直接跳到 Stage 8（15天后才再出现，相当于不再推送）
+ * 三种操作：
+ *   认识：阶段 +1
+ *   模糊：阶段不变，重新进入复习队列
+ *   不认识：回退到阶段 1
+ *   熟知：跳到 stage 8，连续2次熟知 → 彻底已掌握
  */
 
 const STAGE_INTERVALS = [
@@ -265,7 +269,13 @@ class Scheduler {
 
   /**
    * 更新单词学习进度
-   * @param {'known'|'unknown'|'mastered'} action
+   * @param {'known'|'unknown'|'fuzzy'|'mastered'} action
+   * 
+   * 三种操作的行为：
+   *   known    → 阶段 +1
+   *   fuzzy    → 阶段不变，按当前阶段间隔重新进入复习队列
+   *   unknown  → 回退到阶段 1
+   *   mastered → 跳到 stage 8，连续2次熟知 → 彻底已掌握(stage 9)
    */
   _updateProgress(action) {
     const db = getDb();
@@ -281,30 +291,53 @@ class Scheduler {
     }
 
     const currentStage = existing ? existing.stage : 0;
+    const currentMasteredCount = existing ? (existing.mastered_count || 0) : 0;
     let newStage;
-    let isCorrect;
-    let isWrong;
+    let isCorrect = 0;
+    let isWrong = 0;
+    let newMasteredCount = currentMasteredCount;
 
     if (action === 'mastered') {
-      // 熟知：直接跳到已掌握阶段
-      newStage = MASTERED_STAGE;
-      isCorrect = 1;
-      isWrong = 0;
+      // 熟知：跳到 stage 8（15天后复习）
+      // 如果连续2次熟知（mastered_count >= 1），直接标记为已掌握
+      if (currentMasteredCount >= 1) {
+        // 第2次熟知 → 彻底已掌握
+        newStage = MASTERED_STAGE;
+        newMasteredCount = 0; // 重置计数
+        isCorrect = 1;
+      } else {
+        // 第1次熟知 → stage 8, 15天后复习
+        newStage = 8;
+        newMasteredCount = currentMasteredCount + 1;
+        isCorrect = 1;
+      }
     } else if (action === 'known') {
+      // 认识：阶段 +1
+      newMasteredCount = 0; // 任何非熟知操作都重置熟知计数
       isCorrect = 1;
-      isWrong = 0;
       if (existing) {
         newStage = Math.min(currentStage + 1, MASTERED_STAGE);
       } else {
         newStage = 1;
         this.dailyNewWordsCount++;
       }
-    } else {
-      // unknown / fuzzy：回退1个阶段，保留在原来阶段附近
+    } else if (action === 'fuzzy') {
+      // 模糊：阶段不变，重新进入当前阶段的复习队列
+      newMasteredCount = 0;
+      isWrong = 0; // 模糊不算错
       isCorrect = 0;
+      if (existing) {
+        newStage = currentStage; // 不增不减
+      } else {
+        newStage = 0;
+        this.dailyNewWordsCount++;
+      }
+    } else {
+      // unknown：回退到阶段 1
+      newMasteredCount = 0;
       isWrong = 1;
       if (existing) {
-        newStage = Math.max(0, currentStage - 1);
+        newStage = 1; // 直接回到阶段1
       } else {
         newStage = 0;
         this.dailyNewWordsCount++;
@@ -316,15 +349,16 @@ class Scheduler {
 
     try {
       db.prepare(`
-        INSERT INTO progress (word_id, stage, next_review_at, last_review_at, correct_count, wrong_count)
-        VALUES (?, ?, ?, ?, ?, ?)
+        INSERT INTO progress (word_id, stage, next_review_at, last_review_at, correct_count, wrong_count, mastered_count)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(word_id) DO UPDATE SET
           stage = excluded.stage,
           next_review_at = excluded.next_review_at,
           last_review_at = excluded.last_review_at,
           correct_count = progress.correct_count + excluded.correct_count,
-          wrong_count = progress.wrong_count + excluded.wrong_count
-      `).run(word.id, newStage, nextReviewAt, Date.now(), isCorrect, isWrong);
+          wrong_count = progress.wrong_count + excluded.wrong_count,
+          mastered_count = excluded.mastered_count
+      `).run(word.id, newStage, nextReviewAt, Date.now(), isCorrect, isWrong, newMasteredCount);
 
       db.prepare(`
         INSERT INTO daily_stats (date, words_reviewed, words_learned)
@@ -339,6 +373,7 @@ class Scheduler {
 
     console.log('[Scheduler] Progress:', word.word, '| action:', action,
       '| stage:', currentStage, '→', newStage,
+      '| masteredCount:', currentMasteredCount, '→', newMasteredCount,
       '| nextReview:', new Date(nextReviewAt).toISOString());
   }
 
