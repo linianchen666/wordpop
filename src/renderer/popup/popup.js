@@ -98,6 +98,11 @@ window.wordpopAPI.onWordData((data) => {
   // 确保弹窗内容可见（移除 hiding 状态）
   container.classList.remove('hiding');
 
+  // 新词边框提醒动画（不抢焦点时用视觉提示让用户注意）
+  container.classList.remove('new-word-alert');
+  void container.offsetHeight; // 触发 reflow 重置动画
+  container.classList.add('new-word-alert');
+
   // 新词弹入动画
   if (data.isNew) {
     wordText.style.animation = 'none';

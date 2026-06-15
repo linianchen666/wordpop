@@ -18,6 +18,18 @@
   transform: translateY(8px);
 }
 
+/* 新词出现时的边框提醒动画（不抢焦点也能注意到） */
+.popup-container.new-word-alert {
+  animation: borderPulse 2s ease;
+}
+
+@keyframes borderPulse {
+  0%   { border-color: var(--color-primary); box-shadow: 0 8px 32px var(--color-shadow), 0 0 0 2px rgba(74,144,217,0.4); }
+  30%  { border-color: var(--color-border); box-shadow: 0 8px 32px var(--color-shadow); }
+  60%  { border-color: var(--color-primary); box-shadow: 0 8px 32px var(--color-shadow), 0 0 0 2px rgba(74,144,217,0.3); }
+  100% { border-color: var(--color-border); box-shadow: 0 8px 32px var(--color-shadow); }
+}
+
 /* === 标题栏 === */
 .popup-header {
   display: flex;
