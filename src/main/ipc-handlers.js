@@ -31,8 +31,9 @@ ipcMain.handle('app:open-log-folder', async () => {
 //  单词反馈
 // ═════════════════════════╝
 
-ipcMain.on('word:known',   () => scheduler.markKnown());
-ipcMain.on('word:unknown', () => scheduler.markUnknown());
+ipcMain.on('word:known',     () => scheduler.markKnown());
+ipcMain.on('word:unknown',   () => scheduler.markUnknown());
+ipcMain.on('word:mastered',  () => scheduler.markMastered());
 
 ipcMain.on('word:pronounce', (_ev, word) => {
   // 发音由渲染进程 Web Speech API 处理；此处为预留通道

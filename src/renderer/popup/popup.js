@@ -2,7 +2,7 @@
 
 // === 两阶段交互状态 ===
 // phase = 'recall': 只显示英文单词+音标，等待用户主动回忆
-// phase = 'reveal': 显示释义+按钮，等待用户判断认识/不认识
+// phase = 'reveal': 显示释义+按钮，等待用户判断认识/不认识/熟知
 let phase = 'recall';
 
 // === DOM 引用 ===
@@ -15,6 +15,7 @@ const progressText = document.getElementById('progress-text');
 const progressFill = document.getElementById('progress-fill');
 const btnKnown = document.getElementById('btn-known');
 const btnUnknown = document.getElementById('btn-unknown');
+const btnMastered = document.getElementById('btn-mastered');
 const btnMinimize = document.getElementById('btn-minimize');
 const btnReveal = document.getElementById('btn-reveal');
 const revealArea = document.getElementById('reveal-area');
@@ -41,6 +42,7 @@ function enterRevealPhase() {
   // 启用按钮
   btnKnown.disabled = false;
   btnUnknown.disabled = false;
+  btnMastered.disabled = false;
 }
 
 // === 接收单词数据 ===
@@ -70,10 +72,16 @@ window.wordpopAPI.onWordData((data) => {
     document.documentElement.setAttribute('data-theme', data.config.theme);
   }
 
-  // 进度信息（9 阶段：0-8，共 9 格）
+  // 进度信息（9 阶段：0-8，共 9 格；stage 9 = 已掌握）
   if (data.progress) {
-    progressText.textContent = `阶段 ${data.progress.stage + 1}/9`;
-    progressFill.style.width = `${((data.progress.stage + 1) / 9) * 100}%`;
+    const stage = data.progress.stage;
+    if (stage >= 9) {
+      progressText.textContent = '已掌握';
+      progressFill.style.width = '100%';
+    } else {
+      progressText.textContent = `阶段 ${stage + 1}/9`;
+      progressFill.style.width = `${((stage + 1) / 9) * 100}%`;
+    }
   } else {
     progressText.textContent = '新词';
     progressFill.style.width = '0%';
@@ -109,38 +117,56 @@ btnReveal.addEventListener('click', () => {
   enterRevealPhase();
 });
 
+// === 禁用所有操作按钮 ===
+function disableActionButtons() {
+  btnKnown.disabled = true;
+  btnUnknown.disabled = true;
+  btnMastered.disabled = true;
+}
+
+// === 视觉反馈闪烁 ===
+function flashContainer() {
+  container.style.opacity = '0.7';
+  setTimeout(() => { container.style.opacity = ''; }, 100);
+}
+
 // === 点击「认识」 ===
 btnKnown.addEventListener('click', () => {
   if (!currentWord || phase !== 'reveal') return;
-  btnKnown.disabled = true;
-  btnUnknown.disabled = true;
+  disableActionButtons();
 
-  // 视觉反馈
   btnKnown.style.transform = 'scale(0.95)';
   setTimeout(() => { btnKnown.style.transform = ''; }, 150);
 
   window.wordpopAPI.markKnown();
   currentWord = null;
-
-  // 只在视觉上做一个快速闪烁表示反馈
-  container.style.opacity = '0.7';
-  setTimeout(() => { container.style.opacity = ''; }, 100);
+  flashContainer();
 });
 
 // === 点击「不认识」 ===
 btnUnknown.addEventListener('click', () => {
   if (!currentWord || phase !== 'reveal') return;
-  btnKnown.disabled = true;
-  btnUnknown.disabled = true;
+  disableActionButtons();
 
   btnUnknown.style.transform = 'scale(0.95)';
   setTimeout(() => { btnUnknown.style.transform = ''; }, 150);
 
   window.wordpopAPI.markUnknown();
   currentWord = null;
+  flashContainer();
+});
 
-  container.style.opacity = '0.7';
-  setTimeout(() => { container.style.opacity = ''; }, 100);
+// === 点击「熟知」 ===
+btnMastered.addEventListener('click', () => {
+  if (!currentWord || phase !== 'reveal') return;
+  disableActionButtons();
+
+  btnMastered.style.transform = 'scale(0.95)';
+  setTimeout(() => { btnMastered.style.transform = ''; }, 150);
+
+  window.wordpopAPI.markMastered();
+  currentWord = null;
+  flashContainer();
 });
 
 // === 最小化 ===
@@ -193,13 +219,27 @@ document.addEventListener('keydown', (e) => {
       break;
     case 'arrowright':
     case 'd':
-    case 'enter':
       if (phase === 'recall') {
-        // 回忆阶段：回车/右箭头 = 显示释义
+        // 回忆阶段：右箭头 = 显示释义
         btnReveal.click();
       } else if (!btnKnown.disabled) {
         // 显示阶段：认识
         btnKnown.click();
+      }
+      break;
+    case 'enter':
+      if (phase === 'recall') {
+        // 回忆阶段：回车 = 显示释义
+        btnReveal.click();
+      } else if (!btnMastered.disabled) {
+        // 显示阶段：回车 = 熟知（快捷入口）
+        btnMastered.click();
+      }
+      break;
+    case 'm':
+      // 熟知 — 仅在显示阶段可用
+      if (phase === 'reveal' && !btnMastered.disabled) {
+        btnMastered.click();
       }
       break;
     case 'escape':
