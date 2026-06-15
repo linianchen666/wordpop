@@ -219,6 +219,9 @@ wordText.addEventListener('click', () => {
 document.addEventListener('keydown', (e) => {
   if (!currentWord) return;
 
+  // 忽略带有修饰键的快捷键（如 Win+Shift+S、Ctrl+S 等）
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
+
   switch (e.key.toLowerCase()) {
     case ' ':
       e.preventDefault();

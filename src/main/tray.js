@@ -1,11 +1,91 @@
-const { Tray, Menu, nativeImage, app } = require('electron');
+const { Tray, Menu, nativeImage, app, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 let tray = null;
 let isPaused = false;
 let trayOptions = {};
 let lastStatus = null; // 缓存最近一次状态
+
+/**
+ * 检查更新：通过 GitHub API 获取最新 release 版本
+ */
+async function checkForUpdates(silent = false) {
+  const repo = 'linianchen666/wordpop';
+  const currentVersion = app.getVersion();
+
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const req = https.get({
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/releases/latest`,
+        headers: { 'User-Agent': 'WordPop-Update-Check' }
+      }, (res) => {
+        let body = '';
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+    });
+
+    if (!data.tag_name) {
+      if (!silent) dialog.showMessageBox({ type: 'info', title: '检查更新', message: '暂无可用更新', buttons: ['确定'] });
+      return;
+    }
+
+    const latest = data.tag_name.replace(/^v/, '');
+    const needUpdate = compareVersions(latest, currentVersion) > 0;
+
+    if (needUpdate) {
+      const result = await dialog.showMessageBox({
+        type: 'info',
+        title: '发现新版本',
+        message: `发现新版本 v${latest}（当前 v${currentVersion}）`,
+        detail: data.body || '',
+        buttons: ['前往下载', '稍后再说'],
+        defaultId: 0
+      });
+      if (result.response === 0) {
+        shell.openExternal(`https://github.com/${repo}/releases/latest`);
+      }
+    } else if (!silent) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: '检查更新',
+        message: `当前已是最新版本 v${currentVersion}`,
+        buttons: ['确定']
+      });
+    }
+  } catch (e) {
+    console.error('[Tray] checkForUpdates error:', e.message);
+    if (!silent) {
+      dialog.showMessageBox({
+        type: 'error',
+        title: '检查更新失败',
+        message: '无法连接到 GitHub，请稍后重试',
+        buttons: ['确定']
+      });
+    }
+  }
+}
+
+/**
+ * 简易版本号比较：返回 1 表示 a > b，-1 表示 a < b，0 表示相等
+ */
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] || 0, nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
 
 /**
  * 构建托盘右键菜单
@@ -75,6 +155,10 @@ function buildMenu(status) {
     {
       label: '⚙ 设置',
       click: () => { try { if (trayOptions.onOpenSettings) trayOptions.onOpenSettings(); } catch (e) {} }
+    },
+    {
+      label: '🔄 检查更新',
+      click: () => { checkForUpdates(false); }
     },
     { type: 'separator' },
     {
