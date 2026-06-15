@@ -140,10 +140,15 @@ app.whenReady().then(async () => {
   // 5.1 定时刷新托盘状态（显示下次弹窗倒计时）
   setInterval(() => {
     try { updateStatus(scheduler.getStatus()); } catch (_) {}
-  }, 30000); // 每30秒刷新一次
+  }, 15000); // 每15秒刷新一次
 
   // 5.2 每次学完单词也刷新托盘状态
   scheduler.onStatsUpdate(() => {
+    try { updateStatus(scheduler.getStatus()); } catch (_) {}
+  });
+
+  // 5.3 每次弹出单词也刷新托盘状态（显示"正在显示单词..."）
+  scheduler.onWordPop(() => {
     try { updateStatus(scheduler.getStatus()); } catch (_) {}
   });
 
@@ -181,6 +186,8 @@ app.whenReady().then(async () => {
       try {
         scheduler.start();
         log('[App] scheduler started successfully');
+        // 调度器启动后立即刷新托盘状态
+        try { updateStatus(scheduler.getStatus()); } catch (_) {}
       } catch (e) {
         log('[App] scheduler.start FAILED:', e.message, e.stack);
       }
@@ -189,6 +196,7 @@ app.whenReady().then(async () => {
       try {
         scheduler.start();
         log('[App] scheduler started (after timeout)');
+        try { updateStatus(scheduler.getStatus()); } catch (_) {}
       } catch (e) {
         log('[App] scheduler.start FAILED (after timeout):', e.message);
       }
@@ -340,12 +348,16 @@ function openSetupWindow() {
           try {
             scheduler.start();
             log('[App] scheduler started after setup');
+            try { updateStatus(scheduler.getStatus()); } catch (_) {}
           } catch (e) {
             log('[App] scheduler start after setup FAILED:', e.message);
           }
         }).catch(() => {
           log('[App] popup waitForReady timed out after setup → starting scheduler anyway');
-          try { scheduler.start(); } catch (_) {}
+          try {
+            scheduler.start();
+            try { updateStatus(scheduler.getStatus()); } catch (_) {}
+          } catch (_) {}
         });
       } catch (err) {
         log('[App] setup closed handler error:', err.message, err.stack);

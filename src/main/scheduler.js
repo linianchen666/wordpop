@@ -58,6 +58,7 @@ class Scheduler {
     this.dailyNewWordsLimit = 20;
     this.dailyNewWordsCount = 0;
     this._onStatsUpdate = null;
+    this._onWordPop = null;
     this._lastDate = null;
   }
 
@@ -151,6 +152,10 @@ class Scheduler {
           popupManager.hide();
         }
       } catch (e) {}
+      // 通知托盘更新状态（显示下次复习倒计时）
+      if (this._onStatsUpdate) {
+        try { this._onStatsUpdate(); } catch (e) {}
+      }
       this.nextPopupTimer = setTimeout(() => this._popNext(), 30000);
     }
   }
@@ -176,6 +181,11 @@ class Scheduler {
       });
     } catch (e) {
       console.error('[Scheduler] _showWord ERROR:', e.message);
+    }
+
+    // 通知托盘更新状态（显示"正在显示单词"）
+    if (this._onWordPop) {
+      try { this._onWordPop(); } catch (e) {}
     }
   }
 
@@ -450,7 +460,18 @@ class Scheduler {
         FROM progress
         WHERE stage < ? AND next_review_at > 0
       `).get(MASTERED_STAGE);
-      return row && row.next_at ? row.next_at : null;
+
+      if (row && row.next_at) return row.next_at;
+
+      // 没有待复习的单词，但有新词配额且还有未学单词 → 返回当前时间表示很快会弹出
+      if (this.hasNewWordsQuotaToday()) {
+        const unlearned = db.prepare(
+          'SELECT COUNT(*) c FROM words w LEFT JOIN progress p ON w.id = p.word_id WHERE p.word_id IS NULL'
+        ).get();
+        if (unlearned && unlearned.c > 0) return Date.now();
+      }
+
+      return null;
     } catch (e) {
       console.error('[Scheduler] getNextReviewTime error:', e.message);
       return null;
@@ -494,6 +515,10 @@ class Scheduler {
 
   onStatsUpdate(callback) {
     this._onStatsUpdate = callback;
+  }
+
+  onWordPop(callback) {
+    this._onWordPop = callback;
   }
 }
 
