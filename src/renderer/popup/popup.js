@@ -148,6 +148,36 @@ window.wordpopAPI.onHide(() => {
   container.classList.add('hiding');
 });
 
+// === 监听配置变更，立即刷新当前显示 ===
+window.wordpopAPI.onConfigChanged((newConfig) => {
+  if (!currentWord) return;
+
+  // 更新 currentWord 中的 config 引用
+  currentWord.config = {
+    ...currentWord.config,
+    ...newConfig
+  };
+
+  // 立即应用主题
+  if (newConfig.theme) {
+    document.documentElement.setAttribute('data-theme', newConfig.theme);
+  }
+
+  // 立即应用字号
+  if (newConfig.fontSize) {
+    wordText.setAttribute('data-font', newConfig.fontSize);
+  }
+
+  // 立即应用例句显示/隐藏
+  if (newConfig.showExample !== undefined) {
+    if (newConfig.showExample && currentWord.example) {
+      exampleText.style.display = 'block';
+    } else {
+      exampleText.style.display = 'none';
+    }
+  }
+});
+
 // === 点击「显示释义」按钮 ===
 btnReveal.addEventListener('click', () => {
   if (!currentWord) return;

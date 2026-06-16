@@ -441,9 +441,21 @@ class Scheduler {
   }
 
   applyConfig(config) {
-    if (config && config.dailyNewWords !== undefined) {
+    if (!config) return;
+    let needReload = false;
+
+    if (config.dailyNewWords !== undefined) {
       this.dailyNewWordsLimit = config.dailyNewWords;
       console.log('[Scheduler] Daily new words limit updated to:', this.dailyNewWordsLimit);
+      needReload = true;
+    }
+
+    if (config.selectedWordlists !== undefined) {
+      console.log('[Scheduler] Selected wordlists updated to:', config.selectedWordlists);
+      needReload = true;
+    }
+
+    if (needReload) {
       this.reloadQueue();
     }
   }

@@ -10,7 +10,7 @@ let popupConfig = {
   fontSize: 'medium',
   showExample: true,
   theme: 'light',
-  autoPronounce: false,
+  autoPronounce: true,
   pronounceAccent: 'en-US'
 };
 
@@ -222,6 +222,12 @@ function updateConfig(cfg) {
   if (cfg.theme !== undefined) popupConfig.theme = cfg.theme;
   if (cfg.autoPronounce !== undefined) popupConfig.autoPronounce = cfg.autoPronounce;
   if (cfg.pronounceAccent !== undefined) popupConfig.pronounceAccent = cfg.pronounceAccent;
+
+  // 如果弹窗正在显示，立即移动到新位置
+  if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
+    const bounds = getPopupBounds(popupConfig.position);
+    popupWindow.setBounds({ ...bounds, width: 360, height: 280 });
+  }
 }
 
 function isVisible() {

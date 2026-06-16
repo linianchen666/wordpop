@@ -8,7 +8,7 @@ const DEFAULT_CONFIG = {
   dailyNewWords: 20,
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
   selectedWordlists: ['cet4'],     // 启用的词库列表
-  autoPronounce: false,            // 自动发音
+  autoPronounce: true,             // 自动发音
   pronounceAccent: 'en-US',       // 发音口音：en-US (美式) | en-GB (英式)
   autoStart: false,                // 开机自启
   showExample: true,               // 显示例句

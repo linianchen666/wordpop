@@ -118,6 +118,9 @@ app.whenReady().then(async () => {
   // 3. IPC
   safeStep('registerIpc', registerIpcHandlers);
 
+  // 3.1 用当前配置初始化 popupManager
+  popupManager.updateConfig(config);
+
   // 4. 托盘
   const trayOk = safeStep('createTray', () => createTray({
     onShowPopup:    () => { try { showPopup(); } catch (_) {} },
