@@ -127,6 +127,7 @@ app.whenReady().then(async () => {
     onPauseToggle:  (p) => { try { p ? scheduler.pause() : scheduler.resume(); } catch (_) {} },
     onOpenSettings: () => { try { openSettingsWindow(); } catch (_) {} },
     onOpenStats:    () => { try { openStatsWindow(); } catch (_) {} },
+    onOpenStubborn: () => { try { openStubbornWindow(); } catch (_) {} },
     onQuit:         () => { try { scheduler.stop(); app.quit(); } catch (_) { app.quit(); } }
   }));
 
@@ -312,6 +313,29 @@ function openStatsWindow() {
     statsWindow.loadFile(getRendererPath('stats', 'index.html'));
     statsWindow.on('closed', () => { statsWindow = null; });
   } catch (err) { log('[App] openStats ERROR:', err.message); }
+}
+
+function openStubbornWindow() {
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    statsWindow.focus();
+    statsWindow.webContents.send('stats:scroll-to-stubborn');
+    return;
+  }
+  try {
+    statsWindow = new BrowserWindow({
+      width: 520, height: 600, resizable: true, title: 'WordPop — 顽固单词',
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: getPreloadPath(),
+        contextIsolation: true, nodeIntegration: false, sandbox: false
+      }
+    });
+    statsWindow.loadFile(getRendererPath('stats', 'index.html'));
+    statsWindow.webContents.once('did-finish-load', () => {
+      statsWindow.webContents.send('stats:scroll-to-stubborn');
+    });
+    statsWindow.on('closed', () => { statsWindow = null; });
+  } catch (err) { log('[App] openStubborn ERROR:', err.message); }
 }
 
 function openSetupWindow() {

@@ -152,6 +152,10 @@ function buildMenu(status) {
       label: '📊 今日统计',
       click: () => { try { if (trayOptions.onOpenStats) trayOptions.onOpenStats(); } catch (e) {} }
     },
+    {
+      label: '🔥 顽固单词',
+      click: () => { try { if (trayOptions.onOpenStubborn) trayOptions.onOpenStubborn(); } catch (e) {} }
+    },
     { type: 'separator' },
     {
       label: '⚙ 设置',

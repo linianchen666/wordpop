@@ -201,6 +201,24 @@ ipcMain.handle('stats:daily', (_ev, days=7) => {
   }
 });
 
+ipcMain.handle('stats:stubborn-words', (_ev, minWrong = 3) => {
+  try {
+    const db = getDb();
+    return db.prepare(`
+      SELECT w.id, w.word, w.phonetic, w.translation, w.example,
+             p.stage, p.wrong_count, p.correct_count, p.next_review_at
+      FROM words w
+      JOIN progress p ON w.id = p.word_id
+      WHERE p.wrong_count >= ? AND p.stage < 9
+      ORDER BY p.wrong_count DESC, p.stage ASC
+      LIMIT 50
+    `).all(minWrong);
+  } catch (err) {
+    console.error('[IPC] stats:stubborn-words error:', err.message);
+    return [];
+  }
+});
+
 ipcMain.handle('stats:stage-distribution', () => {
   try {
     return getDb().prepare(`

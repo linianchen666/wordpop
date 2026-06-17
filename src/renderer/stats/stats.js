@@ -60,6 +60,7 @@ async function loadStats() {
   renderOverview(stats);
   renderDailyChart(dailyStats);
   renderStageChart(stageDist);
+  loadStubbornWords();
 }
 
 // === 渲染概览数据 ===
@@ -120,9 +121,69 @@ function renderStageChart(stageDist) {
   drawBarChart(chartStage, data, { theme: 'light' });
 }
 
+// === 加载顽固单词 ===
+async function loadStubbornWords() {
+  let words;
+  try {
+    words = await window.wordpopAPI.getStubbornWords(3);
+  } catch (err) {
+    console.error('[Stats] getStubbornWords FAILED:', err);
+    words = [];
+  }
+  renderStubbornWords(words);
+}
+
+function renderStubbornWords(words) {
+  const listEl = document.getElementById('stubborn-list');
+  const emptyEl = document.getElementById('stubborn-empty');
+  const countEl = document.getElementById('stubborn-count');
+  const hintEl = document.getElementById('stubborn-hint');
+
+  if (!words || words.length === 0) {
+    listEl.innerHTML = '';
+    listEl.appendChild(emptyEl);
+    emptyEl.style.display = 'block';
+    countEl.textContent = '';
+    hintEl.style.display = 'block';
+    return;
+  }
+
+  emptyEl.style.display = 'none';
+  countEl.textContent = `(${words.length})`;
+  hintEl.style.display = 'block';
+
+  listEl.innerHTML = words.map(w => {
+    const stageNames = ['新学', '5分', '30分', '4时', '1天', '2天', '4天', '7天', '15天'];
+    const stageLabel = stageNames[w.stage] || ('阶段' + w.stage);
+    const rate = w.correct_count + w.wrong_count > 0
+      ? Math.round(w.correct_count / (w.correct_count + w.wrong_count) * 100)
+      : 0;
+    return `
+      <div class="stubborn-item" data-word-id="${w.id}">
+        <div class="stubborn-main">
+          <span class="stubborn-word">${w.word}</span>
+          <span class="stubborn-phonetic">${w.phonetic ? '/' + w.phonetic + '/' : ''}</span>
+        </div>
+        <div class="stubborn-translation">${w.translation || ''}</div>
+        <div class="stubborn-meta">
+          <span class="stubborn-wrong">❌ ${w.wrong_count}次</span>
+          <span class="stubborn-stage">${stageLabel}</span>
+          <span class="stubborn-rate">正确率${rate}%</span>
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
 // === 监听统计更新 ===
 window.wordpopAPI.onStatsUpdated(() => {
   loadStats();
+});
+
+// === 从托盘打开时滚动到顽固单词区域 ===
+window.wordpopAPI.onScrollToStubborn(() => {
+  const section = document.querySelector('.stats-section:nth-last-of-type(2)');
+  if (section) section.scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 // === 刷新 ===

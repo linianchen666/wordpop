@@ -149,6 +149,90 @@
   font-size: 14px;
 }
 
+/* === 顽固单词 === */
+.stubborn-count {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  font-weight: 400;
+}
+
+.stubborn-hint {
+  font-size: 12px;
+  color: var(--color-text-muted);
+  margin-bottom: 8px;
+}
+
+.stubborn-list {
+  max-height: 320px;
+  overflow-y: auto;
+}
+
+.stubborn-list::-webkit-scrollbar {
+  width: 4px;
+}
+
+.stubborn-empty {
+  text-align: center;
+  padding: 20px;
+  color: var(--color-text-muted);
+  font-size: 13px;
+}
+
+.stubborn-item {
+  padding: 10px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
+  margin-bottom: 8px;
+  background: var(--color-bg-secondary);
+  transition: border-color 0.2s;
+}
+
+.stubborn-item:hover {
+  border-color: var(--color-primary);
+}
+
+.stubborn-main {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.stubborn-word {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.stubborn-phonetic {
+  font-size: 12px;
+  color: var(--color-text-muted);
+}
+
+.stubborn-translation {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.stubborn-meta {
+  display: flex;
+  gap: 12px;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--color-text-muted);
+}
+
+.stubborn-wrong {
+  color: var(--color-danger, #E74C3C);
+  font-weight: 600;
+}
+
+.stubborn-rate {
+  color: var(--color-text-muted);
+}
+
 /* === 滚动 === */
 .stats-container {
   overflow-y: auto;
