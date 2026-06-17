@@ -194,7 +194,6 @@ function getTrayIcon() {
     try {
       const icon = nativeImage.createFromPath(iconPath);
       if (!icon.isEmpty()) {
-        console.log('[Tray] Using file icon:', iconPath);
         return icon;
       }
     } catch (e) {
@@ -203,7 +202,6 @@ function getTrayIcon() {
   }
 
   // 2. Fallback: 像素生成 W 字母图标
-  console.log('[Tray] File icon not found, generating pixel icon');
   return generatePixelIcon();
 }
 
@@ -319,7 +317,6 @@ function createTray(options = {}) {
       try { if (options.onShowPopup) options.onShowPopup(); } catch (e) {}
     });
 
-    console.log('[Tray] Tray created successfully');
     return tray;
   } catch (err) {
     console.error('[Tray] FATAL: could not create tray:', err.message, err.stack);
@@ -394,8 +391,6 @@ function startAutoUpdateCheck(enabled) {
   autoUpdateTimer = setInterval(() => {
     checkForUpdates(true);
   }, 24 * 60 * 60 * 1000);
-
-  console.log('[Tray] Auto update check enabled (daily)');
 }
 
 module.exports = { createTray, setPaused, updateStatus, destroyTray, startAutoUpdateCheck };

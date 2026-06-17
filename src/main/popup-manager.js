@@ -63,12 +63,10 @@ function createPopupWindow() {
     });
 
     const htmlPath = getAsarPath('src', 'renderer', 'popup', 'index.html');
-    console.log('[Popup] Loading:', htmlPath);
     popupWindow.loadFile(htmlPath);
 
     popupWindow.once('ready-to-show', () => {
       popupReady = true;
-      console.log('[Popup] ready-to-show fired');
       if (pendingWordData) {
         const d = pendingWordData;
         pendingWordData = null;
@@ -83,7 +81,6 @@ function createPopupWindow() {
     popupWindow.on('closed', () => {
       popupWindow = null;
       popupReady = false;
-      console.log('[Popup] closed');
     });
 
     return popupWindow;
@@ -106,7 +103,6 @@ function waitForReady(timeout) {
     const id = setInterval(() => {
       if (popupReady || Date.now() - t0 > timeout) {
         clearInterval(id);
-        console.log('[Popup] waitForReady done, ready=', popupReady);
         resolve();
       }
     }, 100);
@@ -117,19 +113,14 @@ function waitForReady(timeout) {
  * 显示弹窗并传入单词数据
  */
 function show(wordData) {
-  console.log('[Popup] show() called, ready=', popupReady, 'win=', !!popupWindow);
   try {
     if (popupWindow && !popupWindow.isDestroyed() && popupReady) {
       _displayWord(wordData);
     } else if (popupWindow && !popupWindow.isDestroyed() && !popupReady) {
-      // 窗口存在但还没 ready，暂存数据
       pendingWordData = wordData;
-      console.log('[Popup] win exists but not ready, data pending');
     } else {
-      // 窗口不存在，创建新的
       createPopupWindow();
       pendingWordData = wordData;
-      console.log('[Popup] new window created, data pending');
     }
   } catch (err) {
     console.error('[Popup] show() ERROR:', err.message);
@@ -141,7 +132,6 @@ function show(wordData) {
  */
 function _displayWord(wordData) {
   if (!popupWindow || popupWindow.isDestroyed()) {
-    console.log('[Popup] _displayWord: window invalid, recreating...');
     createPopupWindow();
     pendingWordData = wordData;
     return;
@@ -168,8 +158,6 @@ function _displayWord(wordData) {
     if (!popupWindow.isVisible()) popupWindow.showInactive();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
-
-    console.log('[Popup] displayWord:', wordData.word, '| visible:', popupWindow.isVisible());
   } catch (err) {
     console.error('[Popup] _displayWord ERROR:', err.message, err.stack);
   }

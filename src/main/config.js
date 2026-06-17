@@ -66,8 +66,6 @@ function saveConfig(config) {
     const merged = { ...loadConfig(), ...config };
     fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
     cachedConfig = merged;
-
-    // 处理开机自启
     if ('autoStart' in config) {
       app.setLoginItemSettings({
         openAtLogin: config.autoStart,
@@ -75,7 +73,6 @@ function saveConfig(config) {
       });
     }
 
-    console.log('[Config] Config saved:', Object.keys(config).join(', '));
     return { success: true, config: merged };
   } catch (err) {
     console.error('[Config] Failed to save config:', err.message);

@@ -33,27 +33,21 @@ async function loadStats() {
   let stats;
   try {
     stats = await window.wordpopAPI.getStats();
-    console.log('[Stats] getStats result:', JSON.stringify(stats));
   } catch (err) {
-    console.error('[Stats] getStats FAILED:', err);
     stats = { today: { words_reviewed: 0, words_learned: 0 }, total: { words: 0, correct: 0, wrong: 0, mastered: 0 }, streak: 0 };
   }
 
   let dailyStats;
   try {
     dailyStats = await window.wordpopAPI.getDailyStats(7);
-    console.log('[Stats] getDailyStats result:', JSON.stringify(dailyStats));
   } catch (err) {
-    console.error('[Stats] getDailyStats FAILED:', err);
     dailyStats = [];
   }
 
   let stageDist;
   try {
     stageDist = await window.wordpopAPI.getStageDistribution();
-    console.log('[Stats] getStageDistribution result:', JSON.stringify(stageDist));
   } catch (err) {
-    console.error('[Stats] getStageDistribution FAILED:', err);
     stageDist = [];
   }
 
@@ -65,9 +59,7 @@ async function loadStats() {
 
 // === 渲染概览数据 ===
 function renderOverview(stats) {
-  if (!stats) { console.error('[Stats] renderOverview: stats is null'); return; }
-
-  console.log('[Stats] renderOverview:', JSON.stringify(stats));
+  if (!stats) return;
 
   statTodayReviewed.textContent = stats.today?.words_reviewed ?? 0;
   statTodayLearned.textContent = stats.today?.words_learned ?? 0;

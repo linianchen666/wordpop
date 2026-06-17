@@ -75,11 +75,6 @@ class Scheduler {
 
     this._resetDailyCountIfNeeded();
     this.reloadQueue();
-
-    console.log('[Scheduler] Started | daily limit:', this.dailyNewWordsLimit,
-      '| daily count:', this.dailyNewWordsCount,
-      '| queue size:', this.queue.length);
-
     this._popNext();
   }
 
@@ -90,7 +85,6 @@ class Scheduler {
     }
     this.queue = [];
     this.currentWord = null;
-    console.log('[Scheduler] Stopped');
   }
 
   pause() {
@@ -100,13 +94,11 @@ class Scheduler {
       this.nextPopupTimer = null;
     }
     try { popupManager.hide(); } catch (e) {}
-    console.log('[Scheduler] Paused');
   }
 
   resume() {
     this.isPaused = false;
     this.reloadQueue();
-    console.log('[Scheduler] Resumed | queue size:', this.queue.length);
 
     if (this.queue.length > 0) {
       // 有单词：显示弹窗并弹出下一个
@@ -114,7 +106,6 @@ class Scheduler {
       this._popNext();
     } else {
       // 没有单词：不显示弹窗（避免闪烁），延迟后重试
-      console.log('[Scheduler] Resumed but queue empty, will retry in 10s');
       this.nextPopupTimer = setTimeout(() => {
         this.reloadQueue();
         if (this.queue.length > 0) {
@@ -142,11 +133,8 @@ class Scheduler {
     if (word) {
       this.currentWord = word;
       this._showWord(word);
-      console.log('[Scheduler] Pop:', word.word, '| stage:', word.stage, '| remaining:', this.queue.length);
     } else {
       // 没有单词了，隐藏弹窗，30秒后重试
-      // 注意：只在弹窗可见时才隐藏，避免不必要的操作
-      console.log('[Scheduler] No words available, retry in 30s');
       try {
         if (popupManager.isVisible()) {
           popupManager.hide();
@@ -220,9 +208,6 @@ class Scheduler {
       }
 
       this.queue = [...shuffleArray(dueReviews), ...newWords];
-
-      console.log('[Scheduler] Queue reloaded | due:', dueReviews.length,
-        '| new:', newWords.length, '| total:', this.queue.length);
     } catch (e) {
       console.error('[Scheduler] reloadQueue ERROR:', e.message);
       this.queue = [];
@@ -230,64 +215,48 @@ class Scheduler {
   }
 
   markKnown() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markKnown: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markKnown:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('known');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markKnown ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markKnown ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
   }
 
   markUnknown() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markUnknown: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markUnknown:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('unknown');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markUnknown ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markUnknown ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
   }
 
   markFuzzy() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markFuzzy: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markFuzzy:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('fuzzy');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markFuzzy ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markFuzzy ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
   }
 
   markMastered() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markMastered: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markMastered:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('mastered');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markMastered ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markMastered ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
@@ -396,11 +365,6 @@ class Scheduler {
     } catch (e) {
       console.error('[Scheduler] _updateProgress DB ERROR:', e.message);
     }
-
-    console.log('[Scheduler] Progress:', word.word, '| action:', action,
-      '| stage:', currentStage, '→', newStage,
-      '| masteredCount:', currentMasteredCount, '→', newMasteredCount,
-      '| nextReview:', new Date(nextReviewAt).toISOString());
   }
 
   _advanceToNext() {
@@ -417,7 +381,6 @@ class Scheduler {
       String(now.getMonth() + 1).padStart(2, '0') + '-' +
       String(now.getDate()).padStart(2, '0');
     if (this._lastDate && this._lastDate !== today) {
-      console.log('[Scheduler] Date changed:', this._lastDate, '→', today);
       this.dailyNewWordsCount = 0;
     }
     this._lastDate = today;
@@ -437,7 +400,6 @@ class Scheduler {
     this._lastDate = new Date().getFullYear() + '-' +
       String(new Date().getMonth() + 1).padStart(2, '0') + '-' +
       String(new Date().getDate()).padStart(2, '0');
-    console.log('[Scheduler] Daily count reset | today learned:', this.dailyNewWordsCount);
   }
 
   applyConfig(config) {
@@ -446,12 +408,10 @@ class Scheduler {
 
     if (config.dailyNewWords !== undefined) {
       this.dailyNewWordsLimit = config.dailyNewWords;
-      console.log('[Scheduler] Daily new words limit updated to:', this.dailyNewWordsLimit);
       needReload = true;
     }
 
     if (config.selectedWordlists !== undefined) {
-      console.log('[Scheduler] Selected wordlists updated to:', config.selectedWordlists);
       needReload = true;
     }
 

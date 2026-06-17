@@ -258,5 +258,4 @@ ipcMain.on('app:quit', () => {
   app.quit();
 });
 
-console.log('[IPC] All handlers registered');
 module.exports = { registerIpcHandlers: () => {} };
