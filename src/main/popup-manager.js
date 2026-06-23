@@ -232,21 +232,7 @@ function hasCurrentWord() {
 
 function destroy() { closeImmediately(); }
 
-/**
- * 向弹窗发送撤销提示
- */
-function sendUndoAvailable(label) {
-  try {
-    if (popupWindow && !popupWindow.isDestroyed() && popupReady) {
-      popupWindow.webContents.send('popup:undo-available', label);
-    }
-  } catch (e) {
-    console.error('[Popup] sendUndoAvailable error:', e.message);
-  }
-}
-
 module.exports = {
   createPopupWindow, show, hide, restore, closeImmediately,
-  updateConfig, isVisible, hasCurrentWord, waitForReady, destroy,
-  sendUndoAvailable
+  updateConfig, isVisible, hasCurrentWord, waitForReady, destroy
 };

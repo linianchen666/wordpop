@@ -12,9 +12,6 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   pronounce:       (w) => ipcRenderer.send('word:pronounce', w),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),
 
-  // === 撤销事件 ===
-  onUndoAvailable: (cb) => ipcRenderer.on('popup:undo-available', (_e, label) => cb(label)),
-
   // === 设置操作 ===
   getConfig:           ()  => ipcRenderer.invoke('config:get'),
   saveConfig:          (c) => ipcRenderer.invoke('config:save', c),

@@ -378,21 +378,10 @@ class Scheduler {
 
   _advanceToNext() {
     this.currentWord = null;
-
-    // 发送撤销提示到弹窗
-    if (this._undoInfo) {
-      const ACTION_LABELS = { known: '认识', unknown: '不认识', fuzzy: '模糊', mastered: '熟知' };
-      const label = ACTION_LABELS[this._undoInfo.action] || '';
-      try { popupManager.sendUndoAvailable(label); } catch (e) {}
-    }
-
     if (this._onStatsUpdate) {
       try { this._onStatsUpdate(); } catch (e) {}
     }
-    this.nextPopupTimer = setTimeout(() => {
-      this._undoInfo = null;
-      this._popNext();
-    }, 2000);
+    this.nextPopupTimer = setTimeout(() => this._popNext(), 300);
   }
 
   /**
@@ -404,6 +393,11 @@ class Scheduler {
 
     const { word, oldProgress, action, wasNewWord } = this._undoInfo;
     const db = getDb();
+
+    // 如果下一个单词已经弹出，将其放回队列头部
+    if (this.currentWord && this.currentWord.id !== word.id) {
+      this.queue.unshift(this.currentWord);
+    }
 
     // 取消待弹出的下一个单词
     if (this.nextPopupTimer) {
