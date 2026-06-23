@@ -24,8 +24,12 @@ const wordDetail = document.getElementById('word-detail');
 const actionButtons = document.getElementById('action-buttons');
 const exampleEn = document.getElementById('example-en');
 const exampleCn = document.getElementById('example-cn');
+const undoBar = document.getElementById('undo-bar');
+const undoLabel = document.getElementById('undo-label');
+const btnUndo = document.getElementById('btn-undo');
 
 let currentWord = null;
+let undoAvailable = false;
 
 // === 切换到回忆阶段（新单词出现时） ===
 function enterRecallPhase() {
@@ -67,6 +71,25 @@ function pronounceWord(word, accent) {
     window.speechSynthesis.speak(utterance);
   } catch (e) {}
 }
+
+// === 撤销相关 ===
+
+function showUndoFeedback(label) {
+  undoAvailable = true;
+  undoLabel.textContent = `已标记为${label}`;
+  undoBar.classList.remove('hidden');
+  container.querySelector('.popup-body').classList.add('faded');
+}
+
+function hideUndoFeedback() {
+  undoAvailable = false;
+  undoBar.classList.add('hidden');
+  container.querySelector('.popup-body').classList.remove('faded');
+}
+
+window.wordpopAPI.onUndoAvailable((label) => {
+  showUndoFeedback(label);
+});
 
 // === 接收单词数据 ===
 window.wordpopAPI.onWordData((data) => {
@@ -125,6 +148,9 @@ window.wordpopAPI.onWordData((data) => {
 
   // 确保弹窗内容可见（移除 hiding 状态）
   container.classList.remove('hiding');
+
+  // 清除撤销提示（新单词到达时）
+  hideUndoFeedback();
 
   // 新词边框提醒动画（不抢焦点时用视觉提示让用户注意）
   container.classList.remove('new-word-alert');
@@ -208,7 +234,6 @@ btnKnown.addEventListener('click', () => {
 
   window.wordpopAPI.markKnown();
   currentWord = null;
-  flashContainer();
 });
 
 // === 点击「不认识」 ===
@@ -221,7 +246,6 @@ btnUnknown.addEventListener('click', () => {
 
   window.wordpopAPI.markUnknown();
   currentWord = null;
-  flashContainer();
 });
 
 // === 点击「模糊」 ===
@@ -234,7 +258,6 @@ btnFuzzy.addEventListener('click', () => {
 
   window.wordpopAPI.markFuzzy();
   currentWord = null;
-  flashContainer();
 });
 
 // === 点击「熟知」(右上角) ===
@@ -244,7 +267,13 @@ btnMastered.addEventListener('click', () => {
 
   window.wordpopAPI.markMastered();
   currentWord = null;
-  flashContainer();
+});
+
+// === 点击「撤销」 ===
+btnUndo.addEventListener('click', () => {
+  if (!undoAvailable) return;
+  window.wordpopAPI.undo();
+  hideUndoFeedback();
 });
 
 // === 最小化 ===
@@ -265,6 +294,20 @@ wordText.addEventListener('click', () => {
 
 // === 键盘快捷键 ===
 document.addEventListener('keydown', (e) => {
+  // Ctrl+Z / Cmd+Z 撤销（即使 currentWord 为空也可用）
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    if (undoAvailable) btnUndo.click();
+    return;
+  }
+
+  // Backspace 撤销（撤销反馈期间）
+  if (e.key === 'Backspace' && undoAvailable && !currentWord) {
+    e.preventDefault();
+    btnUndo.click();
+    return;
+  }
+
   if (!currentWord) return;
 
   // 忽略带有修饰键的快捷键（如 Win+Shift+S、Ctrl+S 等）

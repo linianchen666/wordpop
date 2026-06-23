@@ -60,6 +60,7 @@ class Scheduler {
     this._onStatsUpdate = null;
     this._onWordPop = null;
     this._lastDate = null;
+    this._undoInfo = null;
   }
 
   start() {
@@ -285,6 +286,14 @@ class Scheduler {
       existing = null;
     }
 
+    // 保存撤销信息（在修改数据库之前）
+    this._undoInfo = {
+      word: { ...word },
+      oldProgress: existing ? { ...existing } : null,
+      action: action,
+      wasNewWord: !existing
+    };
+
     const currentStage = existing ? existing.stage : 0;
     const currentMasteredCount = existing ? (existing.mastered_count || 0) : 0;
     let newStage;
@@ -369,10 +378,95 @@ class Scheduler {
 
   _advanceToNext() {
     this.currentWord = null;
+
+    // 发送撤销提示到弹窗
+    if (this._undoInfo) {
+      const ACTION_LABELS = { known: '认识', unknown: '不认识', fuzzy: '模糊', mastered: '熟知' };
+      const label = ACTION_LABELS[this._undoInfo.action] || '';
+      try { popupManager.sendUndoAvailable(label); } catch (e) {}
+    }
+
     if (this._onStatsUpdate) {
       try { this._onStatsUpdate(); } catch (e) {}
     }
-    this.nextPopupTimer = setTimeout(() => this._popNext(), 300);
+    this.nextPopupTimer = setTimeout(() => {
+      this._undoInfo = null;
+      this._popNext();
+    }, 2000);
+  }
+
+  /**
+   * 撤销上一次操作，恢复单词进度
+   * @returns {boolean} 是否成功撤销
+   */
+  undo() {
+    if (!this._undoInfo) return false;
+
+    const { word, oldProgress, action, wasNewWord } = this._undoInfo;
+    const db = getDb();
+
+    // 取消待弹出的下一个单词
+    if (this.nextPopupTimer) {
+      clearTimeout(this.nextPopupTimer);
+      this.nextPopupTimer = null;
+    }
+
+    try {
+      if (wasNewWord) {
+        // 新词：删除刚插入的 progress 记录
+        db.prepare('DELETE FROM progress WHERE word_id = ?').run(word.id);
+      } else {
+        // 已学词：恢复旧值
+        db.prepare(`
+          UPDATE progress SET
+            stage = ?,
+            next_review_at = ?,
+            last_review_at = ?,
+            correct_count = ?,
+            wrong_count = ?,
+            mastered_count = ?
+          WHERE word_id = ?
+        `).run(
+          oldProgress.stage,
+          oldProgress.next_review_at,
+          oldProgress.last_review_at,
+          oldProgress.correct_count,
+          oldProgress.wrong_count,
+          oldProgress.mastered_count,
+          word.id
+        );
+      }
+
+      // 回退今日统计
+      const wordsLearnedDelta = wasNewWord ? 1 : 0;
+      db.prepare(`
+        UPDATE daily_stats SET
+          words_reviewed = MAX(words_reviewed - 1, 0),
+          words_learned = MAX(words_learned - ?, 0)
+        WHERE date = date('now', 'localtime')
+      `).run(wordsLearnedDelta);
+
+      // 回退今日新词计数
+      if (wasNewWord) {
+        this.dailyNewWordsCount = Math.max(0, this.dailyNewWordsCount - 1);
+      }
+    } catch (e) {
+      console.error('[Scheduler] undo DB ERROR:', e.message);
+      return false;
+    }
+
+    // 清除撤销信息
+    this._undoInfo = null;
+
+    // 重新显示该单词
+    this.currentWord = word;
+    this._showWord(word);
+
+    return true;
+  }
+
+  canUndo() {
+    return this._undoInfo !== null;
   }
 
   _checkDateChange() {

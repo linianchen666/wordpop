@@ -8,8 +8,12 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   markUnknown:     ()  => ipcRenderer.send('word:unknown'),
   markFuzzy:       ()  => ipcRenderer.send('word:fuzzy'),
   markMastered:    ()  => ipcRenderer.send('word:mastered'),
+  undo:            ()  => ipcRenderer.send('word:undo'),
   pronounce:       (w) => ipcRenderer.send('word:pronounce', w),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),
+
+  // === 撤销事件 ===
+  onUndoAvailable: (cb) => ipcRenderer.on('popup:undo-available', (_e, label) => cb(label)),
 
   // === 设置操作 ===
   getConfig:           ()  => ipcRenderer.invoke('config:get'),

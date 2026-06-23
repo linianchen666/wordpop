@@ -297,3 +297,52 @@
   .btn-reveal { padding: 6px 16px; font-size: 13px; }
   .popup-footer { gap: 6px; padding: 6px 8px 10px; }
 }
+
+/* === 撤销提示栏 === */
+.undo-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 12px;
+  gap: 12px;
+  background: var(--color-bg-secondary);
+  border-top: 1px solid var(--color-border);
+  animation: fadeIn 0.2s ease;
+}
+
+.undo-bar.hidden {
+  display: none !important;
+}
+
+.undo-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.undo-btn {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-primary);
+  background: transparent;
+  border: 1px solid var(--color-primary);
+  border-radius: var(--radius-sm);
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: all var(--transition-fast);
+}
+
+.undo-btn:hover {
+  background: var(--color-primary);
+  color: white;
+}
+
+.undo-btn:active {
+  transform: scale(0.95);
+}
+
+/* === 撤销期间弹窗内容淡化 === */
+.popup-body.faded {
+  opacity: 0.4;
+  pointer-events: none;
+}
