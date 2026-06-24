@@ -4,72 +4,92 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
-  background: var(--color-bg);
-  border: 1px solid var(--color-border);
+  /* Glassmorphism */
+  background: rgba(248, 250, 252, 0.85); /* Light bg with opacity */
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.5);
   border-radius: var(--radius-lg);
-  box-shadow: 0 8px 32px var(--color-shadow);
+  box-shadow: 0 10px 40px var(--color-shadow-lg), inset 0 1px 0 rgba(255,255,255,0.6);
   overflow: hidden;
-  animation: fadeIn 0.3s ease;
-  transition: opacity 0.3s ease;
+  animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: opacity 0.3s ease, transform 0.3s ease;
+}
+
+[data-theme="dark"] .popup-container {
+  background: rgba(11, 17, 32, 0.85);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 10px 40px var(--color-shadow-lg), inset 0 1px 0 rgba(255,255,255,0.05);
 }
 
 .popup-container.hiding {
   opacity: 0;
-  transform: translateY(8px);
+  transform: translateY(12px) scale(0.98);
 }
 
-/* 新词出现时的边框提醒动画（不抢焦点也能注意到） */
+/* 新词出现时的边框提醒动画 */
 .popup-container.new-word-alert {
-  animation: borderPulse 2s ease;
+  animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1), borderPulse 2s ease;
 }
 
 @keyframes borderPulse {
-  0%   { border-color: var(--color-primary); box-shadow: 0 8px 32px var(--color-shadow), 0 0 0 2px rgba(74,144,217,0.4); }
-  30%  { border-color: var(--color-border); box-shadow: 0 8px 32px var(--color-shadow); }
-  60%  { border-color: var(--color-primary); box-shadow: 0 8px 32px var(--color-shadow), 0 0 0 2px rgba(74,144,217,0.3); }
-  100% { border-color: var(--color-border); box-shadow: 0 8px 32px var(--color-shadow); }
+  0%   { border-color: var(--color-primary); box-shadow: 0 10px 40px var(--color-shadow-lg), 0 0 0 2px var(--color-primary-glow); }
+  30%  { border-color: var(--color-border); box-shadow: 0 10px 40px var(--color-shadow-lg); }
+  60%  { border-color: var(--color-primary); box-shadow: 0 10px 40px var(--color-shadow-lg), 0 0 0 2px var(--color-primary-glow); }
+  100% { border-color: var(--color-border); box-shadow: 0 10px 40px var(--color-shadow-lg); }
+}
+
+@keyframes popIn {
+  0% { opacity: 0; transform: translateY(20px) scale(0.95); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* === 标题栏 === */
 .popup-header {
   display: flex;
   align-items: center;
-  padding: 6px 12px;
-  background: var(--color-bg-secondary);
+  padding: 10px 14px;
+  background: transparent;
   border-bottom: 1px solid var(--color-border);
   -webkit-app-region: drag;
   user-select: none;
 }
 
 .popup-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text-secondary);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--color-text);
   flex-shrink: 0;
+  letter-spacing: 0.5px;
 }
 
 .popup-progress {
   font-size: 11px;
-  color: var(--color-text-muted);
+  color: var(--color-text-secondary);
   margin-left: auto;
-  margin-right: 8px;
+  margin-right: 12px;
+  font-weight: 600;
+  background: var(--color-bg-tertiary);
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  box-shadow: inset 0 1px 2px rgba(0,0,0,0.05);
 }
 
 .popup-actions {
   display: flex;
-  gap: 4px;
+  gap: 6px;
   -webkit-app-region: no-drag;
 }
 
 .popup-btn-icon {
-  width: 24px;
-  height: 24px;
+  width: 26px;
+  height: 26px;
   border: none;
   background: transparent;
   color: var(--color-text-muted);
   font-size: 14px;
   cursor: pointer;
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -79,19 +99,24 @@
 .popup-btn-icon:hover {
   background: var(--color-bg-tertiary);
   color: var(--color-text);
+  transform: translateY(-1px);
+}
+
+.popup-btn-icon:active {
+  transform: scale(0.92);
 }
 
 /* === 熟知按钮（右上角标题栏） === */
 .btn-mastered-icon {
   color: var(--color-text-muted);
   font-size: 13px;
-  opacity: 0.6;
+  opacity: 0.7;
 }
 
 .btn-mastered-icon:hover {
-  color: #f59e0b;
+  color: var(--color-warning);
   opacity: 1;
-  background: #fef3c7;
+  background: rgba(245, 158, 11, 0.15);
 }
 
 .btn-mastered-icon.hidden {
@@ -101,80 +126,102 @@
 /* === 单词内容区 === */
 .popup-body {
   flex: 1;
-  min-height: 0; /* 允许 flex 子元素收缩，使 overflow-y 生效 */
+  min-height: 0; 
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 8px 16px;
-  gap: 2px;
-  overflow-y: auto; /* 释义过多时可滚动 */
+  padding: 12px 20px;
+  gap: 4px;
+  overflow-y: auto;
   scrollbar-width: thin;
+  position: relative;
 }
 
 /* 揭示阶段：内容多时不居中，防止单词被推出视口 */
 .popup-body.reveal-mode {
   justify-content: flex-start;
-  padding-top: 10px;
+  padding-top: 16px;
 }
 
 .word-main {
-  font-size: 22px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 800;
   color: var(--color-text);
   letter-spacing: 0.5px;
   text-align: center;
   cursor: pointer;
-  transition: color var(--transition-fast);
+  transition: all var(--transition-fast);
+  background: linear-gradient(135deg, var(--color-primary) 0%, #8B5CF6 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  padding: 4px 0;
+}
+
+[data-theme="dark"] .word-main {
+  background: linear-gradient(135deg, #60A5FA 0%, #A78BFA 100%);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
 }
 
 .word-main:hover {
-  color: var(--color-primary);
+  transform: scale(1.02);
+  filter: drop-shadow(0 4px 8px var(--color-primary-glow));
 }
 
-.word-main[data-font="small"] { font-size: 18px; }
-.word-main[data-font="large"] { font-size: 26px; }
+.word-main[data-font="small"] { font-size: 22px; }
+.word-main[data-font="large"] { font-size: 34px; }
 
 .word-phonetic {
-  font-size: 13px;
-  color: var(--color-text-muted);
+  font-size: 14px;
+  color: var(--color-text-secondary);
   font-family: var(--font-mono);
   text-align: center;
+  background: var(--color-bg-tertiary);
+  padding: 2px 10px;
+  border-radius: var(--radius-pill);
+  margin-top: 4px;
 }
 
 /* === 显示释义按钮 === */
 .word-reveal-area {
-  margin-top: 10px;
-  transition: all 0.2s ease;
+  margin-top: 16px;
+  transition: all var(--transition-normal);
 }
 
 .btn-reveal {
   font-size: 14px;
+  font-weight: 600;
   color: var(--color-primary);
-  background: transparent;
-  border: 1px dashed var(--color-primary);
-  border-radius: var(--radius-md);
-  padding: 8px 24px;
+  background: rgba(37, 99, 235, 0.08);
+  border: 1px solid rgba(37, 99, 235, 0.2);
+  border-radius: var(--radius-pill);
+  padding: 10px 28px;
   cursor: pointer;
-  transition: all var(--transition-fast);
-  opacity: 0.7;
+  transition: all var(--transition-normal);
+  backdrop-filter: blur(4px);
+}
+
+[data-theme="dark"] .btn-reveal {
+  background: rgba(59, 130, 246, 0.1);
+  border: 1px solid rgba(59, 130, 246, 0.2);
 }
 
 .btn-reveal:hover {
-  opacity: 1;
   background: var(--color-primary);
   color: white;
-  border-style: solid;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px var(--color-primary-glow);
 }
 
 .btn-reveal:active {
   transform: scale(0.95);
 }
 
-/* === 释义详情区（默认隐藏，点击后显示） === */
+/* === 释义详情区 === */
 .word-detail {
   width: 100%;
-  animation: slideDown 0.25s ease;
+  animation: slideUpFade 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
 .word-detail.hidden {
@@ -182,61 +229,67 @@
 }
 
 .word-translation {
-  font-size: 14px;
-  color: var(--color-text-secondary);
+  font-size: 15px;
+  color: var(--color-text);
   text-align: center;
-  font-weight: 500;
-  line-height: 1.3;
+  font-weight: 600;
+  line-height: 1.4;
   word-break: break-word;
+  margin: 12px 0 8px;
 }
 
 .word-example {
-  font-size: 11px;
-  color: var(--color-text-muted);
-  text-align: center;
-  margin-top: 2px;
-  padding: 4px 10px;
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-sm);
-  max-width: 100%;
-  line-height: 1.3;
+  font-size: 12px;
+  text-align: left;
+  margin-top: 8px;
+  padding: 10px 14px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  box-shadow: 0 2px 8px var(--color-shadow);
+  line-height: 1.4;
 }
 
 .example-en {
   font-style: italic;
-  color: var(--color-text-muted);
+  font-weight: 500;
+  color: var(--color-text);
   word-break: break-word;
 }
 
 .example-cn {
   color: var(--color-text-secondary);
-  font-size: 10px;
+  font-size: 11px;
   word-break: break-word;
-  margin-top: 1px;
+  margin-top: 4px;
 }
 
 /* === 词源助记展开框 === */
 .etymology-section {
-  margin-top: 3px;
-  font-size: 10px;
-  border-radius: var(--radius-sm);
+  margin-top: 10px;
+  font-size: 11px;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
   overflow: hidden;
   width: 100%;
+  box-shadow: 0 2px 8px var(--color-shadow);
+  transition: all var(--transition-fast);
 }
 
 .etymology-summary {
   cursor: pointer;
-  font-size: 10px;
-  color: var(--color-primary);
-  padding: 3px 8px;
-  background: var(--color-bg-tertiary);
-  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  padding: 8px 12px;
+  background: transparent;
   list-style: none;
   user-select: none;
-  transition: background var(--transition-fast);
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 6px;
+  transition: background var(--transition-fast);
 }
 
 .etymology-summary::-webkit-details-marker {
@@ -245,7 +298,8 @@
 
 .etymology-summary::before {
   content: '▸';
-  font-size: 9px;
+  font-size: 11px;
+  color: var(--color-primary);
   transition: transform var(--transition-fast);
   flex-shrink: 0;
 }
@@ -255,22 +309,21 @@
 }
 
 .etymology-summary:hover {
-  background: var(--color-bg-secondary);
+  background: var(--color-bg-tertiary);
 }
 
 .etymology-content {
-  padding: 4px 8px 4px;
-  background: var(--color-bg-tertiary);
-  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  max-height: 100px;
+  padding: 0 12px 10px;
+  background: transparent;
+  max-height: 120px;
   overflow-y: auto;
-  animation: slideDown 0.2s ease;
+  animation: slideDownFade 0.3s ease;
   scrollbar-width: thin;
 }
 
 .etymology-mnemonic {
   color: var(--color-text-secondary);
-  font-size: 11px;
+  font-size: 12px;
   line-height: 1.5;
   word-break: break-word;
 }
@@ -278,48 +331,55 @@
 .etymology-parts {
   display: flex;
   flex-wrap: wrap;
-  gap: 3px;
-  margin-top: 3px;
+  gap: 4px;
+  margin-top: 6px;
 }
 
 .etymology-part {
   display: inline-flex;
   align-items: center;
-  gap: 1px;
-  padding: 1px 5px;
-  border-radius: 3px;
-  font-size: 10px;
-  line-height: 1.3;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  line-height: 1.4;
+  border: 1px solid transparent;
 }
 
 .etymology-part[data-type="前缀"] {
-  background: rgba(74, 144, 217, 0.12);
+  background: rgba(37, 99, 235, 0.1);
+  border-color: rgba(37, 99, 235, 0.2);
   color: var(--color-primary);
 }
 
 .etymology-part[data-type="词根"] {
-  background: rgba(39, 174, 96, 0.12);
+  background: rgba(16, 185, 129, 0.1);
+  border-color: rgba(16, 185, 129, 0.2);
   color: var(--color-success);
 }
 
 .etymology-part[data-type="后缀"] {
-  background: rgba(245, 158, 11, 0.12);
-  color: #f59e0b;
+  background: rgba(245, 158, 11, 0.1);
+  border-color: rgba(245, 158, 11, 0.2);
+  color: var(--color-warning);
 }
 
 .etymology-part[data-type="相关词根"] {
-  background: rgba(155, 89, 182, 0.12);
-  color: #9b59b6;
+  background: rgba(139, 92, 246, 0.1);
+  border-color: rgba(139, 92, 246, 0.2);
+  color: #8B5CF6;
 }
 
 .etymology-type {
-  font-weight: 600;
-  font-size: 9px;
+  font-weight: 700;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
 }
 
 .etymology-pattern {
   font-family: var(--font-mono);
-  font-weight: 500;
+  font-weight: 600;
 }
 
 /* === 通用隐藏工具类 === */
@@ -330,10 +390,11 @@
 /* === 操作按钮区 === */
 .popup-footer {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px 12px;
+  gap: 10px;
+  padding: 10px 16px 16px;
   justify-content: center;
-  flex-shrink: 0; /* 按钮区不被压缩，始终可见 */
+  flex-shrink: 0;
+  background: linear-gradient(to top, var(--color-bg) 60%, transparent);
 }
 
 .popup-footer.hidden {
@@ -343,65 +404,42 @@
 .btn-action {
   flex: 1;
   max-width: 110px;
-  font-size: 14px;
-  padding: 8px 8px;
-}
-
-/* === 模糊按钮（橙色） === */
-.btn-warning {
-  background: #f59e0b;
-  color: white;
-  border: none;
-}
-
-.btn-warning:hover {
-  background: #d97706;
-}
-
-.btn-warning:active {
-  transform: scale(0.95);
+  font-size: 15px;
+  font-weight: 600;
+  padding: 10px 8px;
+  border-radius: var(--radius-md);
 }
 
 /* === 进度条 === */
 .popup-progress-bar {
-  height: 3px;
-  background: var(--color-bg-tertiary);
+  height: 4px;
+  background: var(--color-border);
 }
 
 .progress-fill {
   height: 100%;
-  background: var(--color-primary);
+  background: linear-gradient(90deg, var(--color-primary) 0%, #8B5CF6 100%);
   width: 0%;
-  transition: width 0.4s ease;
+  transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+  border-radius: 0 2px 2px 0;
 }
 
 /* === 状态动画 === */
-@keyframes wordPopIn {
-  0% { transform: scale(0.8); opacity: 0; }
-  60% { transform: scale(1.05); }
-  100% { transform: scale(1); opacity: 1; }
+@keyframes slideUpFade {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-.word-main.new-word {
-  animation: wordPopIn 0.4s ease;
+@keyframes slideDownFade {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
-@keyframes slideDown {
-  from {
-    opacity: 0;
-    transform: translateY(-8px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
-/* === 响应式（在弹窗小尺寸下保持可用性） === */
+/* === 响应式 === */
 @media (max-width: 320px) {
-  .popup-body { padding: 8px 12px; }
-  .word-main { font-size: 18px; }
-  .btn-action { padding: 8px 6px; font-size: 13px; }
-  .btn-reveal { padding: 6px 16px; font-size: 13px; }
-  .popup-footer { gap: 6px; padding: 6px 8px 10px; }
+  .popup-body { padding: 10px 14px; }
+  .word-main { font-size: 24px; }
+  .btn-action { padding: 8px 6px; font-size: 14px; }
+  .btn-reveal { padding: 8px 20px; font-size: 13px; }
+  .popup-footer { gap: 8px; padding: 8px 12px 12px; }
 }
