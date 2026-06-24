@@ -36,6 +36,8 @@ function enterRecallPhase() {
   wordDetail.classList.add('hidden');
   actionButtons.classList.add('hidden');
   btnMastered.classList.add('hidden');
+  // 回忆阶段居中显示
+  document.querySelector('.popup-body').classList.remove('reveal-mode');
 }
 
 // === 切换到显示阶段（用户点击显示释义后） ===
@@ -45,6 +47,8 @@ function enterRevealPhase() {
   wordDetail.classList.remove('hidden');
   actionButtons.classList.remove('hidden');
   btnMastered.classList.remove('hidden');
+  // 揭示阶段内容多时靠顶对齐，避免单词被挤出视口
+  document.querySelector('.popup-body').classList.add('reveal-mode');
 
   // 启用按钮
   btnKnown.disabled = false;

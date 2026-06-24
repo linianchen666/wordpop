@@ -40,7 +40,7 @@ function createPopupWindow() {
 
     popupWindow = new BrowserWindow({
       width: 360,
-      height: 280,
+      height: 320,
       x: bounds.x,
       y: bounds.y,
       frame: false,
@@ -139,7 +139,7 @@ function _displayWord(wordData) {
 
   try {
     const bounds = getPopupBounds(popupConfig.position);
-    popupWindow.setBounds({ ...bounds, width: 360, height: 280 });
+    popupWindow.setBounds({ ...bounds, width: 360, height: 320 });
 
     popupWindow.webContents.send('popup:word', {
       ...wordData,
@@ -193,7 +193,7 @@ function closeImmediately() {
 function getPopupBounds(position) {
   try {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    const W = 360, H = 280, M = 20;
+    const W = 360, H = 320, M = 20;
     switch (position) {
       case 'top-left':     return { x: M, y: M };
       case 'top-right':    return { x: width - W - M, y: M };
@@ -214,7 +214,7 @@ function updateConfig(cfg) {
   // 如果弹窗正在显示，立即移动到新位置
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
     const bounds = getPopupBounds(popupConfig.position);
-    popupWindow.setBounds({ ...bounds, width: 360, height: 280 });
+    popupWindow.setBounds({ ...bounds, width: 360, height: 320 });
   }
 }
 
