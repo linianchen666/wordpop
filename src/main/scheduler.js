@@ -213,7 +213,7 @@ class Scheduler {
           FROM words w
           LEFT JOIN progress p ON w.id = p.word_id
           WHERE p.word_id IS NULL
-          ORDER BY RANDOM()
+          ORDER BY w.id ASC
           LIMIT ?
         `).all(remaining);
       }
