@@ -259,18 +259,19 @@
 }
 
 .etymology-content {
-  padding: 3px 8px 3px;
+  padding: 4px 8px 4px;
   background: var(--color-bg-tertiary);
   border-radius: 0 0 var(--radius-sm) var(--radius-sm);
-  max-height: 72px;
+  max-height: 100px;
   overflow-y: auto;
   animation: slideDown 0.2s ease;
   scrollbar-width: thin;
 }
 
-.etymology-analysis {
+.etymology-mnemonic {
   color: var(--color-text-secondary);
-  line-height: 1.35;
+  font-size: 11px;
+  line-height: 1.5;
   word-break: break-word;
 }
 
