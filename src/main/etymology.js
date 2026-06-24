@@ -3,12 +3,20 @@ const path = require('path');
 const { app } = require('electron');
 
 let rootsData = null;
+let mnemonicsCache = null;
 
 function getEtymologyPath() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'etymology', 'roots.json');
   }
   return path.join(__dirname, '..', 'data', 'etymology', 'roots.json');
+}
+
+function getMnemonicsPath() {
+  if (app.isPackaged) {
+    return path.join(process.resourcesPath, 'etymology', 'mnemonics.json');
+  }
+  return path.join(__dirname, '..', 'data', 'etymology', 'mnemonics.json');
 }
 
 function loadRootsData() {
@@ -22,12 +30,32 @@ function loadRootsData() {
   return rootsData;
 }
 
+function loadMnemonics() {
+  if (mnemonicsCache) return mnemonicsCache;
+  try {
+    mnemonicsCache = JSON.parse(fs.readFileSync(getMnemonicsPath(), 'utf-8'));
+  } catch (e) {
+    console.error('[Etymology] Failed to load mnemonics:', e.message);
+    mnemonicsCache = {};
+  }
+  return mnemonicsCache;
+}
+
 /**
  * 分析单词，生成叙事性助记解释
  */
 function analyzeWord(word) {
-  const data = loadRootsData();
+  const mnemonicData = loadMnemonics();
   const w = word.toLowerCase().trim();
+  if (mnemonicData[w]) {
+    return {
+      parts: [],
+      mnemonic: mnemonicData[w],
+      relatedRoots: []
+    };
+  }
+
+  const data = loadRootsData();
   const parts = [];
 
   // 1. 检测前缀
