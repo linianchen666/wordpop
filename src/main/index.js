@@ -3,7 +3,7 @@ const path = require('path');
 const fs   = require('fs');
 const { initDatabase, importWordlist, getWordlistIndex } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
-const { createTray, destroyTray, updateStatus } = require('./tray');
+const { createTray, destroyTray, updateStatus, startAutoUpdateCheck } = require('./tray');
 const popupManager = require('./popup-manager');
 const scheduler = require('./scheduler');
 const { registerIpcHandlers } = require('./ipc-handlers');
@@ -59,16 +59,11 @@ process.on('uncaughtException', (err) => {
 function safeStep(name, fn) {
   try {
     const r = fn();
-    // 如果返回 Promise，记录但不 await（调用方需自行处理）
     if (r && typeof r.then === 'function') {
-      log('[App] ⏳', name, 'returned Promise (async step)');
-      r.then(() => log('[App] ✅', name, 'async ok'))
-       .catch(err => {
-         log('[App] ❌', name, 'async FAILED:', err.message);
-         startupErrors.push(`[${name}] ${err.message}`);
-       });
-    } else {
-      log('[App] ✅', name, 'ok');
+      r.catch(err => {
+        log('[App] ❌', name, 'FAILED:', err.message);
+        startupErrors.push(`[${name}] ${err.message}`);
+      });
     }
     return r;
   } catch (err) {
@@ -99,10 +94,6 @@ function getRendererPath(...segments) {
 
 app.whenReady().then(async () => {
   initLog();
-  log('[App] ═══╗ WordPop starting');
-  log('[App] Electron', process.versions.electron, '| Node', process.version);
-  log('[App] platform', process.platform, '| arch', process.arch);
-  log('[App] userData:', app.getPath('userData'));
 
   // 1. 数据库
   safeStep('initDatabase', initDatabase);
@@ -110,13 +101,14 @@ app.whenReady().then(async () => {
   // 2. 配置
   let config = safeStep('loadConfig', loadConfig);
   if (!config || typeof config !== 'object') {
-    log('[App] loadConfig returned invalid, using default');
     config = { setupComplete: false, selectedWordlists: ['cet4'], dailyNewWords: 20 };
   }
-  log('[App] config:', JSON.stringify(config));
 
   // 3. IPC
   safeStep('registerIpc', registerIpcHandlers);
+
+  // 3.1 用当前配置初始化 popupManager
+  popupManager.updateConfig(config);
 
   // 4. 托盘
   const trayOk = safeStep('createTray', () => createTray({
@@ -124,11 +116,14 @@ app.whenReady().then(async () => {
     onPauseToggle:  (p) => { try { p ? scheduler.pause() : scheduler.resume(); } catch (_) {} },
     onOpenSettings: () => { try { openSettingsWindow(); } catch (_) {} },
     onOpenStats:    () => { try { openStatsWindow(); } catch (_) {} },
+    onOpenStubborn: () => { try { openStubbornWindow(); } catch (_) {} },
     onQuit:         () => { try { scheduler.stop(); app.quit(); } catch (_) { app.quit(); } }
   }));
 
+  // 4.1 自动检查更新
+  startAutoUpdateCheck(config.autoCheckUpdate !== false);
+
   if (!trayOk) {
-    log('[App] ❌ Tray creation FAILED');
     startupErrors.push('系统托盘创建失败');
     showErrorWindow();
     return;
@@ -140,10 +135,15 @@ app.whenReady().then(async () => {
   // 5.1 定时刷新托盘状态（显示下次弹窗倒计时）
   setInterval(() => {
     try { updateStatus(scheduler.getStatus()); } catch (_) {}
-  }, 30000); // 每30秒刷新一次
+  }, 15000); // 每15秒刷新一次
 
   // 5.2 每次学完单词也刷新托盘状态
   scheduler.onStatsUpdate(() => {
+    try { updateStatus(scheduler.getStatus()); } catch (_) {}
+  });
+
+  // 5.3 每次弹出单词也刷新托盘状态（显示"正在显示单词..."）
+  scheduler.onWordPop(() => {
     try { updateStatus(scheduler.getStatus()); } catch (_) {}
   });
 
@@ -154,20 +154,16 @@ app.whenReady().then(async () => {
         openAtLogin: true,
         path: app.getPath('exe')
       });
-      log('[App] autoStart registered, exe:', app.getPath('exe'));
     });
   }
 
   // 6. 启动（确保词库导入完成后再启动调度器）
   if (!config.setupComplete) {
-    log('[App] first launch → openSetupWindow');
     safeStep('openSetup', openSetupWindow);
   } else {
     // 关键修复：确保词库导入完成后再创建弹窗和启动调度器
     try {
-      log('[App] importing wordlists...');
       await ensureWordlistsImported(config);
-      log('[App] wordlists import completed');
     } catch (err) {
       log('[App] ❌ wordlists import error:', err.message);
     }
@@ -175,27 +171,22 @@ app.whenReady().then(async () => {
     safeStep('createPopup', () => popupManager.createPopupWindow());
 
     // 等弹窗 ready 再启动调度器
-    log('[App] waiting for popup ready...');
     popupManager.waitForReady(10000).then(() => {
-      log('[App] popup ready → starting scheduler');
       try {
         scheduler.start();
-        log('[App] scheduler started successfully');
+        try { updateStatus(scheduler.getStatus()); } catch (_) {}
       } catch (e) {
-        log('[App] scheduler.start FAILED:', e.message, e.stack);
+        log('[App] ❌ scheduler.start FAILED:', e.message);
       }
     }).catch(() => {
-      log('[App] popup waitForReady timed out → starting scheduler anyway');
       try {
         scheduler.start();
-        log('[App] scheduler started (after timeout)');
+        try { updateStatus(scheduler.getStatus()); } catch (_) {}
       } catch (e) {
-        log('[App] scheduler.start FAILED (after timeout):', e.message);
+        log('[App] ❌ scheduler.start FAILED:', e.message);
       }
     });
   }
-
-  log('[App] ═══╗ WordPop ready (errors:', startupErrors.length, ')');
 });
 
 // ════════════════════════════════════════════╗
@@ -208,25 +199,19 @@ async function ensureWordlistsImported(config) {
 
   // 如果词库列表为空，使用默认值并更新配置
   if (lists.length === 0) {
-    log('[App] ⚠️ selectedWordlists is empty, using default [cet4]');
     lists = ['cet4'];
     try {
       saveConfig({ selectedWordlists: lists });
     } catch (e) {
-      log('[App] failed to update config with default wordlist:', e.message);
+      log('[App] ❌ failed to update config with default wordlist:', e.message);
     }
   }
-
-  log('[App] ensureWordlistsImported: wordlists =', JSON.stringify(lists));
 
   for (const id of lists) {
     try {
       const cnt = db.prepare('SELECT COUNT(*) c FROM words WHERE wordlist=?').get(id).c;
-      log('[App] wordlist', id, ':', cnt, 'words in DB');
       if (cnt === 0) {
-        log('[App] importing', id, '...');
-        const r = importWordlist(id);
-        log('[App] imported', r.imported, 'words from', id);
+        importWordlist(id);
       }
     } catch (err) {
       log('[App] ❌ import', id, 'failed:', err.message);
@@ -236,12 +221,11 @@ async function ensureWordlistsImported(config) {
   // 验证导入结果
   try {
     const totalWords = db.prepare('SELECT COUNT(*) c FROM words').get().c;
-    log('[App] total words in DB after import:', totalWords);
     if (totalWords === 0) {
-      log('[App] ⚠️ WARNING: no words in database after import!');
+      log('[App] ⚠️ no words in database after import!');
     }
   } catch (e) {
-    log('[App] word count check failed:', e.message);
+    log('[App] ❌ word count check failed:', e.message);
   }
 }
 
@@ -281,7 +265,7 @@ function openSettingsWindow() {
     });
     settingsWindow.loadFile(getRendererPath('settings', 'index.html'));
     settingsWindow.on('closed', () => { settingsWindow = null; });
-  } catch (err) { log('[App] openSettings ERROR:', err.message); }
+  } catch (err) { log('[App] ❌ openSettings ERROR:', err.message); }
 }
 
 function openStatsWindow() {
@@ -297,7 +281,30 @@ function openStatsWindow() {
     });
     statsWindow.loadFile(getRendererPath('stats', 'index.html'));
     statsWindow.on('closed', () => { statsWindow = null; });
-  } catch (err) { log('[App] openStats ERROR:', err.message); }
+  } catch (err) { log('[App] ❌ openStats ERROR:', err.message); }
+}
+
+function openStubbornWindow() {
+  if (statsWindow && !statsWindow.isDestroyed()) {
+    statsWindow.focus();
+    statsWindow.webContents.send('stats:scroll-to-stubborn');
+    return;
+  }
+  try {
+    statsWindow = new BrowserWindow({
+      width: 520, height: 600, resizable: true, title: 'WordPop — 顽固单词',
+      autoHideMenuBar: true,
+      webPreferences: {
+        preload: getPreloadPath(),
+        contextIsolation: true, nodeIntegration: false, sandbox: false
+      }
+    });
+    statsWindow.loadFile(getRendererPath('stats', 'index.html'));
+    statsWindow.webContents.once('did-finish-load', () => {
+      statsWindow.webContents.send('stats:scroll-to-stubborn');
+    });
+    statsWindow.on('closed', () => { statsWindow = null; });
+  } catch (err) { log('[App] ❌ openStubborn ERROR:', err.message); }
 }
 
 function openSetupWindow() {
@@ -324,36 +331,34 @@ function openSetupWindow() {
 
         // 3. 重新读取配置（设置窗口可能修改了词库选择等配置）
         const freshConfig = loadConfig();
-        log('[App] setup closed, config after refresh:', JSON.stringify(freshConfig));
 
         // 4. 等待词库导入完成（关键！确保词库在DB中后才启动调度器）
-        log('[App] importing wordlists after setup...');
         await ensureWordlistsImported(freshConfig);
-        log('[App] wordlists import completed after setup');
 
         // 5. 创建弹窗窗口
         popupManager.createPopupWindow();
 
         // 6. 等弹窗 ready 再启动调度器
         popupManager.waitForReady(10000).then(() => {
-          log('[App] popup ready after setup → starting scheduler');
           try {
             scheduler.start();
-            log('[App] scheduler started after setup');
+            try { updateStatus(scheduler.getStatus()); } catch (_) {}
           } catch (e) {
-            log('[App] scheduler start after setup FAILED:', e.message);
+            log('[App] ❌ scheduler start after setup FAILED:', e.message);
           }
         }).catch(() => {
-          log('[App] popup waitForReady timed out after setup → starting scheduler anyway');
-          try { scheduler.start(); } catch (_) {}
+          try {
+            scheduler.start();
+            try { updateStatus(scheduler.getStatus()); } catch (_) {}
+          } catch (_) {}
         });
       } catch (err) {
-        log('[App] setup closed handler error:', err.message, err.stack);
+        log('[App] ❌ setup closed handler error:', err.message);
         // 即使出错也尝试启动调度器
         try { scheduler.start(); } catch (_) {}
       }
     });
-  } catch (err) { log('[App] openSetup ERROR:', err.message); }
+  } catch (err) { log('[App] ❌ openSetup ERROR:', err.message); }
 }
 
 // ════════════════════════════════════════════╗
@@ -371,11 +376,9 @@ function showPopup() {
       popupManager.restore();
     } else {
       // 没有当前单词（单词已进入间隔等待中）
-      // 不强行弹出，因为此时没有可显示的单词
-      log('[App] showPopup: no current word, popup stays hidden until next word is due');
     }
   } catch (err) {
-    log('[App] showPopup error:', err.message);
+    log('[App] ❌ showPopup error:', err.message);
   }
 }
 

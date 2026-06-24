@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   markUnknown:     ()  => ipcRenderer.send('word:unknown'),
   markFuzzy:       ()  => ipcRenderer.send('word:fuzzy'),
   markMastered:    ()  => ipcRenderer.send('word:mastered'),
+  undo:            ()  => ipcRenderer.send('word:undo'),
   pronounce:       (w) => ipcRenderer.send('word:pronounce', w),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),
 
@@ -26,6 +27,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   getStats:            ()  => ipcRenderer.invoke('stats:get'),
   getDailyStats:       (d) => ipcRenderer.invoke('stats:daily', d),
   getStageDistribution: ()  => ipcRenderer.invoke('stats:stage-distribution'),
+  getStubbornWords:    (m)  => ipcRenderer.invoke('stats:stubborn-words', m),
   getProgressSummary:  (ids) => ipcRenderer.invoke('stats:progress-summary', ids),
 
   // === 数据库诊断与修复 ===
@@ -42,4 +44,5 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   // === 事件监听 ===
   onConfigChanged:    (cb) => ipcRenderer.on('config:changed',   (_e,c) => cb(c)),
   onStatsUpdated:    (cb) => ipcRenderer.on('stats:updated',   () => cb()),
+  onScrollToStubborn: (cb) => ipcRenderer.on('stats:scroll-to-stubborn', () => cb()),
 });

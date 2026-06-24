@@ -3,6 +3,7 @@ const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgre
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
 const popupManager = require('./popup-manager');
+const { startAutoUpdateCheck } = require('./tray');
 
 // ═════════════════════════╗
 //  日志读取 / 打开（新增）
@@ -35,6 +36,7 @@ ipcMain.on('word:known',     () => scheduler.markKnown());
 ipcMain.on('word:unknown',   () => scheduler.markUnknown());
 ipcMain.on('word:fuzzy',     () => scheduler.markFuzzy());
 ipcMain.on('word:mastered',  () => scheduler.markMastered());
+ipcMain.on('word:undo',      () => scheduler.undo());
 
 ipcMain.on('word:pronounce', (_ev, word) => {
   // 发音由渲染进程 Web Speech API 处理；此处为预留通道
@@ -53,6 +55,10 @@ ipcMain.handle('config:save', (_ev, config) => {
   if (result.success) {
     scheduler.applyConfig(result.config);
     popupManager.updateConfig(result.config);
+    // 同步自动检查更新状态
+    if ('autoCheckUpdate' in config) {
+      startAutoUpdateCheck(config.autoCheckUpdate);
+    }
     BrowserWindow.getAllWindows().forEach(w => {
       if (!w.isDestroyed()) w.webContents.send('config:changed', result.config);
     });
@@ -196,6 +202,24 @@ ipcMain.handle('stats:daily', (_ev, days=7) => {
   }
 });
 
+ipcMain.handle('stats:stubborn-words', (_ev, minWrong = 3) => {
+  try {
+    const db = getDb();
+    return db.prepare(`
+      SELECT w.id, w.word, w.phonetic, w.translation, w.example,
+             p.stage, p.wrong_count, p.correct_count, p.next_review_at
+      FROM words w
+      JOIN progress p ON w.id = p.word_id
+      WHERE p.wrong_count >= ? AND p.stage < 9
+      ORDER BY p.wrong_count DESC, p.stage ASC
+      LIMIT 50
+    `).all(minWrong);
+  } catch (err) {
+    console.error('[IPC] stats:stubborn-words error:', err.message);
+    return [];
+  }
+});
+
 ipcMain.handle('stats:stage-distribution', () => {
   try {
     return getDb().prepare(`
@@ -235,5 +259,4 @@ ipcMain.on('app:quit', () => {
   app.quit();
 });
 
-console.log('[IPC] All handlers registered');
 module.exports = { registerIpcHandlers: () => {} };

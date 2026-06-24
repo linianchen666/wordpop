@@ -1,0 +1,14 @@
+﻿  • electron-builder  version=24.13.3 os=10.0.26100
+  • loaded configuration  file=E:\Documents\Code\Wordpop\wordpop\electron-builder.yml
+  • @electron/rebuild not required if you use electron-builder, please consider to remove excess dependency from devDependencies
+
+To ensure your native dependencies are always matched electron version, simply add script `"postinstall": "electron-builder install-app-deps" to your `package.json`
+  • rebuilding native dependencies  dependencies=better-sqlite3@9.6.0 platform=win32 arch=x64
+  • install prebuilt binary  name=better-sqlite3 version=9.6.0 platform=win32 arch=x64 napi=
+  • packaging       platform=win32 arch=x64 electron=28.3.3 appOutDir=build\win-unpacked
+  • building        target=nsis file=build\WordPop Setup 1.0.32.exe archs=x64 oneClick=false perMachine=true
+  • downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/nsis-3.0.4.1/nsis-3.0.4.1.7z size=1.3 MB parts=1
+  • downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/nsis-3.0.4.1/nsis-3.0.4.1.7z duration=2.684s
+  • downloading     url=https://github.com/electron-userland/electron-builder-binaries/releases/download/nsis-resources-3.4.1/nsis-resources-3.4.1.7z size=731 kB parts=1
+  • downloaded      url=https://github.com/electron-userland/electron-builder-binaries/releases/download/nsis-resources-3.4.1/nsis-resources-3.4.1.7z duration=2.752s
+  • building block map  blockMapFile=build\WordPop Setup 1.0.32.exe.blockmap

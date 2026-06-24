@@ -58,7 +58,6 @@ function initDatabase() {
     console.log('[DB] Database recreated successfully');
   }
 
-  console.log('[DB] Database initialized at:', dbPath);
   return db;
 }
 
@@ -110,7 +109,6 @@ function migrate(db) {
     ).get().cnt > 0;
 
     if (!wordlistColExists) {
-      console.log('[DB] Migration: adding missing wordlist column to words table');
       db.exec(`ALTER TABLE words ADD COLUMN wordlist TEXT NOT NULL DEFAULT 'custom'`);
     }
 
@@ -119,7 +117,6 @@ function migrate(db) {
       "SELECT COUNT(*) as cnt FROM pragma_table_info('words') WHERE name='phonetic'"
     ).get().cnt > 0;
     if (!phoneticColExists) {
-      console.log('[DB] Migration: adding missing phonetic column to words table');
       db.exec(`ALTER TABLE words ADD COLUMN phonetic TEXT DEFAULT ''`);
     }
 
@@ -127,7 +124,6 @@ function migrate(db) {
       "SELECT COUNT(*) as cnt FROM pragma_table_info('words') WHERE name='example'"
     ).get().cnt > 0;
     if (!exampleColExists) {
-      console.log('[DB] Migration: adding missing example column to words table');
       db.exec(`ALTER TABLE words ADD COLUMN example TEXT DEFAULT ''`);
     }
 
@@ -136,7 +132,6 @@ function migrate(db) {
       "SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='last_review_at'"
     ).get().cnt > 0;
     if (!lastReviewColExists) {
-      console.log('[DB] Migration: adding missing last_review_at column to progress table');
       db.exec(`ALTER TABLE progress ADD COLUMN last_review_at INTEGER DEFAULT NULL`);
     }
 
@@ -149,7 +144,6 @@ function migrate(db) {
     `);
 
     db.pragma('user_version = 1');
-    console.log('[DB] Migration v1 complete');
   }
 
   // v2: 增加 mastered_count 字段，追踪连续熟知次数
@@ -161,9 +155,6 @@ function migrate(db) {
       ).get().cnt > 0;
       if (!masteredColExists) {
         db.exec(`ALTER TABLE progress ADD COLUMN mastered_count INTEGER NOT NULL DEFAULT 0`);
-        console.log('[DB] Migration v2: added mastered_count column');
-      } else {
-        console.log('[DB] Migration v2: mastered_count column already exists, skipping');
       }
     } catch (e) {
       if (!e.message.includes('duplicate column')) {
@@ -171,7 +162,6 @@ function migrate(db) {
       }
     }
     db.pragma('user_version = 2');
-    console.log('[DB] Migration v2 complete');
   }
 }
 
@@ -282,7 +272,6 @@ function importWordlist(wordlistId) {
 
   importTransaction(wordlist.words);
 
-  console.log(`[DB] Imported ${imported} words from ${wordlistId}, skipped ${skipped}`);
   return { imported, skipped };
 }
 
@@ -361,7 +350,6 @@ function closeDatabase() {
   if (db) {
     db.close();
     db = null;
-    console.log('[DB] Database closed');
   }
 }
 
@@ -432,11 +420,8 @@ function repairDatabase() {
   const userDataPath = app.getPath('userData');
   const dbPath = path.join(userDataPath, 'wordpop.db');
 
-  console.log('[DB] Repair: closing database...');
   try { if (db) db.close(); } catch (_) {}
   db = null;
-
-  console.log('[DB] Repair: deleting old database files...');
   try {
     if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
     const walPath = dbPath + '-wal';
@@ -447,7 +432,6 @@ function repairDatabase() {
     return { success: false, message: '删除旧数据库失败: ' + e.message };
   }
 
-  console.log('[DB] Repair: creating fresh database...');
   try {
     db = new Database(dbPath);
     db.pragma('journal_mode = WAL');
@@ -455,7 +439,6 @@ function repairDatabase() {
     db.pragma('synchronous = NORMAL');
     db.pragma('cache_size = -8000');
     migrate(db);
-    console.log('[DB] Repair: database recreated successfully');
     return { success: true, message: '数据库已修复，请重新导入词库' };
   } catch (err) {
     console.error('[DB] Repair failed:', err.message);

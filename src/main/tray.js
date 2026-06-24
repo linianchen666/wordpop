@@ -1,11 +1,178 @@
-const { Tray, Menu, nativeImage, app } = require('electron');
+const { Tray, Menu, nativeImage, app, shell, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const https = require('https');
 
 let tray = null;
 let isPaused = false;
 let trayOptions = {};
 let lastStatus = null; // 缓存最近一次状态
+let autoUpdateTimer = null; // 自动检查更新定时器
+
+/**
+ * 检查更新：通过 GitHub API 获取最新 release 版本
+ */
+async function checkForUpdates(silent = false) {
+  const repo = 'linianchen666/wordpop';
+  const currentVersion = app.getVersion();
+
+  try {
+    const data = await new Promise((resolve, reject) => {
+      const req = https.get({
+        hostname: 'api.github.com',
+        path: `/repos/${repo}/releases/latest`,
+        headers: { 'User-Agent': 'WordPop-Update-Check' }
+      }, (res) => {
+        let body = '';
+        res.on('data', (d) => { body += d; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
+        });
+      });
+      req.on('error', reject);
+      req.setTimeout(10000, () => { req.destroy(); reject(new Error('timeout')); });
+    });
+
+    if (!data.tag_name) {
+      if (!silent) dialog.showMessageBox({ type: 'info', title: '检查更新', message: '暂无可用更新', buttons: ['确定'] });
+      return;
+    }
+
+    const latest = data.tag_name.replace(/^v/, '');
+    const needUpdate = compareVersions(latest, currentVersion) > 0;
+
+    if (needUpdate) {
+      const result = await dialog.showMessageBox({
+        type: 'info',
+        title: '发现新版本',
+        message: `发现新版本 v${latest}（当前 v${currentVersion}）`,
+        detail: data.body || '',
+        buttons: ['前往下载', '稍后再说'],
+        defaultId: 0
+      });
+      if (result.response === 0) {
+        shell.openExternal(`https://github.com/${repo}/releases/latest`);
+      }
+    } else if (!silent) {
+      dialog.showMessageBox({
+        type: 'info',
+        title: '检查更新',
+        message: `当前已是最新版本 v${currentVersion}`,
+        buttons: ['确定']
+      });
+    }
+  } catch (e) {
+    console.error('[Tray] checkForUpdates error:', e.message);
+    if (!silent) {
+      dialog.showMessageBox({
+        type: 'error',
+        title: '检查更新失败',
+        message: '无法连接到 GitHub，请稍后重试',
+        buttons: ['确定']
+      });
+    }
+  }
+}
+
+/**
+ * 简易版本号比较：返回 1 表示 a > b，-1 表示 a < b，0 表示相等
+ */
+function compareVersions(a, b) {
+  const pa = a.split('.').map(Number);
+  const pb = b.split('.').map(Number);
+  for (let i = 0; i < 3; i++) {
+    const na = pa[i] || 0, nb = pb[i] || 0;
+    if (na > nb) return 1;
+    if (na < nb) return -1;
+  }
+  return 0;
+}
+
+/**
+ * 构建托盘右键菜单
+ * 必须在模块级别，这样 updateStatus() 也能调用
+ */
+function buildMenu(status) {
+  // 计算下次弹窗提示文本
+  let nextLabel = '';
+  if (status && status.isPaused) {
+    nextLabel = '⏸ 学习已暂停';
+  } else if (status && status.currentWord) {
+    nextLabel = '📖 正在显示单词...';
+  } else if (status && status.nextReviewAt) {
+    const diff = status.nextReviewAt - Date.now();
+    if (diff <= 0) {
+      nextLabel = '⏱ 即将弹出...';
+    } else {
+      const mins = Math.max(1, Math.floor(diff / 60000));
+      const hours = Math.floor(mins / 60);
+      const days = Math.floor(hours / 24);
+
+      if (days > 0) {
+        const remainHours = hours % 24;
+        nextLabel = `✅ 今日单词已背完，下次复习: ${days}天${remainHours > 0 ? remainHours + '小时后' : '后'}`;
+      } else if (hours > 0) {
+        nextLabel = `⏱ 下个单词: ${hours}时${mins % 60}分后`;
+      } else {
+        nextLabel = `⏱ 下个单词: ${mins}分钟后`;
+      }
+    }
+  } else if (status && !status.hasUnmasteredWords) {
+    nextLabel = '🎉 所有单词已掌握！';
+  } else if (status && status.hasNewWordsQuota) {
+    // 有新词配额但 nextReviewAt 为 null（说明没有待复习词，只有新词可学）
+    nextLabel = '📖 即将学习新单词...';
+  } else if (status && !status.hasNewWordsQuota) {
+    nextLabel = '✅ 今日单词已背完';
+  } else {
+    nextLabel = '⏱ 等待中...';
+  }
+
+  const items = [
+    { label: 'WordPop v' + app.getVersion(), enabled: false },
+    { type: 'separator' },
+    { label: nextLabel, enabled: false },
+    { type: 'separator' },
+    {
+      label: '📖 显示弹窗',
+      click: () => { try { if (trayOptions.onShowPopup) trayOptions.onShowPopup(); } catch (e) {} }
+    },
+    {
+      label: isPaused ? '▶ 恢复学习' : '⏸ 暂停学习',
+      click: () => {
+        try {
+          isPaused = !isPaused;
+          if (lastStatus) lastStatus.isPaused = isPaused;
+          if (trayOptions.onPauseToggle) trayOptions.onPauseToggle(isPaused);
+          if (tray) tray.setContextMenu(buildMenu(lastStatus));
+        } catch (e) { console.error('[Tray] pause error:', e.message); }
+      }
+    },
+    {
+      label: '📊 今日统计',
+      click: () => { try { if (trayOptions.onOpenStats) trayOptions.onOpenStats(); } catch (e) {} }
+    },
+    {
+      label: '🔥 顽固单词',
+      click: () => { try { if (trayOptions.onOpenStubborn) trayOptions.onOpenStubborn(); } catch (e) {} }
+    },
+    { type: 'separator' },
+    {
+      label: '⚙ 设置',
+      click: () => { try { if (trayOptions.onOpenSettings) trayOptions.onOpenSettings(); } catch (e) {} }
+    },
+    {
+      label: '🔄 检查更新',
+      click: () => { checkForUpdates(false); }
+    },
+    { type: 'separator' },
+    {
+      label: '❌ 退出 WordPop',
+      click: () => { try { if (trayOptions.onQuit) trayOptions.onQuit(); } catch (e) { app.quit(); } }
+    }
+  ];
+  return Menu.buildFromTemplate(items);
+}
 
 /**
  * 获取托盘图标
@@ -27,7 +194,6 @@ function getTrayIcon() {
     try {
       const icon = nativeImage.createFromPath(iconPath);
       if (!icon.isEmpty()) {
-        console.log('[Tray] Using file icon:', iconPath);
         return icon;
       }
     } catch (e) {
@@ -36,7 +202,6 @@ function getTrayIcon() {
   }
 
   // 2. Fallback: 像素生成 W 字母图标
-  console.log('[Tray] File icon not found, generating pixel icon');
   return generatePixelIcon();
 }
 
@@ -145,78 +310,6 @@ function createTray(options = {}) {
       tray = new Tray(icon);
     }
 
-    function buildMenu(status) {
-      // 计算下次弹窗提示文本
-      let nextLabel = '';
-      if (status && status.isPaused) {
-        nextLabel = '⏸ 学习已暂停';
-      } else if (status && status.currentWord) {
-        nextLabel = '📖 正在显示单词...';
-      } else if (status && status.nextReviewAt) {
-        const diff = status.nextReviewAt - Date.now();
-        if (diff <= 0) {
-          nextLabel = '⏱ 即将弹出...';
-        } else {
-          const mins = Math.floor(diff / 60000);
-          const hours = Math.floor(mins / 60);
-          const days = Math.floor(hours / 24);
-
-          if (days > 0) {
-            const remainHours = hours % 24;
-            nextLabel = `✅ 今日单词已背完，下次复习: ${days}天${remainHours > 0 ? remainHours + '小时后' : '后'}`;
-          } else if (hours > 0) {
-            nextLabel = `⏱ 下个单词: ${hours}时${mins % 60}分后`;
-          } else {
-            nextLabel = `⏱ 下个单词: ${mins}分钟后`;
-          }
-        }
-      } else if (status && !status.hasUnmasteredWords) {
-        nextLabel = '🎉 所有单词已掌握！';
-      } else if (status && !status.hasNewWordsQuota) {
-        // 没有到期的复习词，也没有新词配额
-        nextLabel = '✅ 今日单词已背完';
-      } else {
-        nextLabel = '⏱ 等待中...';
-      }
-
-      const items = [
-        { label: 'WordPop v' + app.getVersion(), enabled: false },
-        { type: 'separator' },
-        { label: nextLabel, enabled: false },
-        { type: 'separator' },
-        {
-          label: '📖 显示弹窗',
-          click: () => { try { if (trayOptions.onShowPopup) trayOptions.onShowPopup(); } catch (e) {} }
-        },
-        {
-          label: isPaused ? '▶ 恢复学习' : '⏸ 暂停学习',
-          click: () => {
-            try {
-              isPaused = !isPaused;
-              if (lastStatus) lastStatus.isPaused = isPaused;
-              if (trayOptions.onPauseToggle) trayOptions.onPauseToggle(isPaused);
-              if (tray) tray.setContextMenu(buildMenu(lastStatus));
-            } catch (e) { console.error('[Tray] pause error:', e.message); }
-          }
-        },
-        {
-          label: '📊 今日统计',
-          click: () => { try { if (trayOptions.onOpenStats) trayOptions.onOpenStats(); } catch (e) {} }
-        },
-        { type: 'separator' },
-        {
-          label: '⚙ 设置',
-          click: () => { try { if (trayOptions.onOpenSettings) trayOptions.onOpenSettings(); } catch (e) {} }
-        },
-        { type: 'separator' },
-        {
-          label: '❌ 退出 WordPop',
-          click: () => { try { if (trayOptions.onQuit) trayOptions.onQuit(); } catch (e) { app.quit(); } }
-        }
-      ];
-      return Menu.buildFromTemplate(items);
-    }
-
     tray.setToolTip('WordPop - 艾宾浩斯背单词');
     tray.setContextMenu(buildMenu(null));
 
@@ -224,7 +317,6 @@ function createTray(options = {}) {
       try { if (options.onShowPopup) options.onShowPopup(); } catch (e) {}
     });
 
-    console.log('[Tray] Tray created successfully');
     return tray;
   } catch (err) {
     console.error('[Tray] FATAL: could not create tray:', err.message, err.stack);
@@ -263,6 +355,8 @@ function updateStatus(status) {
       }
     } else if (status && !status.hasUnmasteredWords) {
       tray.setToolTip('WordPop - 所有单词已掌握！');
+    } else if (status && status.hasNewWordsQuota) {
+      tray.setToolTip('WordPop - 即将学习新单词');
     } else if (status && !status.hasNewWordsQuota) {
       tray.setToolTip('WordPop - 今日单词已背完');
     } else {
@@ -275,4 +369,28 @@ function updateStatus(status) {
 
 function destroyTray() { if (tray) { try { tray.destroy(); } catch (e) {} tray = null; } }
 
-module.exports = { createTray, setPaused, updateStatus, destroyTray };
+/**
+ * 启动自动检查更新定时器（每天检查一次）
+ * @param {boolean} enabled - 是否开启
+ */
+function startAutoUpdateCheck(enabled) {
+  // 清除已有定时器
+  if (autoUpdateTimer) {
+    clearInterval(autoUpdateTimer);
+    autoUpdateTimer = null;
+  }
+
+  if (!enabled) return;
+
+  // 启动后延迟 30 秒首次检查（静默模式，仅发现新版时才弹窗）
+  setTimeout(() => {
+    checkForUpdates(true);
+  }, 30000);
+
+  // 每 24 小时检查一次
+  autoUpdateTimer = setInterval(() => {
+    checkForUpdates(true);
+  }, 24 * 60 * 60 * 1000);
+}
+
+module.exports = { createTray, setPaused, updateStatus, destroyTray, startAutoUpdateCheck };

@@ -22,6 +22,10 @@ const btnReveal = document.getElementById('btn-reveal');
 const revealArea = document.getElementById('reveal-area');
 const wordDetail = document.getElementById('word-detail');
 const actionButtons = document.getElementById('action-buttons');
+const exampleEn = document.getElementById('example-en');
+const exampleCn = document.getElementById('example-cn');
+const etymologySection = document.getElementById('etymology-section');
+const etymologyContent = document.getElementById('etymology-content');
 
 let currentWord = null;
 
@@ -32,6 +36,8 @@ function enterRecallPhase() {
   wordDetail.classList.add('hidden');
   actionButtons.classList.add('hidden');
   btnMastered.classList.add('hidden');
+  // 回忆阶段居中显示
+  document.querySelector('.popup-body').classList.remove('reveal-mode');
 }
 
 // === 切换到显示阶段（用户点击显示释义后） ===
@@ -41,12 +47,31 @@ function enterRevealPhase() {
   wordDetail.classList.remove('hidden');
   actionButtons.classList.remove('hidden');
   btnMastered.classList.remove('hidden');
+  // 揭示阶段内容多时靠顶对齐，避免单词被挤出视口
+  document.querySelector('.popup-body').classList.add('reveal-mode');
 
   // 启用按钮
   btnKnown.disabled = false;
   btnUnknown.disabled = false;
   btnFuzzy.disabled = false;
   btnMastered.disabled = false;
+
+  // 自动发音
+  if (currentWord && currentWord.config && currentWord.config.autoPronounce && currentWord.word) {
+    pronounceWord(currentWord.word, currentWord.config.pronounceAccent || 'en-US');
+  }
+}
+
+// === 发音函数 ===
+function pronounceWord(word, accent) {
+  try {
+    window.speechSynthesis.cancel();
+    const utterance = new SpeechSynthesisUtterance(word);
+    utterance.lang = accent || 'en-US';
+    utterance.rate = 0.8;
+    utterance.pitch = 1.0;
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {}
 }
 
 // === 接收单词数据 ===
@@ -60,7 +85,16 @@ window.wordpopAPI.onWordData((data) => {
   translationText.textContent = data.translation || '';
 
   if (data.config && data.config.showExample && data.example) {
-    exampleText.textContent = data.example;
+    // 拆分英文和中文：找第一个中文字符的位置
+    const exampleStr = data.example;
+    const cnIndex = exampleStr.search(/[\u4e00-\u9fff\u3000-\u303f\uff00-\uffef]/);
+    if (cnIndex > 0) {
+      exampleEn.textContent = exampleStr.substring(0, cnIndex).trim();
+      exampleCn.textContent = exampleStr.substring(cnIndex).trim();
+    } else {
+      exampleEn.textContent = exampleStr;
+      exampleCn.textContent = '';
+    }
     exampleText.style.display = 'block';
   } else {
     exampleText.style.display = 'none';
@@ -69,6 +103,57 @@ window.wordpopAPI.onWordData((data) => {
   // 字体大小
   if (data.config && data.config.fontSize) {
     wordText.setAttribute('data-font', data.config.fontSize);
+  }
+
+  // 词源助记（始终显示）
+  etymologySection.style.display = 'block';
+  etymologySection.open = true;
+  const etymologySummary = document.getElementById('etymology-summary');
+  etymologySummary.textContent = '💡 助记';
+  etymologyContent.innerHTML = '';
+
+  if (data.etymology) {
+    const mnemonic = data.etymology.mnemonic || '';
+
+    // 叙事性助记文本（支持换行）
+    if (mnemonic) {
+      const mnemonicDiv = document.createElement('div');
+      mnemonicDiv.className = 'etymology-mnemonic';
+      // 用 innerHTML 保留 \n 换行
+      mnemonicDiv.textContent = mnemonic;
+      mnemonicDiv.style.whiteSpace = 'pre-line';
+      etymologyContent.appendChild(mnemonicDiv);
+    }
+
+    // 词根词缀彩色标签
+    if (data.etymology.parts && data.etymology.parts.length > 0) {
+      const partsDiv = document.createElement('div');
+      partsDiv.className = 'etymology-parts';
+      for (const part of data.etymology.parts) {
+        const span = document.createElement('span');
+        span.className = 'etymology-part';
+        span.setAttribute('data-type', part.type);
+        span.innerHTML = `<span class="etymology-type">${part.type}</span><span class="etymology-pattern">${part.pattern}</span>「${part.meaning}」`;
+        partsDiv.appendChild(span);
+      }
+      etymologyContent.appendChild(partsDiv);
+    } else if (data.etymology.relatedRoots && data.etymology.relatedRoots.length > 0) {
+      const relatedDiv = document.createElement('div');
+      relatedDiv.className = 'etymology-parts';
+      for (const root of data.etymology.relatedRoots) {
+        const span = document.createElement('span');
+        span.className = 'etymology-part';
+        span.setAttribute('data-type', '相关词根');
+        span.innerHTML = `<span class="etymology-pattern">${root.pattern}</span>「${root.meaning}」`;
+        relatedDiv.appendChild(span);
+      }
+      etymologyContent.appendChild(relatedDiv);
+    }
+  } else {
+    const analysisDiv = document.createElement('div');
+    analysisDiv.className = 'etymology-mnemonic';
+    analysisDiv.textContent = '暂无词源数据';
+    etymologyContent.appendChild(analysisDiv);
   }
 
   // 主题
@@ -118,6 +203,36 @@ window.wordpopAPI.onWordData((data) => {
 // === 接收隐藏信号 ===
 window.wordpopAPI.onHide(() => {
   container.classList.add('hiding');
+});
+
+// === 监听配置变更，立即刷新当前显示 ===
+window.wordpopAPI.onConfigChanged((newConfig) => {
+  if (!currentWord) return;
+
+  // 更新 currentWord 中的 config 引用
+  currentWord.config = {
+    ...currentWord.config,
+    ...newConfig
+  };
+
+  // 立即应用主题
+  if (newConfig.theme) {
+    document.documentElement.setAttribute('data-theme', newConfig.theme);
+  }
+
+  // 立即应用字号
+  if (newConfig.fontSize) {
+    wordText.setAttribute('data-font', newConfig.fontSize);
+  }
+
+  // 立即应用例句显示/隐藏
+  if (newConfig.showExample !== undefined) {
+    if (newConfig.showExample && currentWord.example) {
+      exampleText.style.display = 'block';
+    } else {
+      exampleText.style.display = 'none';
+    }
+  }
 });
 
 // === 点击「显示释义」按钮 ===
@@ -197,27 +312,27 @@ btnMinimize.addEventListener('click', () => {
 // === 点击单词发音（Web Speech API） ===
 wordText.addEventListener('click', () => {
   if (!currentWord || !currentWord.word) return;
-
-  // 停止之前的发音
-  window.speechSynthesis.cancel();
-
-  const utterance = new SpeechSynthesisUtterance(currentWord.word);
-  utterance.lang = 'en-US';
-  utterance.rate = 0.8;
-  utterance.pitch = 1.0;
+  const accent = (currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
+  pronounceWord(currentWord.word, accent);
 
   // 视觉反馈
   wordText.style.color = 'var(--color-primary)';
-  utterance.onend = () => {
-    wordText.style.color = '';
-  };
-
-  window.speechSynthesis.speak(utterance);
+  setTimeout(() => { wordText.style.color = ''; }, 500);
 });
 
 // === 键盘快捷键 ===
 document.addEventListener('keydown', (e) => {
+  // Ctrl+Z / Cmd+Z 撤销
+  if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+    e.preventDefault();
+    window.wordpopAPI.undo();
+    return;
+  }
+
   if (!currentWord) return;
+
+  // 忽略带有修饰键的快捷键（如 Win+Shift+S、Ctrl+S 等）
+  if (e.altKey || e.ctrlKey || e.metaKey) return;
 
   switch (e.key.toLowerCase()) {
     case ' ':

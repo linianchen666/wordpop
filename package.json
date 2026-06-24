@@ -1,6 +1,6 @@
 {
   "name": "wordpop",
-  "version": "1.0.32",
+  "version": "1.2.0",
   "description": "艾宾浩斯背单词桌面应用 — 基于遗忘曲线的 Windows 桌面弹窗背单词工具",
   "main": "src/main/index.js",
   "author": "WordPop Team",

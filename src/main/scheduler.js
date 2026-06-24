@@ -1,6 +1,7 @@
 const { getDb } = require('./db');
 const { loadConfig } = require('./config');
 const popupManager = require('./popup-manager');
+const { analyzeWord } = require('./etymology');
 
 /**
  * 艾宾浩斯遗忘曲线调度引擎
@@ -58,7 +59,9 @@ class Scheduler {
     this.dailyNewWordsLimit = 20;
     this.dailyNewWordsCount = 0;
     this._onStatsUpdate = null;
+    this._onWordPop = null;
     this._lastDate = null;
+    this._undoInfo = null;
   }
 
   start() {
@@ -74,11 +77,6 @@ class Scheduler {
 
     this._resetDailyCountIfNeeded();
     this.reloadQueue();
-
-    console.log('[Scheduler] Started | daily limit:', this.dailyNewWordsLimit,
-      '| daily count:', this.dailyNewWordsCount,
-      '| queue size:', this.queue.length);
-
     this._popNext();
   }
 
@@ -89,7 +87,6 @@ class Scheduler {
     }
     this.queue = [];
     this.currentWord = null;
-    console.log('[Scheduler] Stopped');
   }
 
   pause() {
@@ -99,13 +96,11 @@ class Scheduler {
       this.nextPopupTimer = null;
     }
     try { popupManager.hide(); } catch (e) {}
-    console.log('[Scheduler] Paused');
   }
 
   resume() {
     this.isPaused = false;
     this.reloadQueue();
-    console.log('[Scheduler] Resumed | queue size:', this.queue.length);
 
     if (this.queue.length > 0) {
       // 有单词：显示弹窗并弹出下一个
@@ -113,7 +108,6 @@ class Scheduler {
       this._popNext();
     } else {
       // 没有单词：不显示弹窗（避免闪烁），延迟后重试
-      console.log('[Scheduler] Resumed but queue empty, will retry in 10s');
       this.nextPopupTimer = setTimeout(() => {
         this.reloadQueue();
         if (this.queue.length > 0) {
@@ -141,16 +135,17 @@ class Scheduler {
     if (word) {
       this.currentWord = word;
       this._showWord(word);
-      console.log('[Scheduler] Pop:', word.word, '| stage:', word.stage, '| remaining:', this.queue.length);
     } else {
       // 没有单词了，隐藏弹窗，30秒后重试
-      // 注意：只在弹窗可见时才隐藏，避免不必要的操作
-      console.log('[Scheduler] No words available, retry in 30s');
       try {
         if (popupManager.isVisible()) {
           popupManager.hide();
         }
       } catch (e) {}
+      // 通知托盘更新状态（显示下次复习倒计时）
+      if (this._onStatsUpdate) {
+        try { this._onStatsUpdate(); } catch (e) {}
+      }
       this.nextPopupTimer = setTimeout(() => this._popNext(), 30000);
     }
   }
@@ -163,6 +158,14 @@ class Scheduler {
       wrong: word.wrong_count || 0
     } : null;
 
+    // 分析词源（始终提供，即使无精确拆分也有相关词根提示）
+    let etymology = null;
+    try {
+      etymology = analyzeWord(word.word);
+    } catch (e) {
+      console.error('[Scheduler] analyzeWord error:', e.message);
+    }
+
     try {
       popupManager.show({
         id: word.id,
@@ -172,10 +175,16 @@ class Scheduler {
         example: word.example || '',
         isNew: word.stage === undefined || word.stage === 0,
         progress: progress,
-        queueRemaining: this.queue.length
+        queueRemaining: this.queue.length,
+        etymology: etymology
       });
     } catch (e) {
       console.error('[Scheduler] _showWord ERROR:', e.message);
+    }
+
+    // 通知托盘更新状态（显示"正在显示单词"）
+    if (this._onWordPop) {
+      try { this._onWordPop(); } catch (e) {}
     }
   }
 
@@ -210,9 +219,6 @@ class Scheduler {
       }
 
       this.queue = [...shuffleArray(dueReviews), ...newWords];
-
-      console.log('[Scheduler] Queue reloaded | due:', dueReviews.length,
-        '| new:', newWords.length, '| total:', this.queue.length);
     } catch (e) {
       console.error('[Scheduler] reloadQueue ERROR:', e.message);
       this.queue = [];
@@ -220,64 +226,48 @@ class Scheduler {
   }
 
   markKnown() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markKnown: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markKnown:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('known');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markKnown ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markKnown ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
   }
 
   markUnknown() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markUnknown: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markUnknown:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('unknown');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markUnknown ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markUnknown ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
   }
 
   markFuzzy() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markFuzzy: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markFuzzy:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('fuzzy');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markFuzzy ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markFuzzy ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
   }
 
   markMastered() {
-    if (!this.currentWord) {
-      console.log('[Scheduler] markMastered: no currentWord, skipping');
-      return;
-    }
-    console.log('[Scheduler] markMastered:', this.currentWord.word);
+    if (!this.currentWord) return;
     try {
       this._updateProgress('mastered');
       this._advanceToNext();
     } catch (e) {
-      console.error('[Scheduler] markMastered ERROR:', e.message, e.stack);
+      console.error('[Scheduler] markMastered ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
@@ -305,6 +295,14 @@ class Scheduler {
       console.error('[Scheduler] SELECT progress ERROR:', e.message);
       existing = null;
     }
+
+    // 保存撤销信息（在修改数据库之前）
+    this._undoInfo = {
+      word: { ...word },
+      oldProgress: existing ? { ...existing } : null,
+      action: action,
+      wasNewWord: !existing
+    };
 
     const currentStage = existing ? existing.stage : 0;
     const currentMasteredCount = existing ? (existing.mastered_count || 0) : 0;
@@ -386,11 +384,6 @@ class Scheduler {
     } catch (e) {
       console.error('[Scheduler] _updateProgress DB ERROR:', e.message);
     }
-
-    console.log('[Scheduler] Progress:', word.word, '| action:', action,
-      '| stage:', currentStage, '→', newStage,
-      '| masteredCount:', currentMasteredCount, '→', newMasteredCount,
-      '| nextReview:', new Date(nextReviewAt).toISOString());
   }
 
   _advanceToNext() {
@@ -401,13 +394,91 @@ class Scheduler {
     this.nextPopupTimer = setTimeout(() => this._popNext(), 300);
   }
 
+  /**
+   * 撤销上一次操作，恢复单词进度
+   * @returns {boolean} 是否成功撤销
+   */
+  undo() {
+    if (!this._undoInfo) return false;
+
+    const { word, oldProgress, action, wasNewWord } = this._undoInfo;
+    const db = getDb();
+
+    // 如果下一个单词已经弹出，将其放回队列头部
+    if (this.currentWord && this.currentWord.id !== word.id) {
+      this.queue.unshift(this.currentWord);
+    }
+
+    // 取消待弹出的下一个单词
+    if (this.nextPopupTimer) {
+      clearTimeout(this.nextPopupTimer);
+      this.nextPopupTimer = null;
+    }
+
+    try {
+      if (wasNewWord) {
+        // 新词：删除刚插入的 progress 记录
+        db.prepare('DELETE FROM progress WHERE word_id = ?').run(word.id);
+      } else {
+        // 已学词：恢复旧值
+        db.prepare(`
+          UPDATE progress SET
+            stage = ?,
+            next_review_at = ?,
+            last_review_at = ?,
+            correct_count = ?,
+            wrong_count = ?,
+            mastered_count = ?
+          WHERE word_id = ?
+        `).run(
+          oldProgress.stage,
+          oldProgress.next_review_at,
+          oldProgress.last_review_at,
+          oldProgress.correct_count,
+          oldProgress.wrong_count,
+          oldProgress.mastered_count,
+          word.id
+        );
+      }
+
+      // 回退今日统计
+      const wordsLearnedDelta = wasNewWord ? 1 : 0;
+      db.prepare(`
+        UPDATE daily_stats SET
+          words_reviewed = MAX(words_reviewed - 1, 0),
+          words_learned = MAX(words_learned - ?, 0)
+        WHERE date = date('now', 'localtime')
+      `).run(wordsLearnedDelta);
+
+      // 回退今日新词计数
+      if (wasNewWord) {
+        this.dailyNewWordsCount = Math.max(0, this.dailyNewWordsCount - 1);
+      }
+    } catch (e) {
+      console.error('[Scheduler] undo DB ERROR:', e.message);
+      return false;
+    }
+
+    // 清除撤销信息
+    this._undoInfo = null;
+
+    // 重新显示该单词
+    this.currentWord = word;
+    this._showWord(word);
+
+    return true;
+  }
+
+  canUndo() {
+    return this._undoInfo !== null;
+  }
+
   _checkDateChange() {
     const now = new Date();
     const today = now.getFullYear() + '-' +
       String(now.getMonth() + 1).padStart(2, '0') + '-' +
       String(now.getDate()).padStart(2, '0');
     if (this._lastDate && this._lastDate !== today) {
-      console.log('[Scheduler] Date changed:', this._lastDate, '→', today);
       this.dailyNewWordsCount = 0;
     }
     this._lastDate = today;
@@ -427,13 +498,22 @@ class Scheduler {
     this._lastDate = new Date().getFullYear() + '-' +
       String(new Date().getMonth() + 1).padStart(2, '0') + '-' +
       String(new Date().getDate()).padStart(2, '0');
-    console.log('[Scheduler] Daily count reset | today learned:', this.dailyNewWordsCount);
   }
 
   applyConfig(config) {
-    if (config && config.dailyNewWords !== undefined) {
+    if (!config) return;
+    let needReload = false;
+
+    if (config.dailyNewWords !== undefined) {
       this.dailyNewWordsLimit = config.dailyNewWords;
-      console.log('[Scheduler] Daily new words limit updated to:', this.dailyNewWordsLimit);
+      needReload = true;
+    }
+
+    if (config.selectedWordlists !== undefined) {
+      needReload = true;
+    }
+
+    if (needReload) {
       this.reloadQueue();
     }
   }
@@ -450,7 +530,18 @@ class Scheduler {
         FROM progress
         WHERE stage < ? AND next_review_at > 0
       `).get(MASTERED_STAGE);
-      return row && row.next_at ? row.next_at : null;
+
+      if (row && row.next_at) return row.next_at;
+
+      // 没有待复习的单词，但有新词配额且还有未学单词 → 返回当前时间表示很快会弹出
+      if (this.hasNewWordsQuotaToday()) {
+        const unlearned = db.prepare(
+          'SELECT COUNT(*) c FROM words w LEFT JOIN progress p ON w.id = p.word_id WHERE p.word_id IS NULL'
+        ).get();
+        if (unlearned && unlearned.c > 0) return Date.now();
+      }
+
+      return null;
     } catch (e) {
       console.error('[Scheduler] getNextReviewTime error:', e.message);
       return null;
@@ -494,6 +585,10 @@ class Scheduler {
 
   onStatsUpdate(callback) {
     this._onStatsUpdate = callback;
+  }
+
+  onWordPop(callback) {
+    this._onWordPop = callback;
   }
 }
 

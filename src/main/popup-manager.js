@@ -9,7 +9,9 @@ let popupConfig = {
   position: 'bottom-right',
   fontSize: 'medium',
   showExample: true,
-  theme: 'light'
+  theme: 'light',
+  autoPronounce: true,
+  pronounceAccent: 'en-US'
 };
 
 /**
@@ -38,7 +40,7 @@ function createPopupWindow() {
 
     popupWindow = new BrowserWindow({
       width: 360,
-      height: 240,
+      height: 320,
       x: bounds.x,
       y: bounds.y,
       frame: false,
@@ -61,12 +63,10 @@ function createPopupWindow() {
     });
 
     const htmlPath = getAsarPath('src', 'renderer', 'popup', 'index.html');
-    console.log('[Popup] Loading:', htmlPath);
     popupWindow.loadFile(htmlPath);
 
     popupWindow.once('ready-to-show', () => {
       popupReady = true;
-      console.log('[Popup] ready-to-show fired');
       if (pendingWordData) {
         const d = pendingWordData;
         pendingWordData = null;
@@ -81,7 +81,6 @@ function createPopupWindow() {
     popupWindow.on('closed', () => {
       popupWindow = null;
       popupReady = false;
-      console.log('[Popup] closed');
     });
 
     return popupWindow;
@@ -104,7 +103,6 @@ function waitForReady(timeout) {
     const id = setInterval(() => {
       if (popupReady || Date.now() - t0 > timeout) {
         clearInterval(id);
-        console.log('[Popup] waitForReady done, ready=', popupReady);
         resolve();
       }
     }, 100);
@@ -115,19 +113,14 @@ function waitForReady(timeout) {
  * 显示弹窗并传入单词数据
  */
 function show(wordData) {
-  console.log('[Popup] show() called, ready=', popupReady, 'win=', !!popupWindow);
   try {
     if (popupWindow && !popupWindow.isDestroyed() && popupReady) {
       _displayWord(wordData);
     } else if (popupWindow && !popupWindow.isDestroyed() && !popupReady) {
-      // 窗口存在但还没 ready，暂存数据
       pendingWordData = wordData;
-      console.log('[Popup] win exists but not ready, data pending');
     } else {
-      // 窗口不存在，创建新的
       createPopupWindow();
       pendingWordData = wordData;
-      console.log('[Popup] new window created, data pending');
     }
   } catch (err) {
     console.error('[Popup] show() ERROR:', err.message);
@@ -139,7 +132,6 @@ function show(wordData) {
  */
 function _displayWord(wordData) {
   if (!popupWindow || popupWindow.isDestroyed()) {
-    console.log('[Popup] _displayWord: window invalid, recreating...');
     createPopupWindow();
     pendingWordData = wordData;
     return;
@@ -147,14 +139,16 @@ function _displayWord(wordData) {
 
   try {
     const bounds = getPopupBounds(popupConfig.position);
-    popupWindow.setBounds({ ...bounds, width: 360, height: 240 });
+    popupWindow.setBounds({ ...bounds, width: 360, height: 320 });
 
     popupWindow.webContents.send('popup:word', {
       ...wordData,
       config: {
         showExample: popupConfig.showExample,
         fontSize: popupConfig.fontSize,
-        theme: popupConfig.theme
+        theme: popupConfig.theme,
+        autoPronounce: popupConfig.autoPronounce,
+        pronounceAccent: popupConfig.pronounceAccent
       }
     });
 
@@ -164,8 +158,6 @@ function _displayWord(wordData) {
     if (!popupWindow.isVisible()) popupWindow.showInactive();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
-
-    console.log('[Popup] displayWord:', wordData.word, '| visible:', popupWindow.isVisible());
   } catch (err) {
     console.error('[Popup] _displayWord ERROR:', err.message, err.stack);
   }
@@ -201,7 +193,7 @@ function closeImmediately() {
 function getPopupBounds(position) {
   try {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    const W = 360, H = 240, M = 20;
+    const W = 360, H = 320, M = 20;
     switch (position) {
       case 'top-left':     return { x: M, y: M };
       case 'top-right':    return { x: width - W - M, y: M };
@@ -216,6 +208,14 @@ function updateConfig(cfg) {
   if (cfg.fontSize !== undefined) popupConfig.fontSize = cfg.fontSize;
   if (cfg.showExample !== undefined) popupConfig.showExample = cfg.showExample;
   if (cfg.theme !== undefined) popupConfig.theme = cfg.theme;
+  if (cfg.autoPronounce !== undefined) popupConfig.autoPronounce = cfg.autoPronounce;
+  if (cfg.pronounceAccent !== undefined) popupConfig.pronounceAccent = cfg.pronounceAccent;
+
+  // 如果弹窗正在显示，立即移动到新位置
+  if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
+    const bounds = getPopupBounds(popupConfig.position);
+    popupWindow.setBounds({ ...bounds, width: 360, height: 320 });
+  }
 }
 
 function isVisible() {
