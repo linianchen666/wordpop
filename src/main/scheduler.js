@@ -1,6 +1,7 @@
 const { getDb } = require('./db');
 const { loadConfig } = require('./config');
 const popupManager = require('./popup-manager');
+const { analyzeWord } = require('./etymology');
 
 /**
  * 艾宾浩斯遗忘曲线调度引擎
@@ -157,6 +158,14 @@ class Scheduler {
       wrong: word.wrong_count || 0
     } : null;
 
+    // 分析词源（始终提供，即使无精确拆分也有相关词根提示）
+    let etymology = null;
+    try {
+      etymology = analyzeWord(word.word);
+    } catch (e) {
+      console.error('[Scheduler] analyzeWord error:', e.message);
+    }
+
     try {
       popupManager.show({
         id: word.id,
@@ -166,7 +175,8 @@ class Scheduler {
         example: word.example || '',
         isNew: word.stage === undefined || word.stage === 0,
         progress: progress,
-        queueRemaining: this.queue.length
+        queueRemaining: this.queue.length,
+        etymology: etymology
       });
     } catch (e) {
       console.error('[Scheduler] _showWord ERROR:', e.message);

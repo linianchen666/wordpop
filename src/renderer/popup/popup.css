@@ -214,6 +214,110 @@
   margin-top: 2px;
 }
 
+/* === 词源助记展开框 === */
+.etymology-section {
+  margin-top: 6px;
+  font-size: 11px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.etymology-summary {
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--color-primary);
+  padding: 4px 10px;
+  background: var(--color-bg-tertiary);
+  border-radius: var(--radius-sm);
+  list-style: none;
+  user-select: none;
+  transition: background var(--transition-fast);
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.etymology-summary::-webkit-details-marker {
+  display: none;
+}
+
+.etymology-summary::before {
+  content: '▸';
+  font-size: 10px;
+  transition: transform var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.etymology-section[open] .etymology-summary::before {
+  transform: rotate(90deg);
+}
+
+.etymology-summary:hover {
+  background: var(--color-bg-secondary);
+}
+
+.etymology-content {
+  padding: 6px 10px 4px;
+  background: var(--color-bg-tertiary);
+  border-radius: 0 0 var(--radius-sm) var(--radius-sm);
+  max-height: 100px;
+  overflow-y: auto;
+  animation: slideDown 0.2s ease;
+}
+
+.etymology-analysis {
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+
+.etymology-parts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 4px;
+}
+
+.etymology-part {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.etymology-part[data-type="前缀"] {
+  background: rgba(74, 144, 217, 0.12);
+  color: var(--color-primary);
+}
+
+.etymology-part[data-type="词根"] {
+  background: rgba(39, 174, 96, 0.12);
+  color: var(--color-success);
+}
+
+.etymology-part[data-type="后缀"] {
+  background: rgba(245, 158, 11, 0.12);
+  color: #f59e0b;
+}
+
+.etymology-part[data-type="相关词根"] {
+  background: rgba(155, 89, 182, 0.12);
+  color: #9b59b6;
+}
+
+.etymology-type {
+  font-weight: 600;
+  font-size: 9px;
+}
+
+.etymology-pattern {
+  font-family: var(--font-mono);
+  font-weight: 500;
+}
+
 /* === 通用隐藏工具类 === */
 .hidden {
   display: none !important;

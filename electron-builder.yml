@@ -17,6 +17,10 @@ extraResources:
     to: wordlists
     filter:
       - "**/*.json"
+  - from: src/data/etymology
+    to: etymology
+    filter:
+      - "**/*.json"
   - from: assets/tray-icon.png
     to: .
 

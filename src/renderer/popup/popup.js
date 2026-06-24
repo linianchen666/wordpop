@@ -24,6 +24,8 @@ const wordDetail = document.getElementById('word-detail');
 const actionButtons = document.getElementById('action-buttons');
 const exampleEn = document.getElementById('example-en');
 const exampleCn = document.getElementById('example-cn');
+const etymologySection = document.getElementById('etymology-section');
+const etymologyContent = document.getElementById('etymology-content');
 
 let currentWord = null;
 
@@ -97,6 +99,63 @@ window.wordpopAPI.onWordData((data) => {
   // 字体大小
   if (data.config && data.config.fontSize) {
     wordText.setAttribute('data-font', data.config.fontSize);
+  }
+
+  // 词源助记（始终显示）
+  etymologySection.style.display = 'block';
+  etymologySection.open = true; // 默认展开
+
+  // 更新 summary 文本：有拆分时显示"词源助记"，无拆分时显示"词源"
+  const etymologySummary = document.getElementById('etymology-summary');
+
+  // 构造词源内容
+  etymologyContent.innerHTML = '';
+
+  if (data.etymology && data.etymology.parts && data.etymology.parts.length > 0) {
+    etymologySummary.textContent = '🔍 词源助记';
+
+    const analysisDiv = document.createElement('div');
+    analysisDiv.className = 'etymology-analysis';
+    analysisDiv.textContent = data.etymology.analysis || '';
+
+    const partsDiv = document.createElement('div');
+    partsDiv.className = 'etymology-parts';
+    for (const part of data.etymology.parts) {
+      const span = document.createElement('span');
+      span.className = 'etymology-part';
+      span.setAttribute('data-type', part.type);
+      span.innerHTML = `<span class="etymology-type">${part.type}</span><span class="etymology-pattern">${part.pattern}</span>「${part.meaning}」`;
+      partsDiv.appendChild(span);
+    }
+
+    etymologyContent.appendChild(analysisDiv);
+    etymologyContent.appendChild(partsDiv);
+  } else if (data.etymology && data.etymology.relatedRoots && data.etymology.relatedRoots.length > 0) {
+    etymologySummary.textContent = '🔍 词源';
+
+    const analysisDiv = document.createElement('div');
+    analysisDiv.className = 'etymology-analysis';
+    analysisDiv.textContent = data.etymology.analysis || '';
+
+    const relatedDiv = document.createElement('div');
+    relatedDiv.className = 'etymology-parts';
+    for (const root of data.etymology.relatedRoots) {
+      const span = document.createElement('span');
+      span.className = 'etymology-part';
+      span.setAttribute('data-type', '相关词根');
+      span.innerHTML = `<span class="etymology-pattern">${root.pattern}</span>「${root.meaning}」`;
+      relatedDiv.appendChild(span);
+    }
+
+    etymologyContent.appendChild(analysisDiv);
+    etymologyContent.appendChild(relatedDiv);
+  } else {
+    etymologySummary.textContent = '🔍 词源';
+
+    const analysisDiv = document.createElement('div');
+    analysisDiv.className = 'etymology-analysis';
+    analysisDiv.textContent = '此词为基础词汇，暂无词源分析';
+    etymologyContent.appendChild(analysisDiv);
   }
 
   // 主题
