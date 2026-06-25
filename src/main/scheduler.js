@@ -192,6 +192,11 @@ class Scheduler {
     try {
       const db = getDb();
       const now = Date.now();
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
 
       // 1. 到期需复习的单词（随机排序）
       const dueReviews = db.prepare(`
@@ -200,10 +205,11 @@ class Scheduler {
         FROM words w
         JOIN progress p ON w.id = p.word_id
         WHERE p.next_review_at <= ? AND p.stage < ?
+          AND w.wordlist IN (${placeholders})
         LIMIT 200
-      `).all(now, MASTERED_STAGE);
+      `).all(now, MASTERED_STAGE, ...wordlists);
 
-      // 2. 今日配额内的新词（随机选取）
+      // 2. 今日配额内的新词
       const remaining = Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount);
       let newWords = [];
       if (remaining > 0) {
@@ -213,9 +219,10 @@ class Scheduler {
           FROM words w
           LEFT JOIN progress p ON w.id = p.word_id
           WHERE p.word_id IS NULL
-          ORDER BY w.id ASC
+            AND w.wordlist IN (${placeholders})
+          ORDER BY w.frequency_rank ASC, w.id ASC
           LIMIT ?
-        `).all(remaining);
+        `).all(...wordlists, remaining);
       }
 
       this.queue = [...shuffleArray(dueReviews), ...newWords];
@@ -525,19 +532,30 @@ class Scheduler {
   getNextReviewTime() {
     try {
       const db = getDb();
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
+
       const row = db.prepare(`
-        SELECT MIN(next_review_at) as next_at
-        FROM progress
-        WHERE stage < ? AND next_review_at > 0
-      `).get(MASTERED_STAGE);
+        SELECT MIN(p.next_review_at) as next_at
+        FROM progress p
+        JOIN words w ON p.word_id = w.id
+        WHERE p.stage < ? AND p.next_review_at > 0
+          AND w.wordlist IN (${placeholders})
+      `).get(MASTERED_STAGE, ...wordlists);
 
       if (row && row.next_at) return row.next_at;
 
       // 没有待复习的单词，但有新词配额且还有未学单词 → 返回当前时间表示很快会弹出
       if (this.hasNewWordsQuotaToday()) {
-        const unlearned = db.prepare(
-          'SELECT COUNT(*) c FROM words w LEFT JOIN progress p ON w.id = p.word_id WHERE p.word_id IS NULL'
-        ).get();
+        const unlearned = db.prepare(`
+          SELECT COUNT(*) c
+          FROM words w
+          LEFT JOIN progress p ON w.id = p.word_id
+          WHERE p.word_id IS NULL AND w.wordlist IN (${placeholders})
+        `).get(...wordlists);
         if (unlearned && unlearned.c > 0) return Date.now();
       }
 
@@ -561,10 +579,33 @@ class Scheduler {
   hasUnmasteredWords() {
     try {
       const db = getDb();
-      const row = db.prepare('SELECT COUNT(*) c FROM progress WHERE stage < ?').get(MASTERED_STAGE);
-      const totalWords = db.prepare('SELECT COUNT(*) c FROM words').get().c;
-      const masteredOrLearning = db.prepare('SELECT COUNT(*) c FROM progress').get().c;
-      return (row.c > 0) || (totalWords > masteredOrLearning);
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
+
+      // 选中的词库中，已学习但未掌握的词 (stage < 9)
+      const learningRow = db.prepare(`
+        SELECT COUNT(*) c FROM progress p
+        JOIN words w ON p.word_id = w.id
+        WHERE p.stage < ? AND w.wordlist IN (${placeholders})
+      `).get(MASTERED_STAGE, ...wordlists);
+
+      // 选中的词库中，总词数
+      const totalWords = db.prepare(`
+        SELECT COUNT(*) c FROM words w
+        WHERE w.wordlist IN (${placeholders})
+      `).get(...wordlists).c;
+
+      // 选中的词库中，已开始学习的词
+      const masteredOrLearning = db.prepare(`
+        SELECT COUNT(*) c FROM progress p
+        JOIN words w ON p.word_id = w.id
+        WHERE w.wordlist IN (${placeholders})
+      `).get(...wordlists).c;
+
+      return (learningRow.c > 0) || (totalWords > masteredOrLearning);
     } catch (e) {
       return false;
     }

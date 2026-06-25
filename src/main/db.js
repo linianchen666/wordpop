@@ -81,6 +81,7 @@ function migrate(db) {
         translation TEXT NOT NULL,
         example TEXT DEFAULT '',
         wordlist TEXT NOT NULL DEFAULT 'custom',
+        frequency_rank INTEGER DEFAULT 999999,
         created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
       );
 
@@ -163,6 +164,57 @@ function migrate(db) {
     }
     db.pragma('user_version = 2');
   }
+
+  // v3: 增加 frequency_rank 字段，对现有单词加载 frequency.json 进行词频权重更新
+  if (currentVersion < 3) {
+    try {
+      const hasFreqCol = db.prepare(
+        "SELECT COUNT(*) as cnt FROM pragma_table_info('words') WHERE name='frequency_rank'"
+      ).get().cnt > 0;
+      if (!hasFreqCol) {
+        db.exec(`ALTER TABLE words ADD COLUMN frequency_rank INTEGER DEFAULT 999999`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_words_frequency ON words(frequency_rank)`);
+
+      const map = getFrequencyMap();
+      const updateStmt = db.prepare('UPDATE words SET frequency_rank = ? WHERE word = ?');
+      const updateTransaction = db.transaction((freqMap) => {
+        for (const [word, rank] of freqMap.entries()) {
+          updateStmt.run(rank, word);
+        }
+      });
+      updateTransaction(map);
+      console.log('[DB] Migration v3 finished: updated word frequency ranks');
+    } catch (e) {
+      console.error('[DB] Migration v3 ERROR:', e.message);
+    }
+    db.pragma('user_version = 3');
+  }
+}
+
+let frequencyMap = null;
+
+function getFrequencyMap() {
+  if (frequencyMap) return frequencyMap;
+  frequencyMap = new Map();
+  try {
+    const freqPath = path.join(getWordlistPath(), 'frequency.json');
+    if (fs.existsSync(freqPath)) {
+      const words = JSON.parse(fs.readFileSync(freqPath, 'utf-8'));
+      words.forEach((word, index) => {
+        frequencyMap.set(word.toLowerCase().trim(), index);
+      });
+    }
+  } catch (e) {
+    console.error('[DB] Failed to load frequency map:', e.message);
+  }
+  return frequencyMap;
+}
+
+function getWordFrequencyRank(word) {
+  const map = getFrequencyMap();
+  const cleanWord = word.trim().toLowerCase();
+  return map.has(cleanWord) ? map.get(cleanWord) : 999999;
 }
 
 /**
@@ -246,8 +298,8 @@ function importWordlist(wordlistId) {
   const wordlist = JSON.parse(fs.readFileSync(wordlistPath, 'utf-8'));
 
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist, frequency_rank)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   let imported = 0;
@@ -255,12 +307,15 @@ function importWordlist(wordlistId) {
 
   const importTransaction = db.transaction((words) => {
     for (const w of words) {
+      const cleanWord = w.word.trim().toLowerCase();
+      const rank = getWordFrequencyRank(cleanWord);
       const result = insertStmt.run(
-        w.word.trim().toLowerCase(),
+        cleanWord,
         w.phonetic || '',
         w.translation || '',
         w.example || '',
-        wordlistId
+        wordlistId,
+        rank
       );
       if (result.changes > 0) {
         imported++;
@@ -317,14 +372,15 @@ function importCustomWordlist(filePath, wordlistName) {
   }
 
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist, frequency_rank)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
 
   let imported = 0;
   const transaction = db.transaction((items) => {
     for (const w of items) {
-      const result = insertStmt.run(w.word, w.phonetic, w.translation, w.example, wordlistName);
+      const rank = getWordFrequencyRank(w.word);
+      const result = insertStmt.run(w.word, w.phonetic, w.translation, w.example, wordlistName, rank);
       if (result.changes > 0) imported++;
     }
   });
