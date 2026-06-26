@@ -329,19 +329,17 @@ class Scheduler {
     let isCorrect = q >= 3 ? 1 : 0;
     let isWrong = q < 3 ? 1 : 0;
 
-    if (q >= 3) {
-      // 答对 (认识/模糊/熟知)
+    if (q === 5) {
+      // 熟知：直接设置为已掌握（90天最大间隔，不再出现）
+      newInterval = 90 * 86400 * 1000;
+      newRepetitions = 9;
+      newEfactor = 2.7;
+    } else if (q >= 3) {
+      // 答对 (认识/模糊)
       if (currentRepetitions === 0) {
-        if (q === 5) {
-          // 熟知：直接15天
-          newInterval = 15 * 86400 * 1000;
-          newRepetitions = 2;
-          newEfactor = 2.7;
-        } else {
-          // 认识 / 模糊: 5分钟
-          newInterval = 5 * 60 * 1000;
-          newRepetitions = 1;
-        }
+        // 认识 / 模糊: 5分钟
+        newInterval = 5 * 60 * 1000;
+        newRepetitions = 1;
       } else if (currentRepetitions === 1) {
         newInterval = 30 * 60 * 1000;
         newRepetitions = 2;
