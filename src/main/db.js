@@ -93,6 +93,9 @@ function migrate(db) {
         last_review_at INTEGER DEFAULT NULL,
         correct_count INTEGER DEFAULT 0,
         wrong_count INTEGER DEFAULT 0,
+        efactor REAL DEFAULT 2.5,
+        interval INTEGER DEFAULT 0,
+        repetitions INTEGER DEFAULT 0,
         FOREIGN KEY (word_id) REFERENCES words(id) ON DELETE CASCADE
       );
 
@@ -189,6 +192,51 @@ function migrate(db) {
       console.error('[DB] Migration v3 ERROR:', e.message);
     }
     db.pragma('user_version = 3');
+  }
+
+  // v4: 增加 efactor, interval, repetitions 字段，并映射现有的 stage 进度
+  if (currentVersion < 4) {
+    try {
+      const hasEfactor = db.prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='efactor'").get().cnt > 0;
+      if (!hasEfactor) {
+        db.exec(`ALTER TABLE progress ADD COLUMN efactor REAL DEFAULT 2.5`);
+      }
+      const hasInterval = db.prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='interval'").get().cnt > 0;
+      if (!hasInterval) {
+        db.exec(`ALTER TABLE progress ADD COLUMN interval INTEGER DEFAULT 0`);
+      }
+      const hasRepetitions = db.prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='repetitions'").get().cnt > 0;
+      if (!hasRepetitions) {
+        db.exec(`ALTER TABLE progress ADD COLUMN repetitions INTEGER DEFAULT 0`);
+      }
+
+      const STAGE_MAP = [
+        { reps: 0, iv: 0, ef: 2.5 },
+        { reps: 1, iv: 5 * 60 * 1000, ef: 2.5 },
+        { reps: 2, iv: 30 * 60 * 1000, ef: 2.5 },
+        { reps: 3, iv: 4 * 3600 * 1000, ef: 2.5 },
+        { reps: 4, iv: 24 * 3600 * 1000, ef: 2.5 },
+        { reps: 5, iv: 2 * 86400 * 1000, ef: 2.5 },
+        { reps: 6, iv: 4 * 86400 * 1000, ef: 2.5 },
+        { reps: 7, iv: 7 * 86400 * 1000, ef: 2.5 },
+        { reps: 8, iv: 15 * 86400 * 1000, ef: 2.6 },
+        { reps: 9, iv: 90 * 86400 * 1000, ef: 2.7 }
+      ];
+
+      const records = db.prepare('SELECT id, stage FROM progress').all();
+      const updateStmt = db.prepare('UPDATE progress SET efactor = ?, interval = ?, repetitions = ? WHERE id = ?');
+      const updateTransaction = db.transaction((rows) => {
+        for (const row of rows) {
+          const map = STAGE_MAP[row.stage] || STAGE_MAP[0];
+          updateStmt.run(map.ef, map.iv, map.reps, row.id);
+        }
+      });
+      updateTransaction(records);
+      console.log('[DB] Migration v4 finished: mapped stage progress to SM-2 states');
+    } catch (e) {
+      console.error('[DB] Migration v4 ERROR:', e.message);
+    }
+    db.pragma('user_version = 4');
   }
 }
 

@@ -201,7 +201,8 @@ class Scheduler {
       // 1. 到期需复习的单词（随机排序）
       const dueReviews = db.prepare(`
         SELECT w.id, w.word, w.phonetic, w.translation, w.example,
-               p.stage, p.next_review_at, p.correct_count, p.wrong_count
+               p.stage, p.next_review_at, p.correct_count, p.wrong_count,
+               p.efactor, p.interval, p.repetitions
         FROM words w
         JOIN progress p ON w.id = p.word_id
         WHERE p.next_review_at <= ? AND p.stage < ?
@@ -215,7 +216,7 @@ class Scheduler {
       if (remaining > 0) {
         newWords = db.prepare(`
           SELECT w.id, w.word, w.phonetic, w.translation, w.example, 0 as stage,
-                 0 as correct_count, 0 as wrong_count
+                 0 as correct_count, 0 as wrong_count, 2.5 as efactor, 0 as interval, 0 as repetitions
           FROM words w
           LEFT JOIN progress p ON w.id = p.word_id
           WHERE p.word_id IS NULL
@@ -311,75 +312,106 @@ class Scheduler {
       wasNewWord: !existing
     };
 
-    const currentStage = existing ? existing.stage : 0;
-    const currentMasteredCount = existing ? (existing.mastered_count || 0) : 0;
-    let newStage;
-    let isCorrect = 0;
-    let isWrong = 0;
-    let newMasteredCount = currentMasteredCount;
+    let q;
+    if (action === 'mastered') q = 5;
+    else if (action === 'known') q = 4;
+    else if (action === 'fuzzy') q = 3;
+    else q = 0; // unknown
 
-    if (action === 'mastered') {
-      // 熟知：跳到 stage 8（15天后复习）
-      // 如果连续2次熟知（mastered_count >= 1），直接标记为已掌握
-      if (currentMasteredCount >= 1) {
-        // 第2次熟知 → 彻底已掌握
-        newStage = MASTERED_STAGE;
-        newMasteredCount = 0; // 重置计数
-        isCorrect = 1;
+    let currentEfactor = existing ? (existing.efactor || 2.5) : 2.5;
+    let currentRepetitions = existing ? (existing.repetitions || 0) : 0;
+    let currentInterval = existing ? (existing.interval || 0) : 0;
+
+    let newEfactor = currentEfactor;
+    let newRepetitions = currentRepetitions;
+    let newInterval = currentInterval;
+
+    let isCorrect = q >= 3 ? 1 : 0;
+    let isWrong = q < 3 ? 1 : 0;
+
+    if (q >= 3) {
+      // 答对 (认识/模糊/熟知)
+      if (currentRepetitions === 0) {
+        if (q === 5) {
+          // 熟知：直接15天
+          newInterval = 15 * 86400 * 1000;
+          newRepetitions = 2;
+          newEfactor = 2.7;
+        } else {
+          // 认识 / 模糊: 5分钟
+          newInterval = 5 * 60 * 1000;
+          newRepetitions = 1;
+        }
+      } else if (currentRepetitions === 1) {
+        newInterval = 30 * 60 * 1000;
+        newRepetitions = 2;
+      } else if (currentRepetitions === 2) {
+        newInterval = 4 * 3600 * 1000; // 4小时
+        newRepetitions = 3;
+      } else if (currentRepetitions === 3) {
+        newInterval = 24 * 3600 * 1000; // 1天
+        newRepetitions = 4;
+      } else if (currentRepetitions === 4) {
+        newInterval = 2 * 86400 * 1000; // 2天
+        newRepetitions = 5;
       } else {
-        // 第1次熟知 → stage 8, 15天后复习
-        newStage = 8;
-        newMasteredCount = currentMasteredCount + 1;
-        isCorrect = 1;
+        newInterval = Math.round(currentInterval * currentEfactor);
+        newRepetitions = currentRepetitions + 1;
       }
-    } else if (action === 'known') {
-      // 认识：阶段 +1
-      newMasteredCount = 0; // 任何非熟知操作都重置熟知计数
-      isCorrect = 1;
-      if (existing) {
-        newStage = Math.min(currentStage + 1, MASTERED_STAGE);
-      } else {
-        newStage = 1;
-        this.dailyNewWordsCount++;
-      }
-    } else if (action === 'fuzzy') {
-      // 模糊：阶段不变，重新进入当前阶段的复习队列
-      newMasteredCount = 0;
-      isWrong = 0; // 模糊不算错
-      isCorrect = 0;
-      if (existing) {
-        newStage = currentStage; // 不增不减
-      } else {
-        newStage = 0;
-        this.dailyNewWordsCount++;
-      }
+
+      // 更新 E-Factor
+      newEfactor = currentEfactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+      newEfactor = Math.max(1.3, newEfactor);
     } else {
-      // unknown：回退到阶段 1
-      newMasteredCount = 0;
-      isWrong = 1;
-      if (existing) {
-        newStage = 1; // 直接回到阶段1
-      } else {
-        newStage = 0;
-        this.dailyNewWordsCount++;
-      }
+      // 答错 (不认识)
+      newRepetitions = 0;
+      newInterval = 5 * 60 * 1000; // 5分钟后重新确认
+      newEfactor = Math.max(1.3, currentEfactor - 0.2);
     }
 
-    const nextInterval = STAGE_INTERVALS[newStage];
-    const nextReviewAt = Date.now() + (typeof nextInterval === 'number' && isFinite(nextInterval) ? nextInterval : 0);
+    // 限制最大间隔为 90 天
+    const maxInterval = 90 * 86400 * 1000;
+    if (newInterval > maxInterval) {
+      newInterval = maxInterval;
+    }
+
+    // 映射回一个平滑的虚拟 stage (用于界面上的进度条展示，0-9)
+    let newStage = 0;
+    if (newInterval >= 90 * 86400 * 1000) newStage = 9;
+    else if (newInterval >= 15 * 86400 * 1000) newStage = 8;
+    else if (newInterval >= 7 * 86400 * 1000) newStage = 7;
+    else if (newInterval >= 4 * 86400 * 1000) newStage = 6;
+    else if (newInterval >= 2 * 86400 * 1000) newStage = 5;
+    else if (newInterval >= 24 * 3600 * 1000) newStage = 4;
+    else if (newInterval >= 4 * 3600 * 1000) newStage = 3;
+    else if (newInterval >= 30 * 60 * 1000) newStage = 2;
+    else if (newInterval >= 5 * 60 * 1000) newStage = 1;
+
+    if (q < 3 && existing) {
+      newStage = 1;
+    }
+
+    if (!existing) {
+      this.dailyNewWordsCount++;
+    }
+
+    const nextReviewAt = Date.now() + newInterval;
 
     try {
       db.prepare(`
-        INSERT INTO progress (word_id, stage, next_review_at, last_review_at, correct_count, wrong_count, mastered_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO progress (word_id, stage, next_review_at, last_review_at, correct_count, wrong_count, mastered_count, efactor, interval, repetitions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(word_id) DO UPDATE SET
           stage = excluded.stage,
           next_review_at = excluded.next_review_at,
           last_review_at = excluded.last_review_at,
           correct_count = progress.correct_count + excluded.correct_count,
           wrong_count = progress.wrong_count + excluded.wrong_count,
-          mastered_count = excluded.mastered_count
-      `).run(word.id, newStage, nextReviewAt, Date.now(), isCorrect, isWrong, newMasteredCount);
+          mastered_count = excluded.mastered_count,
+          efactor = excluded.efactor,
+          interval = excluded.interval,
+          repetitions = excluded.repetitions
+      `).run(word.id, newStage, nextReviewAt, Date.now(), isCorrect, isWrong, 0, newEfactor, newInterval, newRepetitions);
 
       db.prepare(`
         INSERT INTO daily_stats (date, words_reviewed, words_learned)
@@ -435,7 +467,10 @@ class Scheduler {
             last_review_at = ?,
             correct_count = ?,
             wrong_count = ?,
-            mastered_count = ?
+            mastered_count = ?,
+            efactor = ?,
+            interval = ?,
+            repetitions = ?
           WHERE word_id = ?
         `).run(
           oldProgress.stage,
@@ -444,6 +479,9 @@ class Scheduler {
           oldProgress.correct_count,
           oldProgress.wrong_count,
           oldProgress.mastered_count,
+          oldProgress.efactor,
+          oldProgress.interval,
+          oldProgress.repetitions,
           word.id
         );
       }
