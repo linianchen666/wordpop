@@ -3,6 +3,8 @@
 // === DOM 引用 ===
 const statTodayReviewed = document.getElementById('stat-today-reviewed');
 const statTodayLearned = document.getElementById('stat-today-learned');
+const statTodayDue = document.getElementById('stat-today-due');
+const statTodayNewRemaining = document.getElementById('stat-today-new-remaining');
 const statTotalWords = document.getElementById('stat-total-words');
 const statStreak = document.getElementById('stat-streak');
 const statTotalCorrect = document.getElementById('stat-total-correct');
@@ -63,6 +65,8 @@ function renderOverview(stats) {
 
   statTodayReviewed.textContent = stats.today?.words_reviewed ?? 0;
   statTodayLearned.textContent = stats.today?.words_learned ?? 0;
+  statTodayDue.textContent = stats.todayDueCount ?? 0;
+  statTodayNewRemaining.textContent = stats.todayNewRemaining ?? 0;
   statTotalWords.textContent = formatNumber(stats.total?.words ?? 0);
   statStreak.textContent = (stats.streak ?? 0) + ' 天';
 

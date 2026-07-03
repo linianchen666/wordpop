@@ -661,6 +661,31 @@ class Scheduler {
   }
 
   getStatus() {
+    let todayDueCount = 0;
+    try {
+      const db = getDb();
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
+
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      const endOfTodayTimestamp = endOfToday.getTime();
+
+      const row = db.prepare(`
+        SELECT COUNT(*) c
+        FROM progress p
+        JOIN words w ON p.word_id = w.id
+        WHERE p.next_review_at <= ? AND p.stage < ?
+          AND w.wordlist IN (${placeholders})
+      `).get(endOfTodayTimestamp, MASTERED_STAGE, ...wordlists);
+      todayDueCount = row ? row.c : 0;
+    } catch (e) {
+      console.error('[Scheduler] getStatus due calculation error:', e.message);
+    }
+
     return {
       isPaused: this.isPaused,
       queueSize: this.queue.length,
@@ -669,7 +694,9 @@ class Scheduler {
       dailyNewWordsLimit: this.dailyNewWordsLimit,
       nextReviewAt: this.currentWord ? Date.now() : this.getNextReviewTime(),
       hasNewWordsQuota: this.hasNewWordsQuotaToday(),
-      hasUnmasteredWords: this.hasUnmasteredWords()
+      hasUnmasteredWords: this.hasUnmasteredWords(),
+      todayDueCount,
+      todayNewRemaining: Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount)
     };
   }
 
