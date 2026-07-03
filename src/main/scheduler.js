@@ -336,25 +336,38 @@ class Scheduler {
       newEfactor = 2.7;
     } else if (q >= 3) {
       // 答对 (认识/模糊)
-      if (currentRepetitions === 0) {
-        // 认识 / 模糊: 5分钟
-        newInterval = 5 * 60 * 1000;
-        newRepetitions = 1;
-      } else if (currentRepetitions === 1) {
-        newInterval = 30 * 60 * 1000;
-        newRepetitions = 2;
-      } else if (currentRepetitions === 2) {
-        newInterval = 4 * 3600 * 1000; // 4小时
-        newRepetitions = 3;
-      } else if (currentRepetitions === 3) {
-        newInterval = 24 * 3600 * 1000; // 1天
-        newRepetitions = 4;
-      } else if (currentRepetitions === 4) {
-        newInterval = 2 * 86400 * 1000; // 2天
-        newRepetitions = 5;
+      if (!existing) {
+        // 第一眼看到就认识/模糊（跳过超短期确认，直接拉长复习）
+        if (q === 4) {
+          // 认识：直接跳到 1天 间隔，repetitions = 4
+          newInterval = 24 * 3600 * 1000;
+          newRepetitions = 4;
+        } else {
+          // 模糊：直接跳到 4小时 间隔，repetitions = 3
+          newInterval = 4 * 3600 * 1000;
+          newRepetitions = 3;
+        }
       } else {
-        newInterval = Math.round(currentInterval * currentEfactor);
-        newRepetitions = currentRepetitions + 1;
+        // 之前学过或标记过不认识，按常规 SM-2 进度确认
+        if (currentRepetitions === 0) {
+          newInterval = 5 * 60 * 1000;
+          newRepetitions = 1;
+        } else if (currentRepetitions === 1) {
+          newInterval = 30 * 60 * 1000;
+          newRepetitions = 2;
+        } else if (currentRepetitions === 2) {
+          newInterval = 4 * 3600 * 1000; // 4小时
+          newRepetitions = 3;
+        } else if (currentRepetitions === 3) {
+          newInterval = 24 * 3600 * 1000; // 1天
+          newRepetitions = 4;
+        } else if (currentRepetitions === 4) {
+          newInterval = 2 * 86400 * 1000; // 2天
+          newRepetitions = 5;
+        } else {
+          newInterval = Math.round(currentInterval * currentEfactor);
+          newRepetitions = currentRepetitions + 1;
+        }
       }
 
       // 更新 E-Factor
