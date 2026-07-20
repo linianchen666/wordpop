@@ -198,7 +198,7 @@ class Scheduler {
         : ['cet4'];
       const placeholders = wordlists.map(() => '?').join(',');
 
-      // 1. 到期需复习的单词（随机排序）
+      // 1. 到期需复习的单词（按重要程度排序：stage ASC, efactor ASC, next_review_at ASC）
       const dueReviews = db.prepare(`
         SELECT w.id, w.word, w.phonetic, w.translation, w.example,
                p.stage, p.next_review_at, p.correct_count, p.wrong_count,
@@ -207,7 +207,8 @@ class Scheduler {
         JOIN progress p ON w.id = p.word_id
         WHERE p.next_review_at <= ? AND p.stage < ?
           AND w.wordlist IN (${placeholders})
-        LIMIT 200
+        ORDER BY p.stage ASC, p.efactor ASC, p.next_review_at ASC
+        LIMIT 30
       `).all(now, MASTERED_STAGE, ...wordlists);
 
       // 2. 今日配额内的新词
@@ -226,7 +227,7 @@ class Scheduler {
         `).all(...wordlists, remaining);
       }
 
-      this.queue = [...shuffleArray(dueReviews), ...newWords];
+      this.queue = [...newWords, ...dueReviews];
     } catch (e) {
       console.error('[Scheduler] reloadQueue ERROR:', e.message);
       this.queue = [];
@@ -374,9 +375,21 @@ class Scheduler {
       newEfactor = currentEfactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
       newEfactor = Math.max(1.3, newEfactor);
     } else {
-      // 答错 (不认识)
-      newRepetitions = 0;
-      newInterval = 5 * 60 * 1000; // 5分钟后重新确认
+      // 答错 (不认识)：认知重复阶段回退 1 级
+      newRepetitions = Math.max(0, currentRepetitions - 1);
+      if (newRepetitions === 0 || newRepetitions === 1) {
+        newInterval = 5 * 60 * 1000;      // 5分钟
+      } else if (newRepetitions === 2) {
+        newInterval = 30 * 60 * 1000;     // 30分钟
+      } else if (newRepetitions === 3) {
+        newInterval = 4 * 3600 * 1000;    // 4小时
+      } else if (newRepetitions === 4) {
+        newInterval = 24 * 3600 * 1000;   // 1天
+      } else if (newRepetitions === 5) {
+        newInterval = 2 * 86400 * 1000;   // 2天
+      } else {
+        newInterval = Math.max(2 * 86400 * 1000, Math.round(currentInterval / currentEfactor));
+      }
       newEfactor = Math.max(1.3, currentEfactor - 0.2);
     }
 
