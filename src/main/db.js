@@ -81,6 +81,7 @@ function migrate(db) {
         translation TEXT NOT NULL,
         example TEXT DEFAULT '',
         wordlist TEXT NOT NULL DEFAULT 'custom',
+        frequency_rank INTEGER DEFAULT 999999,
         created_at INTEGER DEFAULT (CAST(strftime('%s','now') AS INTEGER) * 1000)
       );
 
@@ -92,6 +93,9 @@ function migrate(db) {
         last_review_at INTEGER DEFAULT NULL,
         correct_count INTEGER DEFAULT 0,
         wrong_count INTEGER DEFAULT 0,
+        efactor REAL DEFAULT 2.5,
+        interval INTEGER DEFAULT 0,
+        repetitions INTEGER DEFAULT 0,
         FOREIGN KEY (word_id) REFERENCES words(id) ON DELETE CASCADE
       );
 
@@ -163,6 +167,193 @@ function migrate(db) {
     }
     db.pragma('user_version = 2');
   }
+
+  // v3: 增加 frequency_rank 字段，对现有单词加载 frequency.json 进行词频权重更新
+  if (currentVersion < 3) {
+    try {
+      const hasFreqCol = db.prepare(
+        "SELECT COUNT(*) as cnt FROM pragma_table_info('words') WHERE name='frequency_rank'"
+      ).get().cnt > 0;
+      if (!hasFreqCol) {
+        db.exec(`ALTER TABLE words ADD COLUMN frequency_rank INTEGER DEFAULT 999999`);
+      }
+      db.exec(`CREATE INDEX IF NOT EXISTS idx_words_frequency ON words(frequency_rank)`);
+
+      const map = getFrequencyMap();
+      const updateStmt = db.prepare('UPDATE words SET frequency_rank = ? WHERE word = ?');
+      const updateTransaction = db.transaction((freqMap) => {
+        for (const [word, rank] of freqMap.entries()) {
+          updateStmt.run(rank, word);
+        }
+      });
+      updateTransaction(map);
+      console.log('[DB] Migration v3 finished: updated word frequency ranks');
+    } catch (e) {
+      console.error('[DB] Migration v3 ERROR:', e.message);
+    }
+    db.pragma('user_version = 3');
+  }
+
+  // v4: 增加 efactor, interval, repetitions 字段，并映射现有的 stage 进度
+  if (currentVersion < 4) {
+    try {
+      const hasEfactor = db.prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='efactor'").get().cnt > 0;
+      if (!hasEfactor) {
+        db.exec(`ALTER TABLE progress ADD COLUMN efactor REAL DEFAULT 2.5`);
+      }
+      const hasInterval = db.prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='interval'").get().cnt > 0;
+      if (!hasInterval) {
+        db.exec(`ALTER TABLE progress ADD COLUMN interval INTEGER DEFAULT 0`);
+      }
+      const hasRepetitions = db.prepare("SELECT COUNT(*) as cnt FROM pragma_table_info('progress') WHERE name='repetitions'").get().cnt > 0;
+      if (!hasRepetitions) {
+        db.exec(`ALTER TABLE progress ADD COLUMN repetitions INTEGER DEFAULT 0`);
+      }
+
+      const STAGE_MAP = [
+        { reps: 0, iv: 0, ef: 2.5 },
+        { reps: 1, iv: 5 * 60 * 1000, ef: 2.5 },
+        { reps: 2, iv: 30 * 60 * 1000, ef: 2.5 },
+        { reps: 3, iv: 4 * 3600 * 1000, ef: 2.5 },
+        { reps: 4, iv: 24 * 3600 * 1000, ef: 2.5 },
+        { reps: 5, iv: 2 * 86400 * 1000, ef: 2.5 },
+        { reps: 6, iv: 4 * 86400 * 1000, ef: 2.5 },
+        { reps: 7, iv: 7 * 86400 * 1000, ef: 2.5 },
+        { reps: 8, iv: 15 * 86400 * 1000, ef: 2.6 },
+        { reps: 9, iv: 90 * 86400 * 1000, ef: 2.7 }
+      ];
+
+      const records = db.prepare('SELECT id, stage FROM progress').all();
+      const updateStmt = db.prepare('UPDATE progress SET efactor = ?, interval = ?, repetitions = ? WHERE id = ?');
+      const updateTransaction = db.transaction((rows) => {
+        for (const row of rows) {
+          const map = STAGE_MAP[row.stage] || STAGE_MAP[0];
+          updateStmt.run(map.ef, map.iv, map.reps, row.id);
+        }
+      });
+      updateTransaction(records);
+      console.log('[DB] Migration v4 finished: mapped stage progress to SM-2 states');
+    } catch (e) {
+      console.error('[DB] Migration v4 ERROR:', e.message);
+    }
+    db.pragma('user_version = 4');
+  }
+
+  // v5: 强制更新内置词库单词的翻译，使已有学习进度用户的释义也被更新为更常用的版本
+  if (currentVersion < 5) {
+    try {
+      console.log('[DB] Migration v5: updating translations from wordlists...');
+      const wordlists = ['cet4.json', 'cet6.json', 'kaoyan.json'];
+      const updateStmt = db.prepare('UPDATE words SET translation = ? WHERE word = ? AND wordlist = ?');
+      const updateTransaction = db.transaction(() => {
+        for (const filename of wordlists) {
+          const listId = filename.replace('.json', '');
+          const filePath = path.join(getWordlistPath(), filename);
+          if (fs.existsSync(filePath)) {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            for (const item of data.words) {
+              updateStmt.run(item.translation, item.word, listId);
+            }
+          }
+        }
+      });
+      updateTransaction();
+      console.log('[DB] Migration v5 finished: translations updated');
+    } catch (e) {
+      console.error('[DB] Migration v5 ERROR:', e.message);
+    }
+    db.pragma('user_version = 5');
+  }
+
+  // v6: 支持单词多词库归属 (word_wordlists 关联表)
+  if (currentVersion < 6) {
+    try {
+      console.log('[DB] Migration v6: creating word_wordlists relation table...');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS word_wordlists (
+          word_id INTEGER NOT NULL,
+          wordlist TEXT NOT NULL,
+          PRIMARY KEY (word_id, wordlist),
+          FOREIGN KEY (word_id) REFERENCES words(id) ON DELETE CASCADE
+        );
+        CREATE INDEX IF NOT EXISTS idx_word_wordlists_wordlist ON word_wordlists(wordlist);
+        CREATE INDEX IF NOT EXISTS idx_word_wordlists_word_id ON word_wordlists(word_id);
+      `);
+
+      // 1. 将现存 words 表中的 wordlist 关系回填到 word_wordlists
+      db.exec(`
+        INSERT OR IGNORE INTO word_wordlists (word_id, wordlist)
+        SELECT id, wordlist FROM words WHERE wordlist IS NOT NULL AND wordlist != '';
+      `);
+
+      // 2. 扫描所有内置词库，补齐多对多映射
+      const wordlists = ['cet4.json', 'cet6.json', 'kaoyan.json'];
+      const insertWordStmt = db.prepare(`
+        INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist, frequency_rank)
+        VALUES (?, ?, ?, ?, ?, ?)
+      `);
+      const getWordIdStmt = db.prepare('SELECT id FROM words WHERE word = ?');
+      const insertRelationStmt = db.prepare(`
+        INSERT OR IGNORE INTO word_wordlists (word_id, wordlist) VALUES (?, ?)
+      `);
+
+      const relationTransaction = db.transaction(() => {
+        for (const filename of wordlists) {
+          const listId = filename.replace('.json', '');
+          const filePath = path.join(getWordlistPath(), filename);
+          if (fs.existsSync(filePath)) {
+            const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+            for (const item of data.words) {
+              const cleanWord = item.word.trim().toLowerCase();
+              const rank = getWordFrequencyRank(cleanWord);
+              insertWordStmt.run(
+                cleanWord,
+                item.phonetic || '',
+                item.translation || '',
+                item.example || '',
+                listId,
+                rank
+              );
+              const row = getWordIdStmt.get(cleanWord);
+              if (row && row.id) {
+                insertRelationStmt.run(row.id, listId);
+              }
+            }
+          }
+        }
+      });
+      relationTransaction();
+      console.log('[DB] Migration v6 finished: word_wordlists mappings populated');
+    } catch (e) {
+      console.error('[DB] Migration v6 ERROR:', e.message);
+    }
+    db.pragma('user_version = 6');
+  }
+}
+
+let frequencyMap = null;
+
+function getFrequencyMap() {
+  if (frequencyMap) return frequencyMap;
+  frequencyMap = new Map();
+  try {
+    const freqPath = path.join(getWordlistPath(), 'frequency.json');
+    if (fs.existsSync(freqPath)) {
+      const words = JSON.parse(fs.readFileSync(freqPath, 'utf-8'));
+      words.forEach((word, index) => {
+        frequencyMap.set(word.toLowerCase().trim(), index);
+      });
+    }
+  } catch (e) {
+    console.error('[DB] Failed to load frequency map:', e.message);
+  }
+  return frequencyMap;
+}
+
+function getWordFrequencyRank(word) {
+  const map = getFrequencyMap();
+  const cleanWord = word.trim().toLowerCase();
+  return map.has(cleanWord) ? map.get(cleanWord) : 999999;
 }
 
 /**
@@ -190,29 +381,33 @@ function getProgressSummary(wordlistIds) {
 
   const placeholders = wordlistIds.map(() => '?').join(',');
 
-  // 选中词库的总词数
-  const totalRow = d.prepare(
-    `SELECT COUNT(*) as total FROM words WHERE wordlist IN (${placeholders})`
-  ).get(...wordlistIds);
+  // 选中词库的总词数（去重）
+  const totalRow = d.prepare(`
+    SELECT COUNT(DISTINCT word_id) as total
+    FROM word_wordlists
+    WHERE wordlist IN (${placeholders})
+  `).get(...wordlistIds);
 
   // 已学单词（stage 0-8，有 progress 记录但未掌握）
   const learnedRow = d.prepare(`
-    SELECT COUNT(*) as learned FROM progress p
-    JOIN words w ON p.word_id = w.id
-    WHERE p.stage < 9 AND w.wordlist IN (${placeholders})
+    SELECT COUNT(DISTINCT p.word_id) as learned
+    FROM progress p
+    WHERE p.stage < 9
+      AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
   `).get(...wordlistIds);
 
   // 已掌握（stage = 9）
   const masteredRow = d.prepare(`
-    SELECT COUNT(*) as mastered FROM progress p
-    JOIN words w ON p.word_id = w.id
-    WHERE p.stage >= 9 AND w.wordlist IN (${placeholders})
+    SELECT COUNT(DISTINCT p.word_id) as mastered
+    FROM progress p
+    WHERE p.stage >= 9
+      AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
   `).get(...wordlistIds);
 
   const total = totalRow.total || 0;
   const learned = learnedRow.learned || 0;
   const mastered = masteredRow.mastered || 0;
-  const remaining = total - learned - mastered;
+  const remaining = Math.max(0, total - learned - mastered);
 
   return { totalWords: total, learnedWords: learned, masteredWords: mastered, remainingWords: remaining };
 }
@@ -246,8 +441,12 @@ function importWordlist(wordlistId) {
   const wordlist = JSON.parse(fs.readFileSync(wordlistPath, 'utf-8'));
 
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist, frequency_rank)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const getWordIdStmt = db.prepare('SELECT id FROM words WHERE word = ?');
+  const insertRelationStmt = db.prepare(`
+    INSERT OR IGNORE INTO word_wordlists (word_id, wordlist) VALUES (?, ?)
   `);
 
   let imported = 0;
@@ -255,17 +454,24 @@ function importWordlist(wordlistId) {
 
   const importTransaction = db.transaction((words) => {
     for (const w of words) {
-      const result = insertStmt.run(
-        w.word.trim().toLowerCase(),
+      const cleanWord = w.word.trim().toLowerCase();
+      const rank = getWordFrequencyRank(cleanWord);
+      insertStmt.run(
+        cleanWord,
         w.phonetic || '',
         w.translation || '',
         w.example || '',
-        wordlistId
+        wordlistId,
+        rank
       );
-      if (result.changes > 0) {
-        imported++;
-      } else {
-        skipped++;
+      const row = getWordIdStmt.get(cleanWord);
+      if (row && row.id) {
+        const res = insertRelationStmt.run(row.id, wordlistId);
+        if (res.changes > 0) {
+          imported++;
+        } else {
+          skipped++;
+        }
       }
     }
   });
@@ -317,15 +523,25 @@ function importCustomWordlist(filePath, wordlistName) {
   }
 
   const insertStmt = db.prepare(`
-    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT OR IGNORE INTO words (word, phonetic, translation, example, wordlist, frequency_rank)
+    VALUES (?, ?, ?, ?, ?, ?)
+  `);
+  const getWordIdStmt = db.prepare('SELECT id FROM words WHERE word = ?');
+  const insertRelationStmt = db.prepare(`
+    INSERT OR IGNORE INTO word_wordlists (word_id, wordlist) VALUES (?, ?)
   `);
 
   let imported = 0;
   const transaction = db.transaction((items) => {
     for (const w of items) {
-      const result = insertStmt.run(w.word, w.phonetic, w.translation, w.example, wordlistName);
-      if (result.changes > 0) imported++;
+      const cleanWord = w.word.trim().toLowerCase();
+      const rank = getWordFrequencyRank(cleanWord);
+      insertStmt.run(cleanWord, w.phonetic, w.translation, w.example, wordlistName, rank);
+      const row = getWordIdStmt.get(cleanWord);
+      if (row && row.id) {
+        const res = insertRelationStmt.run(row.id, wordlistName);
+        if (res.changes > 0) imported++;
+      }
     }
   });
 

@@ -2,5 +2,9 @@ node_modules/
 build/
 *.exe
 *.zip
+*.csv
+*.db
+*.db-wal
+*.db-shm
 .DS_Store
 core*

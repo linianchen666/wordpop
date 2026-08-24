@@ -192,33 +192,42 @@ class Scheduler {
     try {
       const db = getDb();
       const now = Date.now();
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
 
-      // 1. 到期需复习的单词（随机排序）
+      // 1. 到期需复习的单词（按重要程度排序：stage ASC, efactor ASC, next_review_at ASC）
       const dueReviews = db.prepare(`
         SELECT w.id, w.word, w.phonetic, w.translation, w.example,
-               p.stage, p.next_review_at, p.correct_count, p.wrong_count
+               p.stage, p.next_review_at, p.correct_count, p.wrong_count,
+               p.efactor, p.interval, p.repetitions
         FROM words w
         JOIN progress p ON w.id = p.word_id
         WHERE p.next_review_at <= ? AND p.stage < ?
-        LIMIT 200
-      `).all(now, MASTERED_STAGE);
+          AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+        ORDER BY p.stage ASC, p.efactor ASC, p.next_review_at ASC
+        LIMIT 30
+      `).all(now, MASTERED_STAGE, ...wordlists);
 
-      // 2. 今日配额内的新词（随机选取）
+      // 2. 今日配额内的新词
       const remaining = Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount);
       let newWords = [];
       if (remaining > 0) {
         newWords = db.prepare(`
           SELECT w.id, w.word, w.phonetic, w.translation, w.example, 0 as stage,
-                 0 as correct_count, 0 as wrong_count
+                 0 as correct_count, 0 as wrong_count, 2.5 as efactor, 0 as interval, 0 as repetitions
           FROM words w
           LEFT JOIN progress p ON w.id = p.word_id
           WHERE p.word_id IS NULL
-          ORDER BY RANDOM()
+            AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+          ORDER BY w.frequency_rank ASC, w.id ASC
           LIMIT ?
-        `).all(remaining);
+        `).all(...wordlists, remaining);
       }
 
-      this.queue = [...shuffleArray(dueReviews), ...newWords];
+      this.queue = [...newWords, ...dueReviews];
     } catch (e) {
       console.error('[Scheduler] reloadQueue ERROR:', e.message);
       this.queue = [];
@@ -304,75 +313,129 @@ class Scheduler {
       wasNewWord: !existing
     };
 
-    const currentStage = existing ? existing.stage : 0;
-    const currentMasteredCount = existing ? (existing.mastered_count || 0) : 0;
-    let newStage;
-    let isCorrect = 0;
-    let isWrong = 0;
-    let newMasteredCount = currentMasteredCount;
+    let q;
+    if (action === 'mastered') q = 5;
+    else if (action === 'known') q = 4;
+    else if (action === 'fuzzy') q = 3;
+    else q = 0; // unknown
 
-    if (action === 'mastered') {
-      // 熟知：跳到 stage 8（15天后复习）
-      // 如果连续2次熟知（mastered_count >= 1），直接标记为已掌握
-      if (currentMasteredCount >= 1) {
-        // 第2次熟知 → 彻底已掌握
-        newStage = MASTERED_STAGE;
-        newMasteredCount = 0; // 重置计数
-        isCorrect = 1;
+    let currentEfactor = existing ? (existing.efactor || 2.5) : 2.5;
+    let currentRepetitions = existing ? (existing.repetitions || 0) : 0;
+    let currentInterval = existing ? (existing.interval || 0) : 0;
+
+    let newEfactor = currentEfactor;
+    let newRepetitions = currentRepetitions;
+    let newInterval = currentInterval;
+
+    let isCorrect = q >= 3 ? 1 : 0;
+    let isWrong = q < 3 ? 1 : 0;
+
+    if (q === 5) {
+      // 熟知：直接设置为已掌握（90天最大间隔，不再出现）
+      newInterval = 90 * 86400 * 1000;
+      newRepetitions = 9;
+      newEfactor = 2.7;
+    } else if (q >= 3) {
+      // 答对 (认识/模糊)
+      if (!existing) {
+        // 第一眼看到就认识/模糊（跳过超短期确认，直接拉长复习）
+        if (q === 4) {
+          // 认识：直接跳到 1天 间隔，repetitions = 4
+          newInterval = 24 * 3600 * 1000;
+          newRepetitions = 4;
+        } else {
+          // 模糊：直接跳到 4小时 间隔，repetitions = 3
+          newInterval = 4 * 3600 * 1000;
+          newRepetitions = 3;
+        }
       } else {
-        // 第1次熟知 → stage 8, 15天后复习
-        newStage = 8;
-        newMasteredCount = currentMasteredCount + 1;
-        isCorrect = 1;
+        // 之前学过或标记过不认识，按常规 SM-2 进度确认
+        if (currentRepetitions === 0) {
+          newInterval = 5 * 60 * 1000;
+          newRepetitions = 1;
+        } else if (currentRepetitions === 1) {
+          newInterval = 30 * 60 * 1000;
+          newRepetitions = 2;
+        } else if (currentRepetitions === 2) {
+          newInterval = 4 * 3600 * 1000; // 4小时
+          newRepetitions = 3;
+        } else if (currentRepetitions === 3) {
+          newInterval = 24 * 3600 * 1000; // 1天
+          newRepetitions = 4;
+        } else if (currentRepetitions === 4) {
+          newInterval = 2 * 86400 * 1000; // 2天
+          newRepetitions = 5;
+        } else {
+          newInterval = Math.round(currentInterval * currentEfactor);
+          newRepetitions = currentRepetitions + 1;
+        }
       }
-    } else if (action === 'known') {
-      // 认识：阶段 +1
-      newMasteredCount = 0; // 任何非熟知操作都重置熟知计数
-      isCorrect = 1;
-      if (existing) {
-        newStage = Math.min(currentStage + 1, MASTERED_STAGE);
-      } else {
-        newStage = 1;
-        this.dailyNewWordsCount++;
-      }
-    } else if (action === 'fuzzy') {
-      // 模糊：阶段不变，重新进入当前阶段的复习队列
-      newMasteredCount = 0;
-      isWrong = 0; // 模糊不算错
-      isCorrect = 0;
-      if (existing) {
-        newStage = currentStage; // 不增不减
-      } else {
-        newStage = 0;
-        this.dailyNewWordsCount++;
-      }
+
+      // 更新 E-Factor
+      newEfactor = currentEfactor + (0.1 - (5 - q) * (0.08 + (5 - q) * 0.02));
+      newEfactor = Math.max(1.3, newEfactor);
     } else {
-      // unknown：回退到阶段 1
-      newMasteredCount = 0;
-      isWrong = 1;
-      if (existing) {
-        newStage = 1; // 直接回到阶段1
+      // 答错 (不认识)：认知重复阶段回退 1 级
+      newRepetitions = Math.max(0, currentRepetitions - 1);
+      if (newRepetitions === 0 || newRepetitions === 1) {
+        newInterval = 5 * 60 * 1000;      // 5分钟
+      } else if (newRepetitions === 2) {
+        newInterval = 30 * 60 * 1000;     // 30分钟
+      } else if (newRepetitions === 3) {
+        newInterval = 4 * 3600 * 1000;    // 4小时
+      } else if (newRepetitions === 4) {
+        newInterval = 24 * 3600 * 1000;   // 1天
+      } else if (newRepetitions === 5) {
+        newInterval = 2 * 86400 * 1000;   // 2天
       } else {
-        newStage = 0;
-        this.dailyNewWordsCount++;
+        newInterval = Math.max(2 * 86400 * 1000, Math.round(currentInterval / currentEfactor));
       }
+      newEfactor = Math.max(1.3, currentEfactor - 0.2);
     }
 
-    const nextInterval = STAGE_INTERVALS[newStage];
-    const nextReviewAt = Date.now() + (typeof nextInterval === 'number' && isFinite(nextInterval) ? nextInterval : 0);
+    // 限制最大间隔为 90 天
+    const maxInterval = 90 * 86400 * 1000;
+    if (newInterval > maxInterval) {
+      newInterval = maxInterval;
+    }
+
+    // 映射回一个平滑的虚拟 stage (用于界面上的进度条展示，0-9)
+    let newStage = 0;
+    if (newInterval >= 90 * 86400 * 1000) newStage = 9;
+    else if (newInterval >= 15 * 86400 * 1000) newStage = 8;
+    else if (newInterval >= 7 * 86400 * 1000) newStage = 7;
+    else if (newInterval >= 4 * 86400 * 1000) newStage = 6;
+    else if (newInterval >= 2 * 86400 * 1000) newStage = 5;
+    else if (newInterval >= 24 * 3600 * 1000) newStage = 4;
+    else if (newInterval >= 4 * 3600 * 1000) newStage = 3;
+    else if (newInterval >= 30 * 60 * 1000) newStage = 2;
+    else if (newInterval >= 5 * 60 * 1000) newStage = 1;
+
+    if (q < 3 && existing) {
+      newStage = 1;
+    }
+
+    if (!existing) {
+      this.dailyNewWordsCount++;
+    }
+
+    const nextReviewAt = Date.now() + newInterval;
 
     try {
       db.prepare(`
-        INSERT INTO progress (word_id, stage, next_review_at, last_review_at, correct_count, wrong_count, mastered_count)
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        INSERT INTO progress (word_id, stage, next_review_at, last_review_at, correct_count, wrong_count, mastered_count, efactor, interval, repetitions)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(word_id) DO UPDATE SET
           stage = excluded.stage,
           next_review_at = excluded.next_review_at,
           last_review_at = excluded.last_review_at,
           correct_count = progress.correct_count + excluded.correct_count,
           wrong_count = progress.wrong_count + excluded.wrong_count,
-          mastered_count = excluded.mastered_count
-      `).run(word.id, newStage, nextReviewAt, Date.now(), isCorrect, isWrong, newMasteredCount);
+          mastered_count = excluded.mastered_count,
+          efactor = excluded.efactor,
+          interval = excluded.interval,
+          repetitions = excluded.repetitions
+      `).run(word.id, newStage, nextReviewAt, Date.now(), isCorrect, isWrong, 0, newEfactor, newInterval, newRepetitions);
 
       db.prepare(`
         INSERT INTO daily_stats (date, words_reviewed, words_learned)
@@ -428,7 +491,10 @@ class Scheduler {
             last_review_at = ?,
             correct_count = ?,
             wrong_count = ?,
-            mastered_count = ?
+            mastered_count = ?,
+            efactor = ?,
+            interval = ?,
+            repetitions = ?
           WHERE word_id = ?
         `).run(
           oldProgress.stage,
@@ -437,6 +503,9 @@ class Scheduler {
           oldProgress.correct_count,
           oldProgress.wrong_count,
           oldProgress.mastered_count,
+          oldProgress.efactor,
+          oldProgress.interval,
+          oldProgress.repetitions,
           word.id
         );
       }
@@ -525,19 +594,30 @@ class Scheduler {
   getNextReviewTime() {
     try {
       const db = getDb();
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
+
       const row = db.prepare(`
-        SELECT MIN(next_review_at) as next_at
-        FROM progress
-        WHERE stage < ? AND next_review_at > 0
-      `).get(MASTERED_STAGE);
+        SELECT MIN(p.next_review_at) as next_at
+        FROM progress p
+        WHERE p.stage < ? AND p.next_review_at > 0
+          AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+      `).get(MASTERED_STAGE, ...wordlists);
 
       if (row && row.next_at) return row.next_at;
 
       // 没有待复习的单词，但有新词配额且还有未学单词 → 返回当前时间表示很快会弹出
       if (this.hasNewWordsQuotaToday()) {
-        const unlearned = db.prepare(
-          'SELECT COUNT(*) c FROM words w LEFT JOIN progress p ON w.id = p.word_id WHERE p.word_id IS NULL'
-        ).get();
+        const unlearned = db.prepare(`
+          SELECT COUNT(DISTINCT w.id) c
+          FROM words w
+          LEFT JOIN progress p ON w.id = p.word_id
+          WHERE p.word_id IS NULL
+            AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+        `).get(...wordlists);
         if (unlearned && unlearned.c > 0) return Date.now();
       }
 
@@ -561,16 +641,62 @@ class Scheduler {
   hasUnmasteredWords() {
     try {
       const db = getDb();
-      const row = db.prepare('SELECT COUNT(*) c FROM progress WHERE stage < ?').get(MASTERED_STAGE);
-      const totalWords = db.prepare('SELECT COUNT(*) c FROM words').get().c;
-      const masteredOrLearning = db.prepare('SELECT COUNT(*) c FROM progress').get().c;
-      return (row.c > 0) || (totalWords > masteredOrLearning);
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
+
+      // 选中的词库中，已学习但未掌握的词 (stage < 9)
+      const learningRow = db.prepare(`
+        SELECT COUNT(DISTINCT p.word_id) c FROM progress p
+        WHERE p.stage < ?
+          AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+      `).get(MASTERED_STAGE, ...wordlists);
+
+      // 选中的词库中，总词数
+      const totalWords = db.prepare(`
+        SELECT COUNT(DISTINCT word_id) c FROM word_wordlists
+        WHERE wordlist IN (${placeholders})
+      `).get(...wordlists).c;
+
+      // 选中的词库中，已开始学习的词
+      const masteredOrLearning = db.prepare(`
+        SELECT COUNT(DISTINCT p.word_id) c FROM progress p
+        WHERE p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+      `).get(...wordlists).c;
+
+      return (learningRow.c > 0) || (totalWords > masteredOrLearning);
     } catch (e) {
       return false;
     }
   }
 
   getStatus() {
+    let todayDueCount = 0;
+    try {
+      const db = getDb();
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
+
+      const endOfToday = new Date();
+      endOfToday.setHours(23, 59, 59, 999);
+      const endOfTodayTimestamp = endOfToday.getTime();
+
+      const row = db.prepare(`
+        SELECT COUNT(DISTINCT p.word_id) c
+        FROM progress p
+        WHERE p.next_review_at <= ? AND p.stage < ?
+          AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+      `).get(endOfTodayTimestamp, MASTERED_STAGE, ...wordlists);
+      todayDueCount = row ? row.c : 0;
+    } catch (e) {
+      console.error('[Scheduler] getStatus due calculation error:', e.message);
+    }
+
     return {
       isPaused: this.isPaused,
       queueSize: this.queue.length,
@@ -579,7 +705,9 @@ class Scheduler {
       dailyNewWordsLimit: this.dailyNewWordsLimit,
       nextReviewAt: this.currentWord ? Date.now() : this.getNextReviewTime(),
       hasNewWordsQuota: this.hasNewWordsQuotaToday(),
-      hasUnmasteredWords: this.hasUnmasteredWords()
+      hasUnmasteredWords: this.hasUnmasteredWords(),
+      todayDueCount,
+      todayNewRemaining: Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount)
     };
   }
 

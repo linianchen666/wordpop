@@ -74,7 +74,7 @@ ipcMain.handle('wordlists:get', () => {
   const index = getWordlistIndex();
   const db = getDb();
   for (const e of index) {
-    const r = db.prepare('SELECT COUNT(*) c FROM words WHERE wordlist = ?').get(e.id);
+    const r = db.prepare('SELECT COUNT(DISTINCT word_id) c FROM word_wordlists WHERE wordlist = ?').get(e.id);
     e.importedCount = r ? r.c : 0;
     e.isImported = e.importedCount > 0;
   }
@@ -168,6 +168,8 @@ ipcMain.handle('stats:get', () => {
       WHERE EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = d.day)
     `).get();
 
+    const status = scheduler.getStatus();
+
     return {
       today: today,
       total: {
@@ -176,14 +178,18 @@ ipcMain.handle('stats:get', () => {
         wrong:    total.total_wrong    || 0,
         mastered: total.mastered     || 0
       },
-      streak: streak ? streak.streak : 0
+      streak: streak ? streak.streak : 0,
+      todayDueCount: status.todayDueCount,
+      todayNewRemaining: status.todayNewRemaining
     };
   } catch (err) {
     console.error('[IPC] stats:get error:', err.message);
     return {
       today: { words_reviewed: 0, words_learned: 0 },
       total: { words: 0, correct: 0, wrong: 0, mastered: 0 },
-      streak: 0
+      streak: 0,
+      todayDueCount: 0,
+      todayNewRemaining: 0
     };
   }
 });

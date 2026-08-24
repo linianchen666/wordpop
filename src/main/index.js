@@ -209,7 +209,7 @@ async function ensureWordlistsImported(config) {
 
   for (const id of lists) {
     try {
-      const cnt = db.prepare('SELECT COUNT(*) c FROM words WHERE wordlist=?').get(id).c;
+      const cnt = db.prepare('SELECT COUNT(*) c FROM word_wordlists WHERE wordlist=?').get(id).c;
       if (cnt === 0) {
         importWordlist(id);
       }
