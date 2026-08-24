@@ -9,14 +9,14 @@
   - `build/`: Target directory for `electron-builder` output executables.
 - **Environment**: Windows OS.
 
-# 2. Latest Release: v1.3.0
+# 2. Latest Release: v1.3.1
 - **Features & Fixes Delivered**:
-  1. **Multi-wordlist Mapping & Cross-wordlist Progress Retention (Migration `v6`)**: Added `word_wordlists` relation table to support multi-to-multi mapping between words and wordlists. Switching between or unchecking wordlists (e.g. from CET-4 to CET-6) retains all existing study progress (`progress` table), while correctly showing the full count of 3,991 words for CET-6.
-  2. **Comprehensive ECDICT Translations (Migration `v5`)**: Updated over 13,000 words across CET-4, CET-6, and Kaoyan dictionaries with common, everyday meanings from ECDICT.
-  3. **SM-2 Dynamic Scheduling**: Stage回退惩罚平滑调整，优先级排队（新词优先、到期复习词按阶段与到期时间排序）。
-  4. **Modern UI & Statistics Cards**: 界面美化、弹窗尺寸调优（380×440）、新增“今日待复习/今日待新学”实时卡片。
+  1. **One-Click Backup & Restore (Data Migration)**: Added `src/main/backup.js` and settings UI card for exporting and importing all vocabulary learning progress, review stages, daily statistics history, custom wordlists, and user configurations to a portable JSON backup file. Seamlessly restores across computers without requiring an application restart.
+  2. **Multi-wordlist Mapping & Cross-wordlist Progress Retention (Migration `v6`)**: Added `word_wordlists` relation table to support multi-to-multi mapping between words and wordlists. Switching between or unchecking wordlists (e.g. from CET-4 to CET-6) retains all existing study progress (`progress` table), while correctly showing the full count of 3,991 words for CET-6.
+  3. **Comprehensive ECDICT Translations (Migration `v5`)**: Updated over 13,000 words across CET-4, CET-6, and Kaoyan dictionaries with common, everyday meanings from ECDICT.
+  4. **SM-2 Dynamic Scheduling & UI Enhancements**: Stage回退惩罚平滑调整，优先级排队（新词优先、到期复习词按阶段与到期时间排序），界面美化、弹窗尺寸调优（380×440）、新增“今日待复习/今日待新学”实时卡片。
 
 # 3. Release Artifacts
-- **Tag**: `v1.3.0`
-- **Release URL**: https://github.com/linianchen666/wordpop/releases/tag/v1.3.0
-- **Installer Asset**: `WordPop Setup 1.3.0.exe` (NSIS)
+- **Tag**: `v1.3.1`
+- **Release URL**: https://github.com/linianchen666/wordpop/releases/tag/v1.3.1
+- **Installer Asset**: `WordPop Setup 1.3.1.exe` (NSIS)
