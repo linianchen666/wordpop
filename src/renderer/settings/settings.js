@@ -16,6 +16,8 @@ const btnSave = document.getElementById('btn-save');
 const btnCancel    = document.getElementById('btn-cancel');
 const btnLogs      = document.getElementById('btn-logs');
 const btnImportCustom = document.getElementById('btn-import-custom');
+const btnExportBackup = document.getElementById('btn-export-backup');
+const btnImportBackup = document.getElementById('btn-import-backup');
 
 // 预测卡片 DOM
 const predictionEmpty   = document.getElementById('prediction-empty');
@@ -407,6 +409,51 @@ btnImportCustom.addEventListener('click', async () => {
   btnImportCustom.disabled = false;
   btnImportCustom.textContent = '📂 导入自定义词表';
 });
+
+// === 导出备份 ===
+if (btnExportBackup) {
+  btnExportBackup.addEventListener('click', async () => {
+    btnExportBackup.disabled = true;
+    btnExportBackup.textContent = '导出中...';
+    try {
+      const res = await window.wordpopAPI.exportBackup();
+      if (res.success) {
+        alert(`✅ 备份导出成功！\n\n已备份 ${res.counts.progressCount} 条单词进度与 ${res.counts.statsCount} 天打卡记录。\n文件保存在: ${res.filePath}`);
+      } else if (res.error !== '用户取消') {
+        alert('导出失败: ' + res.error);
+      }
+    } catch (e) {
+      alert('导出备份失败: ' + e.message);
+    }
+    btnExportBackup.disabled = false;
+    btnExportBackup.textContent = '📤 导出备份数据';
+  });
+}
+
+// === 导入恢复 ===
+if (btnImportBackup) {
+  btnImportBackup.addEventListener('click', async () => {
+    const confirmed = confirm('导入备份将恢复/合并单词复习进度、打卡统计和个性化设置。是否继续？');
+    if (!confirmed) return;
+
+    btnImportBackup.disabled = true;
+    btnImportBackup.textContent = '恢复中...';
+    try {
+      const res = await window.wordpopAPI.importBackup();
+      if (res.success) {
+        alert(`✅ 备份恢复成功！\n\n共恢复 ${res.counts.restoredProgress} 个单词学习进度和 ${res.counts.restoredStats} 天打卡记录。\n设置已同步更新。`);
+        // 重新初始化设置页面状态
+        await init();
+      } else if (res.error !== '用户取消') {
+        alert('恢复失败: ' + res.error);
+      }
+    } catch (e) {
+      alert('恢复备份失败: ' + e.message);
+    }
+    btnImportBackup.disabled = false;
+    btnImportBackup.textContent = '📥 导入恢复数据';
+  });
+}
 
 // === 启动 ===
 init();

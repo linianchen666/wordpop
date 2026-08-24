@@ -34,6 +34,10 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   diagnoseDatabase:   ()  => ipcRenderer.invoke('db:diagnose'),
   repairDatabase:     ()  => ipcRenderer.invoke('db:repair'),
 
+  // === 数据备份与恢复 ===
+  exportBackup:       ()  => ipcRenderer.invoke('backup:export'),
+  importBackup:       ()  => ipcRenderer.invoke('backup:import'),
+
   // === 调度器操作 ===
   getSchedulerStatus:  ()  => ipcRenderer.invoke('scheduler:status'),
   togglePause:        ()  => ipcRenderer.invoke('scheduler:toggle-pause'),

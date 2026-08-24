@@ -198,6 +198,12 @@
   margin-top: 8px;
 }
 
+.backup-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 8px;
+}
+
 /* === 底部 === */
 .settings-footer {
   display: flex;

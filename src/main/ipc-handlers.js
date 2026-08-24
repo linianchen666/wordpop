@@ -1,5 +1,6 @@
 const { ipcMain, dialog, BrowserWindow, app, fs } = require('electron');
 const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary, diagnoseDatabase, repairDatabase } = require('./db');
+const { handleExportBackup, handleImportBackup } = require('./backup');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
 const popupManager = require('./popup-manager');
@@ -133,6 +134,20 @@ ipcMain.handle('db:diagnose', () => {
 
 ipcMain.handle('db:repair', () => {
   return repairDatabase();
+});
+
+// ═════════════════════════╗
+//  数据备份与恢复
+// ═════════════════════════╝
+
+ipcMain.handle('backup:export', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return handleExportBackup(win);
+});
+
+ipcMain.handle('backup:import', (event) => {
+  const win = BrowserWindow.fromWebContents(event.sender);
+  return handleImportBackup(win);
 });
 
 // ═════════════════════════╗

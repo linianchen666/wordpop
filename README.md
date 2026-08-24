@@ -5,7 +5,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/linianchen666/wordpop?label=latest)](https://github.com/linianchen666/wordpop/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/linianchen666/wordpop/releases/latest)
 
-当前源码版本：**1.3.0**
+当前源码版本：**1.3.1**
 
 ---
 
@@ -16,6 +16,7 @@
 - **四种记忆反馈** — 不认识、模糊、认识、熟知分别对应不同的间隔和难度调整
 - **熟知快速跳过** — 已经熟悉的词可直接标记为已掌握，不再进入日常推送
 - **多词库进度继承** — 支持单词多词库归属（多对多关联），切换或多选词库时自动继承已有记忆状态，无需重复背诵共有词
+- **一键备份与恢复** — 支持导出与导入全部学习进度、复习阶段、打卡记录与个性化设置，轻松换机与跨设备迁移
 - **非侵入式弹窗** — 不抢焦点，不中断工作，始终置顶可见
 - **连续刷词** — 点完一个单词立即弹出下一个，无需等待
 - **预测背完天数** — 根据每日词量自动计算预计完成日期
