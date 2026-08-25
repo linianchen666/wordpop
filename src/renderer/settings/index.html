@@ -17,10 +17,16 @@
 
     <!-- 设置内容 -->
     <div class="settings-content">
-      <!-- 每日新词数 -->
+      <!-- 每日新词模式 -->
       <div class="form-group">
-        <label class="form-label">📅 每日新词数量</label>
-        <div class="daily-new-words-wrapper">
+        <label class="form-label">📅 每日新词模式</label>
+        <div class="mode-selector" id="new-words-mode-selector">
+          <div class="mode-option" data-mode="target" id="mode-opt-target">🎯 智能目标规划</div>
+          <div class="mode-option active" data-mode="fixed" id="mode-opt-fixed">🔢 固定每日词量</div>
+        </div>
+
+        <!-- 固定词量选择 -->
+        <div id="fixed-mode-container" class="daily-new-words-wrapper" style="margin-top: 10px;">
           <select class="form-select" id="dailyNewWords">
             <option value="5">5 个（轻松模式）</option>
             <option value="10">10 个</option>
@@ -32,7 +38,24 @@
           <input type="number" class="form-input custom-daily-input" id="customDailyNewWords"
                  min="1" max="200" style="display:none" placeholder="每日词量">
         </div>
-        <span class="form-hint">每天新学的单词数量，复习单词不在此限制内</span>
+
+        <!-- 智能目标模式动态提示 -->
+        <div id="target-mode-container" class="target-mode-box" style="display:none; margin-top: 10px;">
+          <div class="target-dynamic-info" id="target-dynamic-info">
+            <div class="target-dynamic-badge" id="target-dynamic-badge">今日推荐：-- 词</div>
+            <div class="target-dynamic-desc" id="target-dynamic-desc">请在下方「预测卡片」中设定目标完成日期</div>
+          </div>
+        </div>
+
+        <!-- 智能负荷平衡开关 -->
+        <div class="toggle-row sub-option" style="margin-top: 10px;">
+          <span>🧠 智能复习负荷平衡</span>
+          <label class="toggle">
+            <input type="checkbox" id="autoBalanceLoad" checked>
+            <span class="toggle-slider"></span>
+          </label>
+        </div>
+        <span class="form-hint">开启后，当到期待复习单词较多时，系统会自动削减或暂停推新，优先消化旧词</span>
       </div>
 
       <!-- 预测卡片 -->
@@ -152,6 +175,20 @@
         </div>
         <span class="form-hint">开启后每天自动检查一次是否有新版本</span>
       </div>
+      <!-- 逾期复习平摊减负 -->
+      <div class="form-group backlog-card" id="backlog-card">
+        <label class="form-label">💆‍♂️ 逾期复习平摊减负</label>
+        <div class="backlog-status">
+          <div class="backlog-count-text" id="backlog-overdue-count">当前逾期待复习：检测中...</div>
+          <span class="form-hint">停背数天产生大量积压？一键将逾期单词智能均匀平摊到接下来的几天</span>
+        </div>
+        <div class="backlog-actions" style="margin-top: 10px;">
+          <button class="btn btn-sm btn-outline" id="btn-smooth-3">分 3 天平摊</button>
+          <button class="btn btn-sm btn-outline" id="btn-smooth-5">分 5 天平摊</button>
+          <button class="btn btn-sm btn-outline" id="btn-smooth-7">分 7 天平摊</button>
+        </div>
+      </div>
+
       <!-- 数据备份与恢复 -->
       <div class="form-group">
         <label class="form-label">💾 数据备份与迁移</label>

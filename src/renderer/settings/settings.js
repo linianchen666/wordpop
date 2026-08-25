@@ -19,6 +19,23 @@ const btnImportCustom = document.getElementById('btn-import-custom');
 const btnExportBackup = document.getElementById('btn-export-backup');
 const btnImportBackup = document.getElementById('btn-import-backup');
 
+// 新词模式与负荷平衡 DOM
+const modeOptTarget       = document.getElementById('mode-opt-target');
+const modeOptFixed        = document.getElementById('mode-opt-fixed');
+const fixedModeContainer  = document.getElementById('fixed-mode-container');
+const targetModeContainer = document.getElementById('target-mode-container');
+const targetDynamicBadge  = document.getElementById('target-dynamic-badge');
+const targetDynamicDesc   = document.getElementById('target-dynamic-desc');
+const autoBalanceLoad     = document.getElementById('autoBalanceLoad');
+
+// 积压平摊 DOM
+const backlogOverdueCount = document.getElementById('backlog-overdue-count');
+const btnSmooth3          = document.getElementById('btn-smooth-3');
+const btnSmooth5          = document.getElementById('btn-smooth-5');
+const btnSmooth7          = document.getElementById('btn-smooth-7');
+
+let selectedDailyMode = 'fixed'; // 'fixed' | 'target'
+
 // 预测卡片 DOM
 const predictionEmpty   = document.getElementById('prediction-empty');
 const predictionContent = document.getElementById('prediction-content');
@@ -70,6 +87,13 @@ async function init() {
     customDailyInput.style.display = 'block';
   }
 
+  // 模式与智能负荷
+  selectedDailyMode = currentConfig.dailyNewWordsMode || 'fixed';
+  setDailyMode(selectedDailyMode);
+  if (autoBalanceLoad) {
+    autoBalanceLoad.checked = currentConfig.autoBalanceLoad !== false;
+  }
+
   showExample.checked = currentConfig.showExample !== false;
   autoPronounce.checked = currentConfig.autoPronounce || false;
   pronounceAccent.value = currentConfig.pronounceAccent || 'en-US';
@@ -106,9 +130,97 @@ async function init() {
     document.querySelector('.settings-subtitle').textContent = '首次使用，请选择学习偏好';
   }
 
-  // 加载预测数据
-  loadPrediction();
+  // 加载预测与配额数据
+  await loadPrediction();
+  await refreshQuotaAndBacklogInfo();
 }
+
+// === 每日新词模式切换 ===
+function setDailyMode(mode) {
+  selectedDailyMode = mode;
+  if (modeOptTarget && modeOptFixed) {
+    modeOptTarget.classList.toggle('active', mode === 'target');
+    modeOptFixed.classList.toggle('active', mode === 'fixed');
+  }
+  if (fixedModeContainer) {
+    fixedModeContainer.style.display = mode === 'fixed' ? 'flex' : 'none';
+  }
+  if (targetModeContainer) {
+    targetModeContainer.style.display = mode === 'target' ? 'block' : 'none';
+  }
+  renderPrediction();
+  refreshQuotaAndBacklogInfo();
+}
+
+if (modeOptTarget) {
+  modeOptTarget.addEventListener('click', () => setDailyMode('target'));
+}
+if (modeOptFixed) {
+  modeOptFixed.addEventListener('click', () => setDailyMode('fixed'));
+}
+
+// === 刷新动态配额与积压状态 ===
+async function refreshQuotaAndBacklogInfo() {
+  try {
+    const quotaInfo = await window.wordpopAPI.getDynamicQuotaInfo();
+    if (quotaInfo && targetDynamicBadge && targetDynamicDesc) {
+      if (selectedDailyMode === 'target') {
+        if (!targetDateInput.value) {
+          targetDynamicBadge.textContent = `🎯 智能目标规划模式`;
+          targetDynamicDesc.textContent = `请在下方「预测卡片」设定目标完成日期，系统将每天自适应计算新词量。`;
+        } else {
+          targetDynamicBadge.textContent = `今日推荐新词：${quotaInfo.effectiveLimit} 词`;
+          targetDynamicDesc.textContent = quotaInfo.reason;
+        }
+      }
+    }
+    if (backlogOverdueCount && quotaInfo) {
+      if (quotaInfo.dueCount > 0) {
+        backlogOverdueCount.textContent = `当前逾期待复习：${quotaInfo.dueCount} 个单词`;
+        backlogOverdueCount.style.color = 'var(--color-warning)';
+      } else {
+        backlogOverdueCount.textContent = `当前没有逾期积压单词，状态极佳！`;
+        backlogOverdueCount.style.color = 'var(--color-success)';
+      }
+    }
+  } catch (err) {
+    console.error('refreshQuotaAndBacklogInfo error:', err);
+  }
+}
+
+// === 积压平摊减负处理 ===
+async function handleSmooth(days) {
+  try {
+    const quota = await window.wordpopAPI.getDynamicQuotaInfo();
+    const count = quota ? quota.dueCount : 0;
+    if (count === 0) {
+      alert('当前没有逾期积压单词，无需平摊！');
+      return;
+    }
+
+    const confirmed = confirm(
+      `确定将当前的 ${count} 个逾期积压单词智能平摊到未来 ${days} 天吗？\n\n` +
+      `• 系统将把复习时间均匀分散在未来 ${days} 天\n` +
+      `• 今天的待复习量将大幅压降至舒适水平\n` +
+      `• 记忆较稳固的词适当后移，生疏词保持在近处`
+    );
+    if (!confirmed) return;
+
+    const res = await window.wordpopAPI.smoothOverdueReviews(days);
+    if (res.success) {
+      alert(`✅ 成功将 ${res.count} 个积压单词智能平摊至未来 ${res.days} 天！\n今日复习压力已成功减负。`);
+      await init();
+    } else {
+      alert('平摊失败: ' + (res.error || '未知错误'));
+    }
+  } catch (e) {
+    alert('平摊操作异常: ' + e.message);
+  }
+}
+
+if (btnSmooth3) btnSmooth3.addEventListener('click', () => handleSmooth(3));
+if (btnSmooth5) btnSmooth5.addEventListener('click', () => handleSmooth(5));
+if (btnSmooth7) btnSmooth7.addEventListener('click', () => handleSmooth(7));
 
 // === 渲染词库列表 ===
 function renderWordlists() {
@@ -334,6 +446,8 @@ btnSave.addEventListener('click', async () => {
     dailyNewWords: dailyNewWords.value === 'custom'
       ? Math.min(200, Math.max(1, parseInt(customDailyInput.value) || 20))
       : parseInt(dailyNewWords.value),
+    dailyNewWordsMode: selectedDailyMode,
+    autoBalanceLoad: autoBalanceLoad ? autoBalanceLoad.checked : true,
     popupPosition: selectedPosition,
     selectedWordlists: selectedWordlists,
     showExample: showExample.checked,

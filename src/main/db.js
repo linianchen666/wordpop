@@ -662,6 +662,66 @@ function repairDatabase() {
   }
 }
 
+/**
+ * 智能平摊逾期积压单词的复习时间
+ * @param {number} days - 平摊天数（如 3, 5, 7）
+ * @param {string[]} [wordlists] - 词库过滤列表，默认当前所有启用词库
+ * @returns {{ success: boolean, count: number, days: number }}
+ */
+function smoothOverdueReviews(days = 3, wordlists = null) {
+  if (!db) return { success: false, count: 0, error: '数据库未初始化' };
+  const targetDays = Math.max(1, Math.min(30, parseInt(days) || 3));
+  const now = Date.now();
+
+  let query = `
+    SELECT p.word_id, p.stage, p.efactor, p.next_review_at
+    FROM progress p
+    JOIN words w ON p.word_id = w.id
+    WHERE p.next_review_at <= ? AND p.stage < 9
+  `;
+  const params = [now];
+
+  if (Array.isArray(wordlists) && wordlists.length > 0) {
+    const placeholders = wordlists.map(() => '?').join(',');
+    query += ` AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))`;
+    params.push(...wordlists);
+  }
+
+  // 排序：生疏的记忆 (stage低) 优先排在近处，较稳固的记忆 (stage高) 分散到更远天数
+  query += ` ORDER BY p.stage ASC, p.efactor ASC, p.next_review_at ASC`;
+
+  const overdueList = db.prepare(query).all(...params);
+  if (!overdueList || overdueList.length === 0) {
+    return { success: true, count: 0, days: targetDays };
+  }
+
+  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+  const updateStmt = db.prepare('UPDATE progress SET next_review_at = ? WHERE word_id = ?');
+
+  const transaction = db.transaction(() => {
+    overdueList.forEach((row, index) => {
+      // 均匀分配在 0 ~ (targetDays - 1) 天
+      const dayOffset = index % targetDays;
+      let newTime;
+      if (dayOffset === 0) {
+        newTime = now;
+      } else {
+        const jitter = (Math.random() - 0.5) * 2 * 3600 * 1000;
+        newTime = now + (dayOffset * ONE_DAY_MS) + jitter;
+      }
+      updateStmt.run(Math.round(newTime), row.word_id);
+    });
+  });
+
+  transaction();
+
+  return {
+    success: true,
+    count: overdueList.length,
+    days: targetDays
+  };
+}
+
 module.exports = {
   initDatabase,
   getDb,
@@ -671,6 +731,7 @@ module.exports = {
   importCustomWordlist,
   getWordlistPath,
   getProgressSummary,
+  smoothOverdueReviews,
   diagnoseDatabase,
   repairDatabase
 };

@@ -6,6 +6,9 @@ const CONFIG_FILENAME = 'config.json';
 
 const DEFAULT_CONFIG = {
   dailyNewWords: 20,
+  dailyNewWordsMode: 'fixed',      // fixed (固定词量) | target (智能目标模式)
+  autoBalanceLoad: true,           // 智能负荷动态平衡：复习过多时自动削减/暂停新词
+  maxDynamicNewWords: 50,          // 智能模式每日新词上限
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
   selectedWordlists: ['cet4'],     // 启用的词库列表
   autoPronounce: true,             // 自动发音

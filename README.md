@@ -5,12 +5,15 @@
 [![Latest Release](https://img.shields.io/github/v/release/linianchen666/wordpop?label=latest)](https://github.com/linianchen666/wordpop/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/linianchen666/wordpop/releases/latest)
 
-当前源码版本：**1.3.2**
+当前源码版本：**1.4.0**
 
 ---
 
 ## ✨ 特性
 
+- **智能目标规划模式** — 设定目标完成日期（如考试日），系统每天自动根据 `剩余词量 ÷ 剩余天数` 自适应调整每日新词，无需反复手动配置
+- **智能复习负荷平衡** — 当待复习单词积压较多时，系统自动智能减半或熔断暂停推新（新词 = 0），优先全力消化旧词，彻底杜绝“旧债未清又添新词”
+- **逾期积压一键平摊** — 停背数天产生大量逾期单词时，可一键将积压词智能均匀分散到接下来的 3、5 或 7 天，秒级化解复习焦虑
 - **动态间隔复习** — 在 5 分钟、30 分钟、4 小时、1 天、2 天等基础间隔上，基于 SM-2 算法根据记忆表现动态调整后续复习时间
 - **两阶段交互** — 先看单词主动回忆，再点击/快捷键展开释义，训练真正的记忆能力
 - **四种记忆反馈** — 不认识、模糊、认识、熟知分别对应不同的间隔和难度调整

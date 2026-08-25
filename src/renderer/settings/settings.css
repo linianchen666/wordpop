@@ -379,3 +379,74 @@
 .target-result.success {
   color: var(--color-success);
 }
+
+/* === 每日新词模式选择 === */
+.mode-selector {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.mode-option {
+  padding: 10px 12px;
+  text-align: center;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-secondary);
+  transition: all var(--transition-fast);
+}
+
+.mode-option:hover {
+  border-color: var(--color-primary-glow);
+  color: var(--color-text);
+  transform: translateY(-1px);
+}
+
+.mode-option.active {
+  border-color: var(--color-primary);
+  background: rgba(37, 99, 235, 0.08);
+  color: var(--color-primary);
+  box-shadow: 0 0 0 2px var(--color-primary-glow);
+}
+
+[data-theme="dark"] .mode-option.active {
+  background: rgba(59, 130, 246, 0.15);
+}
+
+.target-mode-box {
+  background: rgba(37, 99, 235, 0.04);
+  border: 1px dashed rgba(37, 99, 235, 0.4);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+}
+
+.target-dynamic-badge {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--color-primary);
+  margin-bottom: 4px;
+}
+
+.target-dynamic-desc {
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  line-height: 1.4;
+}
+
+/* === 积压平摊减负卡片 === */
+.backlog-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.backlog-count-text {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--color-text);
+  margin-bottom: 4px;
+}

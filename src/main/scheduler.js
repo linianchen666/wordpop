@@ -188,6 +188,101 @@ class Scheduler {
     }
   }
 
+  /**
+   * 计算今日生效的每日新词配额（支持目标日期智能推导与复习负荷动态平衡）
+   * @returns {{ effectiveLimit: number, baseLimit: number, mode: string, dueCount: number, loadState: string, reason: string }}
+   */
+  getDynamicQuotaInfo() {
+    try {
+      const db = getDb();
+      const config = loadConfig();
+      const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+        ? config.selectedWordlists
+        : ['cet4'];
+      const placeholders = wordlists.map(() => '?').join(',');
+      const now = Date.now();
+
+      // 1. 基础新词量推导
+      let baseLimit = parseInt(config.dailyNewWords) || 20;
+      const mode = config.dailyNewWordsMode || 'fixed';
+
+      if (mode === 'target' && config.targetDate) {
+        const targetTime = new Date(config.targetDate);
+        targetTime.setHours(23, 59, 59, 999);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const daysLeft = Math.ceil((targetTime.getTime() - today.getTime()) / (24 * 3600 * 1000));
+
+        if (daysLeft > 0) {
+          const unlearnedRow = db.prepare(`
+            SELECT COUNT(DISTINCT w.id) c
+            FROM words w
+            LEFT JOIN progress p ON w.id = p.word_id
+            WHERE p.word_id IS NULL
+              AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+          `).get(...wordlists);
+
+          const remainingWords = unlearnedRow ? unlearnedRow.c : 0;
+          if (remainingWords > 0) {
+            const calculated = Math.ceil(remainingWords / daysLeft);
+            const maxCap = parseInt(config.maxDynamicNewWords) || 50;
+            baseLimit = Math.min(maxCap, Math.max(1, calculated));
+          } else {
+            baseLimit = 0;
+          }
+        }
+      }
+
+      // 2. 智能负荷动态平衡 (Auto Load Balancing)
+      const dueRow = db.prepare(`
+        SELECT COUNT(DISTINCT p.word_id) c
+        FROM progress p
+        WHERE p.next_review_at <= ? AND p.stage < ?
+          AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
+      `).get(now, MASTERED_STAGE, ...wordlists);
+
+      const dueCount = dueRow ? dueRow.c : 0;
+      let effectiveLimit = baseLimit;
+      let loadState = 'normal'; // 'normal' | 'heavy' | 'overload'
+      let reason = '复习负荷正常，按计划推新';
+
+      const autoBalance = config.autoBalanceLoad !== false;
+
+      if (autoBalance && baseLimit > 0) {
+        if (dueCount >= 80) {
+          // 严重积压：今日新词直接熔断为 0，全力消化复习
+          effectiveLimit = 0;
+          loadState = 'overload';
+          reason = `检测到 ${dueCount} 个复习积压，已自动暂停今日推新，全力消化旧词`;
+        } else if (dueCount >= 40) {
+          // 中度压力：今日新词减半
+          effectiveLimit = Math.max(1, Math.floor(baseLimit / 2));
+          loadState = 'heavy';
+          reason = `检测到 ${dueCount} 个待复习单词，新词配额自动减半（${baseLimit} → ${effectiveLimit}）`;
+        }
+      }
+
+      return {
+        effectiveLimit,
+        baseLimit,
+        mode,
+        dueCount,
+        loadState,
+        reason
+      };
+    } catch (e) {
+      console.error('[Scheduler] getDynamicQuotaInfo ERROR:', e.message);
+      return {
+        effectiveLimit: 20,
+        baseLimit: 20,
+        mode: 'fixed',
+        dueCount: 0,
+        loadState: 'normal',
+        reason: '默认设置'
+      };
+    }
+  }
+
   reloadQueue() {
     try {
       const db = getDb();
@@ -197,6 +292,10 @@ class Scheduler {
         ? config.selectedWordlists
         : ['cet4'];
       const placeholders = wordlists.map(() => '?').join(',');
+
+      // 动态刷新今日新词配额上限
+      const quotaInfo = this.getDynamicQuotaInfo();
+      this.dailyNewWordsLimit = quotaInfo.effectiveLimit;
 
       // 1. 到期需复习的单词（按重要程度排序：stage ASC, efactor ASC, next_review_at ASC）
       const dueReviews = db.prepare(`
@@ -571,20 +670,7 @@ class Scheduler {
 
   applyConfig(config) {
     if (!config) return;
-    let needReload = false;
-
-    if (config.dailyNewWords !== undefined) {
-      this.dailyNewWordsLimit = config.dailyNewWords;
-      needReload = true;
-    }
-
-    if (config.selectedWordlists !== undefined) {
-      needReload = true;
-    }
-
-    if (needReload) {
-      this.reloadQueue();
-    }
+    this.reloadQueue();
   }
 
   /**
@@ -674,6 +760,7 @@ class Scheduler {
 
   getStatus() {
     let todayDueCount = 0;
+    const quotaInfo = this.getDynamicQuotaInfo();
     try {
       const db = getDb();
       const config = loadConfig();
@@ -707,7 +794,8 @@ class Scheduler {
       hasNewWordsQuota: this.hasNewWordsQuotaToday(),
       hasUnmasteredWords: this.hasUnmasteredWords(),
       todayDueCount,
-      todayNewRemaining: Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount)
+      todayNewRemaining: Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount),
+      quotaInfo
     };
   }
 

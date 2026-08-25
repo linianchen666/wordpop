@@ -38,8 +38,10 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   exportBackup:       ()  => ipcRenderer.invoke('backup:export'),
   importBackup:       ()  => ipcRenderer.invoke('backup:import'),
 
-  // === 调度器操作 ===
+  // === 调度器操作与积压平摊 ===
   getSchedulerStatus:  ()  => ipcRenderer.invoke('scheduler:status'),
+  getDynamicQuotaInfo: ()  => ipcRenderer.invoke('scheduler:quota-info'),
+  smoothOverdueReviews:(d) => ipcRenderer.invoke('reviews:smooth-overdue', d),
   togglePause:        ()  => ipcRenderer.invoke('scheduler:toggle-pause'),
 
   // === 系统操作 ===

@@ -1,5 +1,5 @@
 const { ipcMain, dialog, BrowserWindow, app, fs } = require('electron');
-const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary, diagnoseDatabase, repairDatabase } = require('./db');
+const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary, smoothOverdueReviews, diagnoseDatabase, repairDatabase } = require('./db');
 const { handleExportBackup, handleImportBackup } = require('./backup');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
@@ -148,6 +148,34 @@ ipcMain.handle('backup:export', (event) => {
 ipcMain.handle('backup:import', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   return handleImportBackup(win);
+});
+
+// ═════════════════════════╗
+//  逾期复习平摊与动态配额
+// ═════════════════════════╝
+
+ipcMain.handle('reviews:smooth-overdue', (_event, days) => {
+  try {
+    const config = loadConfig();
+    const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+      ? config.selectedWordlists
+      : ['cet4'];
+    const res = smoothOverdueReviews(days, wordlists);
+    if (res.success) {
+      scheduler.reloadQueue();
+      BrowserWindow.getAllWindows().forEach(w => {
+        if (!w.isDestroyed()) w.webContents.send('stats:updated');
+      });
+    }
+    return res;
+  } catch (err) {
+    console.error('[IPC] reviews:smooth-overdue error:', err.message);
+    return { success: false, error: err.message };
+  }
+});
+
+ipcMain.handle('scheduler:quota-info', () => {
+  return scheduler.getDynamicQuotaInfo();
 });
 
 // ═════════════════════════╗
