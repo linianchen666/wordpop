@@ -5,7 +5,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/linianchen666/wordpop?label=latest)](https://github.com/linianchen666/wordpop/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/linianchen666/wordpop/releases/latest)
 
-当前源码版本：**1.3.1**
+当前源码版本：**1.3.2**
 
 ---
 
@@ -27,7 +27,7 @@
 - **每日词量自定义** — 支持预设（5/10/20/30/50）和自定义数值（1-200）
 - **系统托盘常驻** — 最小化到托盘，随时暂停/恢复
 - **全键盘快捷键** — 全键盘流畅操作，无需鼠标
-- **点击发音** — 基于 Web Speech API 原生发音
+- **双发音引擎** — 在线高保真真人发音（支持美音/英音）+ 本地 Web Speech API 自动兜底，点击单词或音标即刻朗读
 - **丰富学习统计** — 今日已复习/已新学、今日待复习/待新学、累计数据、连续打卡、7天趋势和阶段分布
 - **开机自启** — 可选开机自动启动
 - **安装进程检测** — 安装新版本时自动检测并关闭旧进程

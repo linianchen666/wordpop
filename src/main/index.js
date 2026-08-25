@@ -1,6 +1,10 @@
 const { app, BrowserWindow, Menu, dialog } = require('electron');
 const path = require('path');
 const fs   = require('fs');
+
+// 允许无手势自动音频播放（用于单词发音与自动朗读）
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required');
+
 const { initDatabase, importWordlist, getWordlistIndex } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
 const { createTray, destroyTray, updateStatus, startAutoUpdateCheck } = require('./tray');

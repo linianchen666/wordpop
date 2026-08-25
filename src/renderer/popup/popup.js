@@ -62,16 +62,96 @@ function enterRevealPhase() {
   }
 }
 
-// === 发音函数 ===
+// === 双引擎发音系统（在线真人高保真发音 + 本地 Web Speech API 兜底） ===
+let activeAudio = null;
+const audioCache = new Map();
+
 function pronounceWord(word, accent) {
+  if (!word || typeof word !== 'string') return;
+  const cleanWord = word.trim();
+  if (!cleanWord) return;
+
+  const resolvedAccent = accent || (currentWord && currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
+  const isUK = resolvedAccent === 'en-GB' || resolvedAccent === 'uk';
+  const type = isUK ? 1 : 2;
+  const audioUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(cleanWord)}&type=${type}`;
+
+  // 1. 优先使用真人原生高清发音
   try {
-    window.speechSynthesis.cancel();
+    if (activeAudio) {
+      activeAudio.pause();
+      activeAudio.currentTime = 0;
+    }
+
+    let audio = audioCache.get(audioUrl);
+    if (!audio) {
+      audio = new Audio(audioUrl);
+      if (audioCache.size > 100) {
+        const firstKey = audioCache.keys().next().value;
+        audioCache.delete(firstKey);
+      }
+      audioCache.set(audioUrl, audio);
+    } else {
+      audio.currentTime = 0;
+    }
+
+    activeAudio = audio;
+    let fallbackTriggered = false;
+
+    const triggerFallback = () => {
+      if (!fallbackTriggered) {
+        fallbackTriggered = true;
+        fallbackSpeechSynthesis(cleanWord, resolvedAccent);
+      }
+    };
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch((err) => {
+        console.warn('[Pronounce] Online audio play failed, falling back:', err);
+        triggerFallback();
+      });
+    }
+
+    audio.onerror = () => {
+      triggerFallback();
+    };
+  } catch (err) {
+    console.warn('[Pronounce] Audio constructor error, falling back:', err);
+    fallbackSpeechSynthesis(cleanWord, resolvedAccent);
+  }
+}
+
+// 兜底发音：Web Speech API
+function fallbackSpeechSynthesis(word, accent) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
+
     const utterance = new SpeechSynthesisUtterance(word);
     utterance.lang = accent || 'en-US';
-    utterance.rate = 0.8;
+    utterance.rate = 0.85;
     utterance.pitch = 1.0;
+
+    // 防止 V8 垃圾回收 utterance 对象导致中断
+    window._lastUtterance = utterance;
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      const isUK = accent === 'en-GB' || accent === 'uk';
+      const langPattern = isUK ? /en[-_]gb/i : /en[-_]us/i;
+      const matchedVoice = voices.find(v => langPattern.test(v.lang)) || voices.find(v => /^en/i.test(v.lang));
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+      }
+    }
+
     window.speechSynthesis.speak(utterance);
-  } catch (e) {}
+  } catch (e) {
+    console.error('[Pronounce] Fallback speech synthesis error:', e);
+  }
 }
 
 // === 接收单词数据 ===
@@ -81,7 +161,9 @@ window.wordpopAPI.onWordData((data) => {
   // 更新显示
   wordText.textContent = data.word;
   wordText.className = 'word-main' + (data.isNew ? ' new-word' : '');
-  phoneticText.textContent = data.phonetic ? `/${data.phonetic}/` : '';
+  wordText.title = '点击发音';
+  phoneticText.textContent = data.phonetic ? `/${data.phonetic}/ 🔊` : '🔊 发音';
+  phoneticText.title = '点击发音';
   translationText.textContent = data.translation || '';
 
   if (data.config && data.config.showExample && data.example) {
@@ -309,7 +391,7 @@ btnMinimize.addEventListener('click', () => {
   window.wordpopAPI.minimizePopup();
 });
 
-// === 点击单词发音（Web Speech API） ===
+// === 点击单词或音标发音 ===
 wordText.addEventListener('click', () => {
   if (!currentWord || !currentWord.word) return;
   const accent = (currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
@@ -318,6 +400,16 @@ wordText.addEventListener('click', () => {
   // 视觉反馈
   wordText.style.color = 'var(--color-primary)';
   setTimeout(() => { wordText.style.color = ''; }, 500);
+});
+
+phoneticText.addEventListener('click', () => {
+  if (!currentWord || !currentWord.word) return;
+  const accent = (currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
+  pronounceWord(currentWord.word, accent);
+
+  // 视觉反馈
+  phoneticText.style.color = 'var(--color-primary)';
+  setTimeout(() => { phoneticText.style.color = ''; }, 500);
 });
 
 // === 键盘快捷键 ===
