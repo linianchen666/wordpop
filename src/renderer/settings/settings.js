@@ -277,6 +277,11 @@ if (btnSmooth7) btnSmooth7.addEventListener('click', () => handleSmooth(7));
 function renderWordlists() {
   wordlistOptions.innerHTML = '';
 
+  if (!availableWordlists || availableWordlists.length === 0) {
+    wordlistOptions.innerHTML = '<div style="color: var(--color-text-secondary); font-size: 13px; padding: 10px; text-align: center;">暂无可用词库</div>';
+    return;
+  }
+
   availableWordlists.forEach(wl => {
     const div = document.createElement('div');
     div.className = 'wordlist-item' + (selectedWordlists.includes(wl.id) ? ' selected' : '');

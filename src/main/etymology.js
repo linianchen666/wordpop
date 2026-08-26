@@ -6,17 +6,37 @@ let rootsData = null;
 let mnemonicsCache = null;
 
 function getEtymologyPath() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'etymology', 'roots.json');
+  const candidates = [
+    path.join(process.resourcesPath || '', 'etymology', 'roots.json'),
+    path.join(app.getAppPath ? app.getAppPath() : '', 'src', 'data', 'etymology', 'roots.json'),
+    path.join(__dirname, '..', 'data', 'etymology', 'roots.json'),
+    path.join(process.resourcesPath || '', 'app.asar', 'src', 'data', 'etymology', 'roots.json')
+  ];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch (e) {}
   }
-  return path.join(__dirname, '..', 'data', 'etymology', 'roots.json');
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'etymology', 'roots.json')
+    : path.join(__dirname, '..', 'data', 'etymology', 'roots.json');
 }
 
 function getMnemonicsPath() {
-  if (app.isPackaged) {
-    return path.join(process.resourcesPath, 'etymology', 'mnemonics.json');
+  const candidates = [
+    path.join(process.resourcesPath || '', 'etymology', 'mnemonics.json'),
+    path.join(app.getAppPath ? app.getAppPath() : '', 'src', 'data', 'etymology', 'mnemonics.json'),
+    path.join(__dirname, '..', 'data', 'etymology', 'mnemonics.json'),
+    path.join(process.resourcesPath || '', 'app.asar', 'src', 'data', 'etymology', 'mnemonics.json')
+  ];
+  for (const p of candidates) {
+    try {
+      if (p && fs.existsSync(p)) return p;
+    } catch (e) {}
   }
-  return path.join(__dirname, '..', 'data', 'etymology', 'mnemonics.json');
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'etymology', 'mnemonics.json')
+    : path.join(__dirname, '..', 'data', 'etymology', 'mnemonics.json');
 }
 
 function loadRootsData() {

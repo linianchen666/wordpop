@@ -356,16 +356,38 @@ function getWordFrequencyRank(word) {
   return map.has(cleanWord) ? map.get(cleanWord) : 999999;
 }
 
+const BUILTIN_WORDLISTS_INDEX = [
+  { id: 'cet4', name: 'CET-4 四级', file: 'cet4.json', count: 4544 },
+  { id: 'cet6', name: 'CET-6 六级', file: 'cet6.json', count: 3991 },
+  { id: 'kaoyan', name: '考研词汇', file: 'kaoyan.json', count: 5047 }
+];
+
 /**
- * 获取词库目录路径（兼容开发/生产环境）
- * 打包后 wordlists 被复制到 resources/wordlists/
+ * 获取词库目录路径（兼容开发/生产环境及多重路径容灾）
  */
 function getWordlistPath() {
-  if (app.isPackaged) {
-    // electron-builder extraResources 把 wordlists/ 复制到 resources/wordlists/
-    return path.join(process.resourcesPath, 'wordlists');
+  const candidates = [
+    // 1. extraResources 外部资源目录 (resources/wordlists)
+    path.join(process.resourcesPath || '', 'wordlists'),
+    // 2. app.asar 内部完整路径 (app.asar/src/data/wordlists)
+    path.join(app.getAppPath ? app.getAppPath() : '', 'src', 'data', 'wordlists'),
+    // 3. 源码开发路径 (__dirname/../data/wordlists)
+    path.join(__dirname, '..', 'data', 'wordlists'),
+    // 4. asar 资源解压备用路径
+    path.join(process.resourcesPath || '', 'app.asar', 'src', 'data', 'wordlists')
+  ];
+
+  for (const dir of candidates) {
+    try {
+      if (dir && fs.existsSync(path.join(dir, 'index.json'))) {
+        return dir;
+      }
+    } catch (e) {}
   }
-  return path.join(__dirname, '..', 'data', 'wordlists');
+
+  return app.isPackaged
+    ? path.join(process.resourcesPath, 'wordlists')
+    : path.join(__dirname, '..', 'data', 'wordlists');
 }
 
 /**
@@ -485,11 +507,19 @@ function importWordlist(wordlistId) {
  * 获取词库元信息列表
  */
 function getWordlistIndex() {
-  const wordlistDir = getWordlistPath();
-  const indexPath = path.join(wordlistDir, 'index.json');
-  if (!fs.existsSync(indexPath)) return [];
-  const raw = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
-  return Array.isArray(raw) ? raw : (raw.wordlists || []);
+  try {
+    const wordlistDir = getWordlistPath();
+    const indexPath = path.join(wordlistDir, 'index.json');
+    if (fs.existsSync(indexPath)) {
+      const raw = JSON.parse(fs.readFileSync(indexPath, 'utf-8'));
+      const list = Array.isArray(raw) ? raw : (raw.wordlists || []);
+      if (list && list.length > 0) return list;
+    }
+  } catch (e) {
+    console.error('[DB] getWordlistIndex error:', e.message);
+  }
+  // 容灾兜底返回内置词库定义
+  return [...BUILTIN_WORDLISTS_INDEX];
 }
 
 /**
