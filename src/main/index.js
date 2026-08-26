@@ -108,6 +108,19 @@ app.whenReady().then(async () => {
     config = { setupComplete: false, selectedWordlists: ['cet4'], dailyNewWords: 20 };
   }
 
+  // ── 启动诊断日志 ──
+  log('[Diag] app.isPackaged:', app.isPackaged);
+  log('[Diag] app.getAppPath():', app.getAppPath());
+  log('[Diag] process.resourcesPath:', process.resourcesPath);
+  log('[Diag] __dirname:', __dirname);
+  try {
+    const dbMod = require('./db');
+    const wlIndex = dbMod.getWordlistIndex();
+    log('[Diag] getWordlistIndex() returned', wlIndex.length, 'items:', JSON.stringify(wlIndex.map(e => e.id)));
+  } catch (e) {
+    log('[Diag] getWordlistIndex() ERROR:', e.message);
+  }
+
   // 3. IPC
   safeStep('registerIpc', registerIpcHandlers);
 
@@ -259,15 +272,28 @@ function showErrorWindow() {
 function openSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.focus(); return; }
   try {
+    const preloadPath = getPreloadPath();
+    const settingsPath = getRendererPath('settings', 'index.html');
+    log('[Settings] preload:', preloadPath, 'exists:', fs.existsSync(preloadPath));
+    log('[Settings] html:', settingsPath, 'exists:', fs.existsSync(settingsPath));
+
     settingsWindow = new BrowserWindow({
       width: 520, height: 640, resizable: false, title: 'WordPop — 设置',
       autoHideMenuBar: true,
       webPreferences: {
-        preload: getPreloadPath(),
+        preload: preloadPath,
         contextIsolation: true, nodeIntegration: false, sandbox: false
       }
     });
-    settingsWindow.loadFile(getRendererPath('settings', 'index.html'));
+    settingsWindow.loadFile(settingsPath);
+
+    // 捕获渲染进程控制台错误
+    settingsWindow.webContents.on('console-message', (_ev, level, message) => {
+      if (level >= 2) { // warning + error
+        log('[Settings:Renderer]', message);
+      }
+    });
+
     settingsWindow.on('closed', () => { settingsWindow = null; });
   } catch (err) { log('[App] ❌ openSettings ERROR:', err.message); }
 }

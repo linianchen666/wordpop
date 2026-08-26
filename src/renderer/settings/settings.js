@@ -135,11 +135,11 @@ async function init() {
     pronounceVoiceSelect.value = currentConfig.pronounceVoice || 'dict-us';
   }
 
-  showExample.checked = currentConfig.showExample !== false;
-  autoPronounce.checked = currentConfig.autoPronounce || false;
-  fontSize.value = currentConfig.fontSize || 'medium';
-  autoStart.checked = currentConfig.autoStart || false;
-  autoCheckUpdate.checked = currentConfig.autoCheckUpdate !== false;
+  if (showExample) showExample.checked = currentConfig.showExample !== false;
+  if (autoPronounce) autoPronounce.checked = currentConfig.autoPronounce || false;
+  if (fontSize) fontSize.value = currentConfig.fontSize || 'medium';
+  if (autoStart) autoStart.checked = currentConfig.autoStart || false;
+  if (autoCheckUpdate) autoCheckUpdate.checked = currentConfig.autoCheckUpdate !== false;
   selectedWordlists = [...(currentConfig.selectedWordlists || ['cet4'])];
   selectedPosition = currentConfig.popupPosition || 'bottom-right';
 
@@ -527,11 +527,11 @@ btnSave.addEventListener('click', async () => {
     pronounceVoice: pronounceVoiceSelect ? pronounceVoiceSelect.value : 'dict-us',
     popupPosition: selectedPosition,
     selectedWordlists: selectedWordlists,
-    showExample: showExample.checked,
-    autoPronounce: autoPronounce.checked,
-    fontSize: fontSize.value,
-    autoStart: autoStart.checked,
-    autoCheckUpdate: autoCheckUpdate.checked,
+    showExample: showExample ? showExample.checked : true,
+    autoPronounce: autoPronounce ? autoPronounce.checked : false,
+    fontSize: fontSize ? fontSize.value : 'medium',
+    autoStart: autoStart ? autoStart.checked : false,
+    autoCheckUpdate: autoCheckUpdate ? autoCheckUpdate.checked : true,
     setupComplete: true,
     targetDate: targetDateInput.value || null
   };

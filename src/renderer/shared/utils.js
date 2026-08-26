@@ -171,6 +171,20 @@ function drawBarChart(canvas, data, options = {}) {
  *  - deep-male: 🎩 磁性大叔（沉稳男声 / 低音调男声）
  *  - fast: ⚡ 极速突击（1.25x 强化听觉刺激）
  */
+
+// ==========================================
+// 🔊 音频播放引擎 (统管发音与音效)
+// ==========================================
+
+// 提前触发语音库加载 (解决第一次 getVoices() 为空的问题)
+if ('speechSynthesis' in window) {
+  window.speechSynthesis.onvoiceschanged = () => {
+    // 强制触发内部加载
+    window.speechSynthesis.getVoices();
+  };
+  window.speechSynthesis.getVoices();
+}
+
 const _audioCache = new Map();
 let _activeAudio = null;
 
@@ -290,16 +304,31 @@ function _playSynthesizedVoice(word, voiceType, fallbackToOnline = true) {
     // 匹配最适合的英语发音人
     const voices = window.speechSynthesis.getVoices();
     if (voices && voices.length > 0) {
-      const langPattern = isUK ? /en[-_]gb/i : /en[-_]us|en/i;
-      const enVoices = voices.filter(v => langPattern.test(v.lang) || /^en/i.test(v.lang));
-      const targetList = enVoices.length > 0 ? enVoices : voices;
+      const enVoices = voices.filter(v => /^en/i.test(v.lang));
+      const ukVoices = voices.filter(v => /en[-_]gb/i.test(v.lang));
+      const usVoices = voices.filter(v => /en[-_]us/i.test(v.lang));
+
+      let targetList = isUK ? (ukVoices.length ? ukVoices : enVoices) : (usVoices.length ? usVoices : enVoices);
+      if (targetList.length === 0) targetList = voices;
 
       let matchedVoice = null;
-      if (gender === 'female') {
-        matchedVoice = targetList.find(v => /female|zira|aria|jenny|samantha|victoria|karen|susan|catherine|hazel/i.test(v.name));
+      
+      // 根据角色特征更精细地匹配声音名字 (利用系统中不同的音色)
+      if (voiceType === 'loli') {
+        // 软萌：偏好比较清脆年轻的声音（如 Aria, Jenny），没有则退而求其次
+        matchedVoice = targetList.find(v => /aria|jenny|samantha|karen|female/i.test(v.name)) || targetList.find(v => /zira/i.test(v.name));
+      } else if (voiceType === 'mature') {
+        // 御姐：偏好低沉/成熟/英伦风的女声
+        matchedVoice = targetList.find(v => /hazel|susan|victoria|catherine|mature/i.test(v.name)) || ukVoices.find(v => /female|woman/i.test(v.name)) || targetList.find(v => /zira/i.test(v.name));
+      } else if (voiceType === 'deep-male') {
+        // 大叔：偏好低沉男声
+        matchedVoice = targetList.find(v => /david|mark|george|richard|deep|male/i.test(v.name));
+      } else if (gender === 'female') {
+        matchedVoice = targetList.find(v => /female|zira|aria|jenny|samantha/i.test(v.name));
       } else if (gender === 'male') {
-        matchedVoice = targetList.find(v => /male|david|guy|george|mark|alex|daniel|tom|richard/i.test(v.name));
+        matchedVoice = targetList.find(v => /male|david|guy|mark/i.test(v.name));
       }
+
       if (matchedVoice) {
         utterance.voice = matchedVoice;
       } else if (targetList.length > 0) {
