@@ -32,7 +32,7 @@ function formatNumber(n) {
  */
 function getStageName(stage) {
   const names = [
-    '新学', '5分钟', '30分钟', '12小时',
+    '新学', '5分钟', '30分钟', '4小时',
     '1天', '2天', '4天', '7天', '15天', '已掌握'
   ];
   return names[stage] || `阶段${stage}`;
@@ -158,3 +158,147 @@ function drawBarChart(canvas, data, options = {}) {
     ctx.fillText(d.label, x + barWidth / 2, padding.top + chartH + 16);
   });
 }
+
+/**
+ * ══════════════════════════════════════════════════════════
+ * 全局统一多音色发音引擎 (WordPop Multi-Voice Audio Engine)
+ * ══════════════════════════════════════════════════════════
+ * 支持角色音色：
+ *  - dict-us: 🇺🇸 标准美音（有道高保真词典原声）
+ *  - dict-uk: 🇬🇧 标准英音（有道高保真词典原声）
+ *  - loli: 🎀 软萌少女（萝莉音 / 高音调欢快女声）
+ *  - mature: 👠 知性御姐（成熟女声 / 低音调温和女声）
+ *  - deep-male: 🎩 磁性大叔（沉稳男声 / 低音调男声）
+ *  - fast: ⚡ 极速突击（1.25x 强化听觉刺激）
+ */
+const _audioCache = new Map();
+let _activeAudio = null;
+
+function playWordAudio(word, voiceType = 'dict-us', options = {}) {
+  if (!word || typeof word !== 'string') return;
+  const cleanWord = word.trim();
+  if (!cleanWord) return;
+
+  const resolvedVoice = voiceType || 'dict-us';
+
+  // 1. 标准美音/英音：优先播高保真词典真人流，失败自动回退到合成
+  if (resolvedVoice === 'dict-us' || resolvedVoice === 'en-US' || resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk') {
+    const isUK = resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk';
+    const type = isUK ? 1 : 2;
+    const audioUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(cleanWord)}&type=${type}`;
+    _playOnlineStream(audioUrl, () => _playSynthesizedVoice(cleanWord, resolvedVoice));
+    return;
+  }
+
+  // 2. 角色音色（萝莉/御姐/大叔/速记）：调用多音色合成引擎
+  _playSynthesizedVoice(cleanWord, resolvedVoice);
+}
+
+function _playOnlineStream(audioUrl, fallbackFn) {
+  try {
+    if (_activeAudio) {
+      _activeAudio.pause();
+      _activeAudio.currentTime = 0;
+    }
+
+    let audio = _audioCache.get(audioUrl);
+    if (!audio) {
+      audio = new Audio(audioUrl);
+      if (_audioCache.size > 100) {
+        const firstKey = _audioCache.keys().next().value;
+        _audioCache.delete(firstKey);
+      }
+      _audioCache.set(audioUrl, audio);
+    } else {
+      audio.currentTime = 0;
+    }
+
+    _activeAudio = audio;
+    let fallbackTriggered = false;
+
+    const triggerFallback = () => {
+      if (!fallbackTriggered) {
+        fallbackTriggered = true;
+        if (fallbackFn) fallbackFn();
+      }
+    };
+
+    const playPromise = audio.play();
+    if (playPromise !== undefined) {
+      playPromise.catch(() => triggerFallback());
+    }
+    audio.onerror = () => triggerFallback();
+  } catch (err) {
+    if (fallbackFn) fallbackFn();
+  }
+}
+
+function _playSynthesizedVoice(word, voiceType) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    if (window.speechSynthesis.speaking) {
+      window.speechSynthesis.cancel();
+    }
+
+    const utterance = new SpeechSynthesisUtterance(word);
+    window._wordpopUtterance = utterance; // 防止垃圾回收
+
+    let pitch = 1.0;
+    let rate = 0.9;
+    let gender = 'female';
+    let langPattern = /en/i;
+
+    switch (voiceType) {
+      case 'loli': // 软萌少女
+        pitch = 1.45;
+        rate = 1.05;
+        gender = 'female';
+        break;
+      case 'mature': // 知性御姐
+        pitch = 0.92;
+        rate = 0.92;
+        gender = 'female';
+        break;
+      case 'deep-male': // 磁性大叔
+        pitch = 0.76;
+        rate = 0.88;
+        gender = 'male';
+        break;
+      case 'fast': // 极速突击
+        pitch = 1.05;
+        rate = 1.25;
+        gender = 'female';
+        break;
+      case 'dict-uk':
+      case 'en-GB':
+      case 'uk':
+        langPattern = /en[-_]gb/i;
+        break;
+      default:
+        langPattern = /en[-_]us/i;
+        break;
+    }
+
+    utterance.pitch = pitch;
+    utterance.rate = rate;
+
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      const enVoices = voices.filter(v => langPattern.test(v.lang) || /^en/i.test(v.lang));
+      const targetList = enVoices.length > 0 ? enVoices : voices;
+
+      let matchedVoice = null;
+      if (gender === 'female') {
+        matchedVoice = targetList.find(v => /female|zira|aria|jenny|samantha|victoria|karen|susan|huihui/i.test(v.name));
+      } else if (gender === 'male') {
+        matchedVoice = targetList.find(v => /male|david|guy|george|mark|alex|daniel|tom|richard/i.test(v.name));
+      }
+      utterance.voice = matchedVoice || targetList[0];
+    }
+
+    window.speechSynthesis.speak(utterance);
+  } catch (e) {
+    console.error('[AudioEngine] Synthesis error:', e);
+  }
+}
+

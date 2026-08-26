@@ -39,11 +39,6 @@ ipcMain.on('word:unknown',   () => scheduler.markUnknown());
 ipcMain.on('word:fuzzy',     () => scheduler.markFuzzy());
 ipcMain.on('word:mastered',  () => scheduler.markMastered());
 ipcMain.on('word:undo',      () => scheduler.undo());
-
-ipcMain.on('word:pronounce', (_ev, word) => {
-  // 发音由渲染进程 Web Speech API 处理；此处为预留通道
-});
-
 ipcMain.on('popup:minimize', () => popupManager.hide());
 
 // ═════════════════════════╗

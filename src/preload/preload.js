@@ -9,7 +9,6 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   markFuzzy:       ()  => ipcRenderer.send('word:fuzzy'),
   markMastered:    ()  => ipcRenderer.send('word:mastered'),
   undo:            ()  => ipcRenderer.send('word:undo'),
-  pronounce:       (w) => ipcRenderer.send('word:pronounce', w),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),
 
   // === 设置操作 ===

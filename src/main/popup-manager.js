@@ -11,7 +11,6 @@ let popupConfig = {
   showExample: true,
   theme: 'light',
   autoPronounce: true,
-  pronounceAccent: 'en-US',
   pronounceVoice: 'dict-us',
   displayMode: 'card',
   batchSize: 3,
@@ -156,7 +155,6 @@ function _displayWord(wordData) {
         fontSize: popupConfig.fontSize,
         theme: popupConfig.theme,
         autoPronounce: popupConfig.autoPronounce,
-        pronounceAccent: popupConfig.pronounceAccent,
         pronounceVoice: popupConfig.pronounceVoice || 'dict-us',
         displayMode: popupConfig.displayMode || 'card'
       }
@@ -238,7 +236,6 @@ function updateConfig(cfg) {
   if (cfg.showExample !== undefined) popupConfig.showExample = cfg.showExample;
   if (cfg.theme !== undefined) popupConfig.theme = cfg.theme;
   if (cfg.autoPronounce !== undefined) popupConfig.autoPronounce = cfg.autoPronounce;
-  if (cfg.pronounceAccent !== undefined) popupConfig.pronounceAccent = cfg.pronounceAccent;
   if (cfg.pronounceVoice !== undefined) popupConfig.pronounceVoice = cfg.pronounceVoice;
   if (cfg.displayMode !== undefined) popupConfig.displayMode = cfg.displayMode;
   if (cfg.batchSize !== undefined) popupConfig.batchSize = cfg.batchSize;

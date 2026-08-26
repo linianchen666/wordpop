@@ -206,56 +206,10 @@ function showSummary() {
   sumTime.textContent = `${mins}分${secs}秒`;
 }
 
-// === 多音色角色发音 ===
+// === 发音 ===
 function playVoice(word) {
   if (!word) return;
-  const voiceType = currentConfig.pronounceVoice || 'dict-us';
-
-  if (voiceType === 'dict-us' || voiceType === 'dict-uk' || voiceType === 'en-US' || voiceType === 'en-GB') {
-    const isUK = voiceType === 'dict-uk' || voiceType === 'en-GB';
-    const type = isUK ? 1 : 2;
-    const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`;
-    try {
-      if (activeAudio) { activeAudio.pause(); activeAudio.currentTime = 0; }
-      activeAudio = new Audio(url);
-      activeAudio.play().catch(() => fallbackSynth(word, voiceType));
-    } catch (e) {
-      fallbackSynth(word, voiceType);
-    }
-    return;
-  }
-
-  fallbackSynth(word, voiceType);
-}
-
-function fallbackSynth(word, voiceType) {
-  try {
-    if (!('speechSynthesis' in window)) return;
-    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-
-    const u = new SpeechSynthesisUtterance(word);
-    window._focusUtterance = u;
-
-    let pitch = 1.0, rate = 0.9, gender = 'female', lang = /en/i;
-    if (voiceType === 'loli') { pitch = 1.45; rate = 1.05; gender = 'female'; }
-    else if (voiceType === 'mature') { pitch = 0.92; rate = 0.92; gender = 'female'; }
-    else if (voiceType === 'deep-male') { pitch = 0.76; rate = 0.88; gender = 'male'; }
-    else if (voiceType === 'fast') { pitch = 1.05; rate = 1.25; }
-
-    u.pitch = pitch;
-    u.rate = rate;
-
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      const en = voices.filter(v => lang.test(v.lang));
-      const list = en.length > 0 ? en : voices;
-      let matched = null;
-      if (gender === 'female') matched = list.find(v => /female|zira|aria|jenny/i.test(v.name));
-      else if (gender === 'male') matched = list.find(v => /male|david|guy/i.test(v.name));
-      u.voice = matched || list[0];
-    }
-    window.speechSynthesis.speak(u);
-  } catch (e) {}
+  playWordAudio(word, currentConfig.pronounceVoice || 'dict-us');
 }
 
 // === 事件绑定 ===

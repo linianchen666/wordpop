@@ -334,7 +334,8 @@ class Scheduler {
         `).all(...wordlists, remaining);
       }
 
-      this.queue = [...newWords, ...dueReviews];
+      // 复习优先：到期复习词排在前面，确保记忆加固优先于新词输入
+      this.queue = [...dueReviews, ...newWords];
     } catch (e) {
       console.error('[Scheduler] reloadQueue ERROR:', e.message);
       this.queue = [];

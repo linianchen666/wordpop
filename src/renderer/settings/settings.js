@@ -8,8 +8,6 @@ const autoPronounce = document.getElementById('autoPronounce');
 const fontSize = document.getElementById('fontSize');
 const autoStart = document.getElementById('autoStart');
 const autoCheckUpdate = document.getElementById('autoCheckUpdate');
-const pronounceAccent = document.getElementById('pronounceAccent');
-const pronounceAccentRow = document.getElementById('pronounce-accent-row');
 const wordlistOptions = document.getElementById('wordlist-options');
 const positionSelector = document.getElementById('position-selector');
 const btnSave = document.getElementById('btn-save');
@@ -174,48 +172,10 @@ if (dispOptCard) dispOptCard.addEventListener('click', () => setDisplayMode('car
 if (dispOptPill) dispOptPill.addEventListener('click', () => setDisplayMode('pill'));
 
 // === 音色即时试听 ===
-let previewAudio = null;
-function previewVoice(voiceType) {
-  const word = 'brilliant';
-  if (voiceType === 'dict-us' || voiceType === 'dict-uk') {
-    const type = voiceType === 'dict-uk' ? 1 : 2;
-    const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`;
-    if (previewAudio) { previewAudio.pause(); previewAudio.currentTime = 0; }
-    previewAudio = new Audio(url);
-    previewAudio.play().catch(() => synthFallback(word, voiceType));
-    return;
-  }
-  synthFallback(word, voiceType);
-}
-
-function synthFallback(word, voiceType) {
-  try {
-    if (!('speechSynthesis' in window)) return;
-    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
-    const u = new SpeechSynthesisUtterance(word);
-    let pitch = 1.0, rate = 0.9, gender = 'female', lang = /en/i;
-    if (voiceType === 'loli') { pitch = 1.45; rate = 1.05; gender = 'female'; }
-    else if (voiceType === 'mature') { pitch = 0.92; rate = 0.92; gender = 'female'; }
-    else if (voiceType === 'deep-male') { pitch = 0.76; rate = 0.88; gender = 'male'; }
-    else if (voiceType === 'fast') { pitch = 1.05; rate = 1.25; }
-    u.pitch = pitch;
-    u.rate = rate;
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      const en = voices.filter(v => lang.test(v.lang));
-      const list = en.length > 0 ? en : voices;
-      let matched = null;
-      if (gender === 'female') matched = list.find(v => /female|zira|aria|jenny/i.test(v.name));
-      else if (gender === 'male') matched = list.find(v => /male|david|guy/i.test(v.name));
-      u.voice = matched || list[0];
-    }
-    window.speechSynthesis.speak(u);
-  } catch (e) {}
-}
-
 if (btnPreviewVoice) {
   btnPreviewVoice.addEventListener('click', () => {
-    previewVoice(pronounceVoiceSelect.value);
+    const voice = pronounceVoiceSelect ? pronounceVoiceSelect.value : 'dict-us';
+    playWordAudio('brilliant', voice);
   });
 }
 

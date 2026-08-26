@@ -82,14 +82,14 @@ function getPreloadPath() {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'app.asar', 'src', 'preload', 'preload.js');
   }
-  return path.join(__dirname, '..', 'src', 'preload', 'preload.js');
+  return path.join(__dirname, '..', 'preload', 'preload.js');
 }
 
 function getRendererPath(...segments) {
   if (app.isPackaged) {
     return path.join(process.resourcesPath, 'app.asar', 'src', 'renderer', ...segments);
   }
-  return path.join(__dirname, '..', 'src', 'renderer', ...segments);
+  return path.join(__dirname, '..', 'renderer', ...segments);
 }
 
 // ════════════════════════════════════════════╗

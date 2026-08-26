@@ -58,139 +58,7 @@ function enterRevealPhase() {
 
   // 自动发音
   if (currentWord && currentWord.config && currentWord.config.autoPronounce && currentWord.word) {
-    pronounceWord(currentWord.word, currentWord.config.pronounceAccent || 'en-US');
-  }
-}
-
-// === 多角色发音引擎（在线高清原声 + 角色合成引擎） ===
-let activeAudio = null;
-const audioCache = new Map();
-
-function pronounceWord(word, voiceType) {
-  if (!word || typeof word !== 'string') return;
-  const cleanWord = word.trim();
-  if (!cleanWord) return;
-
-  const resolvedVoice = voiceType || (currentWord && currentWord.config && (currentWord.config.pronounceVoice || currentWord.config.pronounceAccent)) || 'dict-us';
-
-  // 1. 标准美音/英音：优先使用词典原生高保真真人录音
-  if (resolvedVoice === 'dict-us' || resolvedVoice === 'en-US' || resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk') {
-    const isUK = resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk';
-    const type = isUK ? 1 : 2;
-    const audioUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(cleanWord)}&type=${type}`;
-    playOnlineAudio(audioUrl, () => fallbackCharacterSynthesis(cleanWord, resolvedVoice));
-    return;
-  }
-
-  // 2. 角色音色（萝莉/御姐/大叔/速记）：调用多音色合成引擎
-  fallbackCharacterSynthesis(cleanWord, resolvedVoice);
-}
-
-function playOnlineAudio(audioUrl, fallbackFn) {
-  try {
-    if (activeAudio) {
-      activeAudio.pause();
-      activeAudio.currentTime = 0;
-    }
-
-    let audio = audioCache.get(audioUrl);
-    if (!audio) {
-      audio = new Audio(audioUrl);
-      if (audioCache.size > 100) {
-        const firstKey = audioCache.keys().next().value;
-        audioCache.delete(firstKey);
-      }
-      audioCache.set(audioUrl, audio);
-    } else {
-      audio.currentTime = 0;
-    }
-
-    activeAudio = audio;
-    let fallbackTriggered = false;
-
-    const triggerFallback = () => {
-      if (!fallbackTriggered) {
-        fallbackTriggered = true;
-        if (fallbackFn) fallbackFn();
-      }
-    };
-
-    const playPromise = audio.play();
-    if (playPromise !== undefined) {
-      playPromise.catch(() => triggerFallback());
-    }
-    audio.onerror = () => triggerFallback();
-  } catch (err) {
-    if (fallbackFn) fallbackFn();
-  }
-}
-
-function fallbackCharacterSynthesis(word, voiceType) {
-  try {
-    if (!('speechSynthesis' in window)) return;
-    if (window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel();
-    }
-
-    const utterance = new SpeechSynthesisUtterance(word);
-    window._lastUtterance = utterance;
-
-    let pitch = 1.0;
-    let rate = 0.9;
-    let gender = 'female';
-    let langPattern = /en/i;
-
-    switch (voiceType) {
-      case 'loli': // 萝莉音 / 软萌少女
-        pitch = 1.45;
-        rate = 1.05;
-        gender = 'female';
-        break;
-      case 'mature': // 御姐音 / 知性优雅
-        pitch = 0.92;
-        rate = 0.92;
-        gender = 'female';
-        break;
-      case 'deep-male': // 磁性大叔音 / 沉稳男声
-        pitch = 0.76;
-        rate = 0.88;
-        gender = 'male';
-        break;
-      case 'fast': // 极速突击音
-        pitch = 1.05;
-        rate = 1.25;
-        gender = 'female';
-        break;
-      case 'dict-uk':
-      case 'en-GB':
-      case 'uk':
-        langPattern = /en[-_]gb/i;
-        break;
-      default:
-        langPattern = /en[-_]us/i;
-        break;
-    }
-
-    utterance.pitch = pitch;
-    utterance.rate = rate;
-
-    const voices = window.speechSynthesis.getVoices();
-    if (voices && voices.length > 0) {
-      const enVoices = voices.filter(v => langPattern.test(v.lang) || /^en/i.test(v.lang));
-      const targetList = enVoices.length > 0 ? enVoices : voices;
-
-      let matchedVoice = null;
-      if (gender === 'female') {
-        matchedVoice = targetList.find(v => /female|zira|aria|jenny|samantha|victoria|karen|susan|huihui/i.test(v.name));
-      } else if (gender === 'male') {
-        matchedVoice = targetList.find(v => /male|david|guy|george|mark|alex|daniel|tom|richard/i.test(v.name));
-      }
-      utterance.voice = matchedVoice || targetList[0];
-    }
-
-    window.speechSynthesis.speak(utterance);
-  } catch (e) {
-    console.error('[Pronounce] Speech synthesis error:', e);
+    playWordAudio(currentWord.word, currentWord.config.pronounceVoice || 'dict-us');
   }
 }
 
@@ -463,8 +331,8 @@ btnMinimize.addEventListener('click', () => {
 // === 点击单词或音标发音 ===
 wordText.addEventListener('click', () => {
   if (!currentWord || !currentWord.word) return;
-  const accent = (currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
-  pronounceWord(currentWord.word, accent);
+  const voice = (currentWord.config && currentWord.config.pronounceVoice) || 'dict-us';
+  playWordAudio(currentWord.word, voice);
 
   // 视觉反馈
   wordText.style.color = 'var(--color-primary)';
@@ -473,8 +341,8 @@ wordText.addEventListener('click', () => {
 
 phoneticText.addEventListener('click', () => {
   if (!currentWord || !currentWord.word) return;
-  const accent = (currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
-  pronounceWord(currentWord.word, accent);
+  const voice = (currentWord.config && currentWord.config.pronounceVoice) || 'dict-us';
+  playWordAudio(currentWord.word, voice);
 
   // 视觉反馈
   phoneticText.style.color = 'var(--color-primary)';

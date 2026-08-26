@@ -17,7 +17,6 @@ const DEFAULT_CONFIG = {
   selectedWordlists: ['cet4'],     // 启用的词库列表
   autoPronounce: true,             // 自动发音
   pronounceVoice: 'dict-us',       // 发音音色：dict-us (标准美音) | dict-uk (标准英音) | loli (萝莉音) | mature (御姐音) | deep-male (大叔音) | fast (速记音)
-  pronounceAccent: 'en-US',       // 兼容保留字段
   autoStart: false,                // 开机自启
   showExample: true,               // 显示例句
   fontSize: 'medium',              // small | medium | large
@@ -52,6 +51,11 @@ function loadConfig() {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, 'utf-8');
       const userConfig = JSON.parse(raw);
+      // 迁移旧版配置中的 pronounceAccent -> pronounceVoice
+      if (userConfig.pronounceAccent && !userConfig.pronounceVoice) {
+        userConfig.pronounceVoice = (userConfig.pronounceAccent === 'en-GB' || userConfig.pronounceAccent === 'uk') ? 'dict-uk' : 'dict-us';
+        delete userConfig.pronounceAccent;
+      }
       cachedConfig = { ...DEFAULT_CONFIG, ...userConfig };
     } else {
       cachedConfig = { ...DEFAULT_CONFIG };
