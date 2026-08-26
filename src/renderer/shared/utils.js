@@ -195,20 +195,16 @@ function playWordAudio(word, voiceType = 'dict-us', options = {}) {
 
   const resolvedVoice = voiceType || 'dict-us';
 
-  // 1. 标准美音/英音：优先播高保真词典真人流，失败自动回退到合成
-  if (resolvedVoice === 'dict-us' || resolvedVoice === 'en-US' || resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk') {
-    const isUK = resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk';
-    const type = isUK ? 1 : 2;
-    const audioUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(cleanWord)}&type=${type}`;
-    _playOnlineStream(audioUrl, () => _playSynthesizedVoice(cleanWord, resolvedVoice));
-    return;
-  }
+  // 判断是否使用英音基础库（知性御姐使用英音底子更合适）
+  const isUK = resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk' || resolvedVoice === 'mature';
+  const type = isUK ? 1 : 2; // 1: UK, 2: US
+  const audioUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(cleanWord)}&type=${type}`;
 
-  // 2. 角色音色（萝莉/御姐/大叔/速记）：调用多音色合成引擎
-  _playSynthesizedVoice(cleanWord, resolvedVoice);
+  // 统一走在线高保真音频流，利用 HTML5 Audio 的 preservesPitch 来实现完美变声
+  _playOnlineStream(audioUrl, resolvedVoice, () => _playSynthesizedVoice(cleanWord, resolvedVoice));
 }
 
-function _playOnlineStream(audioUrl, fallbackFn) {
+function _playOnlineStream(audioUrl, voiceType, fallbackFn) {
   try {
     if (_activeAudio) {
       _activeAudio.pause();
@@ -225,6 +221,29 @@ function _playOnlineStream(audioUrl, fallbackFn) {
       _audioCache.set(audioUrl, audio);
     } else {
       audio.currentTime = 0;
+    }
+
+    // 重置变声参数
+    audio.playbackRate = 1.0;
+    audio.preservesPitch = true;
+    if (typeof audio.mozPreservesPitch !== 'undefined') audio.mozPreservesPitch = true;
+    if (typeof audio.webkitPreservesPitch !== 'undefined') audio.webkitPreservesPitch = true;
+
+    // 应用声色魔法
+    if (voiceType === 'loli') {
+      audio.playbackRate = 1.35;
+      audio.preservesPitch = false;
+      if (typeof audio.mozPreservesPitch !== 'undefined') audio.mozPreservesPitch = false;
+      if (typeof audio.webkitPreservesPitch !== 'undefined') audio.webkitPreservesPitch = false;
+    } else if (voiceType === 'deep-male') {
+      audio.playbackRate = 0.75;
+      audio.preservesPitch = false;
+      if (typeof audio.mozPreservesPitch !== 'undefined') audio.mozPreservesPitch = false;
+      if (typeof audio.webkitPreservesPitch !== 'undefined') audio.webkitPreservesPitch = false;
+    } else if (voiceType === 'mature') {
+      audio.playbackRate = 0.92;
+    } else if (voiceType === 'fast') {
+      audio.playbackRate = 1.25;
     }
 
     _activeAudio = audio;
@@ -342,7 +361,7 @@ function _playSynthesizedVoice(word, voiceType, fallbackToOnline = true) {
       console.warn('[AudioEngine] Utterance error, fallback to online stream:', err);
       if (fallbackToOnline && !hasSpoken) {
         const type = isUK ? 1 : 2;
-        _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`);
+        _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`, voiceType);
       }
     };
 
@@ -352,7 +371,7 @@ function _playSynthesizedVoice(word, voiceType, fallbackToOnline = true) {
       } catch (err) {
         if (fallbackToOnline) {
           const type = isUK ? 1 : 2;
-          _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`);
+          _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`, voiceType);
         }
       }
     }, 30);
