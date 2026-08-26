@@ -233,20 +233,29 @@ function _playOnlineStream(audioUrl, fallbackFn) {
   }
 }
 
-function _playSynthesizedVoice(word, voiceType) {
+function _playSynthesizedVoice(word, voiceType, fallbackToOnline = true) {
   try {
-    if (!('speechSynthesis' in window)) return;
-    if (window.speechSynthesis.speaking) {
-      window.speechSynthesis.cancel();
+    if (!('speechSynthesis' in window)) {
+      if (fallbackToOnline) {
+        _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=2`);
+      }
+      return;
     }
+
+    if (window.speechSynthesis.paused) {
+      try { window.speechSynthesis.resume(); } catch (_) {}
+    }
+    try { window.speechSynthesis.cancel(); } catch (_) {}
 
     const utterance = new SpeechSynthesisUtterance(word);
     window._wordpopUtterance = utterance; // 防止垃圾回收
 
+    const isUK = voiceType === 'dict-uk' || voiceType === 'en-GB' || voiceType === 'uk';
+    utterance.lang = isUK ? 'en-GB' : 'en-US';
+
     let pitch = 1.0;
-    let rate = 0.9;
+    let rate = 0.92;
     let gender = 'female';
-    let langPattern = /en/i;
 
     switch (voiceType) {
       case 'loli': // 软萌少女
@@ -255,13 +264,13 @@ function _playSynthesizedVoice(word, voiceType) {
         gender = 'female';
         break;
       case 'mature': // 知性御姐
-        pitch = 0.92;
-        rate = 0.92;
+        pitch = 0.90;
+        rate = 0.90;
         gender = 'female';
         break;
       case 'deep-male': // 磁性大叔
-        pitch = 0.76;
-        rate = 0.88;
+        pitch = 0.75;
+        rate = 0.85;
         gender = 'male';
         break;
       case 'fast': // 极速突击
@@ -269,36 +278,61 @@ function _playSynthesizedVoice(word, voiceType) {
         rate = 1.25;
         gender = 'female';
         break;
-      case 'dict-uk':
-      case 'en-GB':
-      case 'uk':
-        langPattern = /en[-_]gb/i;
-        break;
       default:
-        langPattern = /en[-_]us/i;
+        pitch = 1.0;
+        rate = 0.92;
         break;
     }
 
     utterance.pitch = pitch;
     utterance.rate = rate;
 
+    // 匹配最适合的英语发音人
     const voices = window.speechSynthesis.getVoices();
     if (voices && voices.length > 0) {
+      const langPattern = isUK ? /en[-_]gb/i : /en[-_]us|en/i;
       const enVoices = voices.filter(v => langPattern.test(v.lang) || /^en/i.test(v.lang));
       const targetList = enVoices.length > 0 ? enVoices : voices;
 
       let matchedVoice = null;
       if (gender === 'female') {
-        matchedVoice = targetList.find(v => /female|zira|aria|jenny|samantha|victoria|karen|susan|huihui/i.test(v.name));
+        matchedVoice = targetList.find(v => /female|zira|aria|jenny|samantha|victoria|karen|susan|catherine|hazel/i.test(v.name));
       } else if (gender === 'male') {
         matchedVoice = targetList.find(v => /male|david|guy|george|mark|alex|daniel|tom|richard/i.test(v.name));
       }
-      utterance.voice = matchedVoice || targetList[0];
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+      } else if (targetList.length > 0) {
+        utterance.voice = targetList[0];
+      }
     }
 
-    window.speechSynthesis.speak(utterance);
+    let hasSpoken = false;
+    utterance.onstart = () => { hasSpoken = true; };
+    utterance.onerror = (err) => {
+      console.warn('[AudioEngine] Utterance error, fallback to online stream:', err);
+      if (fallbackToOnline && !hasSpoken) {
+        const type = isUK ? 1 : 2;
+        _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`);
+      }
+    };
+
+    setTimeout(() => {
+      try {
+        window.speechSynthesis.speak(utterance);
+      } catch (err) {
+        if (fallbackToOnline) {
+          const type = isUK ? 1 : 2;
+          _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`);
+        }
+      }
+    }, 30);
+
   } catch (e) {
     console.error('[AudioEngine] Synthesis error:', e);
+    if (fallbackToOnline) {
+      _playOnlineStream(`https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=2`);
+    }
   }
 }
 

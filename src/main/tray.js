@@ -102,9 +102,11 @@ function buildMenu(status) {
   } else if (status && status.nextReviewAt) {
     const diff = status.nextReviewAt - Date.now();
     if (diff <= 0) {
-      nextLabel = '⏱ 即将弹出...';
+      nextLabel = '⏱ 单词即将弹出...';
+    } else if (diff < 60000) {
+      nextLabel = '⏱ 单词即将弹出 (1分钟内)';
     } else {
-      const mins = Math.max(1, Math.floor(diff / 60000));
+      const mins = Math.max(1, Math.ceil(diff / 60000));
       const hours = Math.floor(mins / 60);
       const days = Math.floor(hours / 24);
 
@@ -354,15 +356,21 @@ function updateStatus(status) {
       tray.setToolTip('WordPop - 正在学习');
     } else if (status && status.nextReviewAt) {
       const diff = status.nextReviewAt - Date.now();
-      const mins = Math.max(0, Math.floor(diff / 60000));
-      const hours = Math.floor(mins / 60);
-      const days = Math.floor(hours / 24);
-      if (days > 0) {
-        tray.setToolTip('WordPop - 今日单词已背完');
-      } else if (hours > 0) {
-        tray.setToolTip(`WordPop - 下个单词: ${hours}时${mins % 60}分后`);
+      if (diff <= 0) {
+        tray.setToolTip('WordPop - 单词即将弹出');
+      } else if (diff < 60000) {
+        tray.setToolTip('WordPop - 单词即将弹出 (1分钟内)');
       } else {
-        tray.setToolTip(`WordPop - 下个单词: ${mins}分钟后`);
+        const mins = Math.max(1, Math.ceil(diff / 60000));
+        const hours = Math.floor(mins / 60);
+        const days = Math.floor(hours / 24);
+        if (days > 0) {
+          tray.setToolTip('WordPop - 今日单词已背完');
+        } else if (hours > 0) {
+          tray.setToolTip(`WordPop - 下个单词: ${hours}时${mins % 60}分后`);
+        } else {
+          tray.setToolTip(`WordPop - 下个单词: ${mins}分钟后`);
+        }
       }
     } else if (status && !status.hasUnmasteredWords) {
       tray.setToolTip('WordPop - 所有单词已掌握！');

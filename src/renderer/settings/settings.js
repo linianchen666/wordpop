@@ -83,11 +83,21 @@ function debounce(fn, delay) {
 // === 初始化：加载当前配置 ===
 async function init() {
   try {
-    currentConfig = await window.wordpopAPI.getConfig();
-    availableWordlists = await window.wordpopAPI.getWordlists();
+    currentConfig = (await window.wordpopAPI.getConfig()) || {};
   } catch (err) {
     console.error('Failed to load config:', err);
-    return;
+    currentConfig = {};
+  }
+
+  try {
+    availableWordlists = (await window.wordpopAPI.getWordlists()) || [];
+  } catch (err) {
+    console.error('Failed to load wordlists:', err);
+    availableWordlists = [
+      { id: 'cet4', name: 'CET-4 四级', count: 4544, isImported: false },
+      { id: 'cet6', name: 'CET-6 六级', count: 3991, isImported: false },
+      { id: 'kaoyan', name: '考研词汇', count: 5047, isImported: false }
+    ];
   }
 
   // 填充表单 — 每日新词（支持自定义值）
@@ -175,7 +185,14 @@ if (dispOptPill) dispOptPill.addEventListener('click', () => setDisplayMode('pil
 if (btnPreviewVoice) {
   btnPreviewVoice.addEventListener('click', () => {
     const voice = pronounceVoiceSelect ? pronounceVoiceSelect.value : 'dict-us';
+    const oldText = btnPreviewVoice.textContent;
+    btnPreviewVoice.textContent = '🔊 播放中...';
+    btnPreviewVoice.disabled = true;
     playWordAudio('brilliant', voice);
+    setTimeout(() => {
+      btnPreviewVoice.textContent = oldText;
+      btnPreviewVoice.disabled = false;
+    }, 1000);
   });
 }
 

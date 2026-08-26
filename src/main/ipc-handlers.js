@@ -68,14 +68,50 @@ ipcMain.handle('config:save', (_ev, config) => {
 // ═════════════════════════╝
 
 ipcMain.handle('wordlists:get', () => {
-  const index = getWordlistIndex();
-  const db = getDb();
-  for (const e of index) {
-    const r = db.prepare('SELECT COUNT(DISTINCT word_id) c FROM word_wordlists WHERE wordlist = ?').get(e.id);
-    e.importedCount = r ? r.c : 0;
-    e.isImported = e.importedCount > 0;
+  try {
+    const index = getWordlistIndex();
+    const db = getDb();
+    for (const e of index) {
+      try {
+        const r = db.prepare('SELECT COUNT(DISTINCT word_id) c FROM word_wordlists WHERE wordlist = ?').get(e.id);
+        e.importedCount = r ? r.c : 0;
+        e.isImported = e.importedCount > 0;
+      } catch (e2) {
+        e.importedCount = 0;
+        e.isImported = false;
+      }
+    }
+    // 自动合并用户自定义导入的词表 (custom_*)
+    try {
+      const customLists = db.prepare(`
+        SELECT DISTINCT wordlist as id, COUNT(DISTINCT word_id) as importedCount
+        FROM word_wordlists
+        WHERE wordlist NOT IN ('cet4', 'cet6', 'kaoyan')
+        GROUP BY wordlist
+      `).all();
+      for (const cl of customLists) {
+        if (!index.some(x => x.id === cl.id)) {
+          index.push({
+            id: cl.id,
+            name: '自定义词表 (' + cl.id + ')',
+            file: '',
+            count: cl.importedCount,
+            importedCount: cl.importedCount,
+            isImported: true
+          });
+        }
+      }
+    } catch (e3) {}
+
+    return index;
+  } catch (err) {
+    console.error('[IPC] wordlists:get error:', err.message);
+    return [
+      { id: 'cet4', name: 'CET-4 四级', count: 4544, isImported: false },
+      { id: 'cet6', name: 'CET-6 六级', count: 3991, isImported: false },
+      { id: 'kaoyan', name: '考研词汇', count: 5047, isImported: false }
+    ];
   }
-  return index;
 });
 
 ipcMain.handle('wordlist:import', (_ev, id) => {
