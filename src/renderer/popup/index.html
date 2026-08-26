@@ -13,6 +13,7 @@
     <!-- 标题栏 -->
     <div class="popup-header">
       <span class="popup-title">📖 WordPop</span>
+      <span class="batch-dots" id="batch-dots" title="本轮批次进度"></span>
       <span class="popup-progress" id="progress-text">--</span>
       <div class="popup-actions">
         <button class="popup-btn-icon btn-mastered-icon hidden" id="btn-mastered" title="熟知：标记为已掌握，不再复习">★</button>
@@ -51,6 +52,14 @@
       <button class="btn btn-lg btn-success btn-action" id="btn-known">
         ✓ 认识
       </button>
+    </div>
+
+    <!-- 批次完成微结算卡片 -->
+    <div class="batch-complete-card hidden" id="batch-complete-card">
+      <div class="batch-complete-icon">✨</div>
+      <div class="batch-complete-title">本轮复习完成</div>
+      <div class="batch-complete-sub" id="batch-complete-sub">下次提醒：10 分钟后</div>
+      <button class="btn btn-sm btn-primary btn-next-batch" id="btn-next-batch">立即下一轮 ▶</button>
     </div>
 
     <!-- 进度指示器 -->

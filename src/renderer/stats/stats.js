@@ -293,6 +293,14 @@ window.addEventListener('resize', () => {
   }, 500);
 });
 
+// === 启动专注刷词模式 ===
+const btnFocus = document.getElementById('btn-focus');
+if (btnFocus) {
+  btnFocus.addEventListener('click', () => {
+    window.wordpopAPI.openFocusSession();
+  });
+}
+
 // === 初始化 ===
 loadStats();
 runDiagnose(); // 自动检查数据库健康状态

@@ -11,7 +11,11 @@ let popupConfig = {
   showExample: true,
   theme: 'light',
   autoPronounce: true,
-  pronounceAccent: 'en-US'
+  pronounceAccent: 'en-US',
+  pronounceVoice: 'dict-us',
+  displayMode: 'card',
+  batchSize: 3,
+  cooldownMinutes: 10
 };
 
 /**
@@ -36,11 +40,12 @@ function createPopupWindow() {
   pendingWordData = null;
 
   try {
-    const bounds = getPopupBounds(popupConfig.position);
+    const isPill = popupConfig.displayMode === 'pill';
+    const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
 
     popupWindow = new BrowserWindow({
-      width: 380,
-      height: 440,
+      width: isPill ? 320 : 380,
+      height: isPill ? 56 : 440,
       x: bounds.x,
       y: bounds.y,
       frame: false,
@@ -49,11 +54,9 @@ function createPopupWindow() {
       alwaysOnTop: true,
       focusable: true,
       show: false,
-      transparent: false,
+      transparent: isPill,
       hasShadow: true,
-      backgroundColor: '#FFFFFF',
-      // 关键：允许窗口在不获取焦点的情况下显示
-      // 弹窗自动弹出时不抢焦点，用户点击时才获得焦点
+      backgroundColor: isPill ? '#00000000' : '#FFFFFF',
       webPreferences: {
         preload: getAsarPath('src', 'preload', 'preload.js'),
         contextIsolation: true,
@@ -138,8 +141,13 @@ function _displayWord(wordData) {
   }
 
   try {
-    const bounds = getPopupBounds(popupConfig.position);
-    popupWindow.setBounds({ ...bounds, width: 380, height: 440 });
+    const isPill = popupConfig.displayMode === 'pill';
+    const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
+    popupWindow.setBounds({
+      ...bounds,
+      width: isPill ? 320 : 380,
+      height: isPill ? 56 : 440
+    });
 
     popupWindow.webContents.send('popup:word', {
       ...wordData,
@@ -148,18 +156,37 @@ function _displayWord(wordData) {
         fontSize: popupConfig.fontSize,
         theme: popupConfig.theme,
         autoPronounce: popupConfig.autoPronounce,
-        pronounceAccent: popupConfig.pronounceAccent
+        pronounceAccent: popupConfig.pronounceAccent,
+        pronounceVoice: popupConfig.pronounceVoice || 'dict-us',
+        displayMode: popupConfig.displayMode || 'card'
       }
     });
 
-    // 弹窗显示但不抢焦点：用 showInactive() 让弹窗可见但不中断用户当前操作
-    // alwaysOnTop 确保弹窗在最前面可见
-    // 用户想操作弹窗时点击即可获得焦点
     if (!popupWindow.isVisible()) popupWindow.showInactive();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
   } catch (err) {
     console.error('[Popup] _displayWord ERROR:', err.message, err.stack);
+  }
+}
+
+/**
+ * 显示批次完成微结算卡片
+ */
+function showBatchCompletion(data) {
+  if (!popupWindow || popupWindow.isDestroyed()) return;
+  try {
+    popupWindow.webContents.send('popup:batch-completed', data);
+    // 2.8 秒后优雅隐退
+    setTimeout(() => {
+      try {
+        if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
+          popupWindow.hide();
+        }
+      } catch (e) {}
+    }, 2800);
+  } catch (e) {
+    console.error('[Popup] showBatchCompletion error:', e.message);
   }
 }
 
@@ -175,7 +202,6 @@ function restore() {
       createPopupWindow();
       return;
     }
-    // 恢复弹窗但不抢焦点
     if (!popupWindow.isVisible()) popupWindow.showInactive();
     popupWindow.setAlwaysOnTop(true, 'floating');
     popupWindow.moveTop();
@@ -190,10 +216,13 @@ function closeImmediately() {
   popupReady = false;
 }
 
-function getPopupBounds(position) {
+function getPopupBounds(position, displayMode = 'card') {
   try {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    const W = 380, H = 440, M = 20;
+    const isPill = displayMode === 'pill';
+    const W = isPill ? 320 : 380;
+    const H = isPill ? 56 : 440;
+    const M = 20;
     switch (position) {
       case 'top-left':     return { x: M, y: M };
       case 'top-right':    return { x: width - W - M, y: M };
@@ -210,11 +239,20 @@ function updateConfig(cfg) {
   if (cfg.theme !== undefined) popupConfig.theme = cfg.theme;
   if (cfg.autoPronounce !== undefined) popupConfig.autoPronounce = cfg.autoPronounce;
   if (cfg.pronounceAccent !== undefined) popupConfig.pronounceAccent = cfg.pronounceAccent;
+  if (cfg.pronounceVoice !== undefined) popupConfig.pronounceVoice = cfg.pronounceVoice;
+  if (cfg.displayMode !== undefined) popupConfig.displayMode = cfg.displayMode;
+  if (cfg.batchSize !== undefined) popupConfig.batchSize = cfg.batchSize;
+  if (cfg.cooldownMinutes !== undefined) popupConfig.cooldownMinutes = cfg.cooldownMinutes;
 
-  // 如果弹窗正在显示，立即移动到新位置
+  // 如果弹窗正在显示，立即调整尺寸与位置
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
-    const bounds = getPopupBounds(popupConfig.position);
-    popupWindow.setBounds({ ...bounds, width: 380, height: 440 });
+    const isPill = popupConfig.displayMode === 'pill';
+    const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
+    popupWindow.setBounds({
+      ...bounds,
+      width: isPill ? 320 : 380,
+      height: isPill ? 56 : 440
+    });
   }
 }
 
@@ -222,10 +260,6 @@ function isVisible() {
   return popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible();
 }
 
-/**
- * 判断弹窗是否有当前单词可显示
- * 用于托盘「显示弹窗」按钮：有单词则恢复，无单词则不操作
- */
 function hasCurrentWord() {
   return popupWindow && !popupWindow.isDestroyed();
 }
@@ -234,5 +268,5 @@ function destroy() { closeImmediately(); }
 
 module.exports = {
   createPopupWindow, show, hide, restore, closeImmediately,
-  updateConfig, isVisible, hasCurrentWord, waitForReady, destroy
+  showBatchCompletion, updateConfig, isVisible, hasCurrentWord, waitForReady, destroy
 };

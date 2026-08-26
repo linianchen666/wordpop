@@ -95,6 +95,51 @@
         </div>
       </div>
 
+      <!-- 弹出节奏与防打扰 -->
+      <div class="form-group">
+        <label class="form-label">⏱️ 弹出节奏与防打扰</label>
+        <div class="toggle-row">
+          <span>单次弹出批次</span>
+          <select class="form-select form-select-sm" id="batchSize" style="min-width: 150px;">
+            <option value="1">1 词即走（极简）</option>
+            <option value="3" selected>3 词一轮（推荐）</option>
+            <option value="5">5 词一组（小冲刺）</option>
+            <option value="0">连续不间断</option>
+          </select>
+        </div>
+        <div class="toggle-row">
+          <span>批次完成冷却时间</span>
+          <select class="form-select form-select-sm" id="cooldownMinutes" style="min-width: 150px;">
+            <option value="1">1 分钟（快速）</option>
+            <option value="3">3 分钟</option>
+            <option value="5">5 分钟</option>
+            <option value="10" selected>10 分钟（推荐）</option>
+            <option value="15">15 分钟</option>
+            <option value="30">30 分钟（专注工作）</option>
+          </select>
+        </div>
+        <span class="form-hint">完成一轮批次后自动静默隐退，绝不连环轰炸，保持工作心流</span>
+      </div>
+
+      <!-- 弹窗显示形态 -->
+      <div class="form-group">
+        <label class="form-label">🎨 弹窗显示形态</label>
+        <div class="mode-selector" id="display-mode-selector">
+          <div class="mode-option active" data-display="card" id="disp-opt-card">🗂️ 标准精致卡片</div>
+          <div class="mode-option" data-display="pill" id="disp-opt-pill">💊 灵动极简胶囊</div>
+        </div>
+        <span class="form-hint">灵动胶囊常驻屏幕边缘，极窄透明毛玻璃，绝不遮挡任何代码或文档工作区</span>
+      </div>
+
+      <!-- 沉浸专注刷词模式入口 -->
+      <div class="form-group">
+        <label class="form-label">🚀 沉浸专注刷词模式</label>
+        <div>
+          <button class="btn btn-sm btn-primary" id="btn-open-focus" style="width: 100%;">🚀 启动 20 词沉浸专注冲刺</button>
+        </div>
+        <span class="form-hint">全屏居中大字面板，专用于考前冲刺、番茄钟休息或集中消灭积压</span>
+      </div>
+
       <!-- 弹窗位置 -->
       <div class="form-group">
         <label class="form-label">📍 弹窗位置</label>
@@ -117,16 +162,9 @@
         </div>
       </div>
 
-      <!-- 显示选项 -->
+      <!-- 发音与音色 -->
       <div class="form-group">
-        <label class="form-label">👁 显示选项</label>
-        <div class="toggle-row">
-          <span>显示例句</span>
-          <label class="toggle">
-            <input type="checkbox" id="showExample" checked>
-            <span class="toggle-slider"></span>
-          </label>
-        </div>
+        <label class="form-label">🎙️ 发音与音色角色</label>
         <div class="toggle-row">
           <span>显示释义时自动朗读</span>
           <label class="toggle">
@@ -134,12 +172,19 @@
             <span class="toggle-slider"></span>
           </label>
         </div>
-        <div class="toggle-row sub-option" id="pronounce-accent-row" style="display:none">
-          <span>朗读口音</span>
-          <select class="form-select form-select-sm" id="pronounceAccent">
-            <option value="en-US">🇺🇸 美式英语</option>
-            <option value="en-GB">🇬🇧 英式英语</option>
-          </select>
+        <div class="toggle-row" id="pronounce-voice-row">
+          <span>发音音色角色</span>
+          <div style="display: flex; gap: 8px; align-items: center;">
+            <select class="form-select form-select-sm" id="pronounceVoice" style="min-width: 170px;">
+              <option value="dict-us">🇺🇸 标准美音（词典原声）</option>
+              <option value="dict-uk">🇬🇧 标准英音（词典原声）</option>
+              <option value="loli">🎀 软萌少女（萝莉音）</option>
+              <option value="mature">👠 知性御姐（成熟女声）</option>
+              <option value="deep-male">🎩 磁性大叔（沉稳男声）</option>
+              <option value="fast">⚡ 极速突击（强化磨耳）</option>
+            </select>
+            <button class="btn btn-sm btn-ghost" id="btn-preview-voice" title="试听当前音色">🔊 试听</button>
+          </div>
         </div>
       </div>
 

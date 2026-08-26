@@ -58,6 +58,7 @@ class Scheduler {
     this.isPaused = false;
     this.dailyNewWordsLimit = 20;
     this.dailyNewWordsCount = 0;
+    this.currentBatchCount = 0;
     this._onStatsUpdate = null;
     this._onWordPop = null;
     this._lastDate = null;
@@ -166,6 +167,10 @@ class Scheduler {
       console.error('[Scheduler] analyzeWord error:', e.message);
     }
 
+    const config = loadConfig();
+    const batchSize = config.batchSize !== undefined ? config.batchSize : 3;
+    const cooldownMinutes = config.cooldownMinutes !== undefined ? config.cooldownMinutes : 10;
+
     try {
       popupManager.show({
         id: word.id,
@@ -176,7 +181,10 @@ class Scheduler {
         isNew: word.stage === undefined || word.stage === 0,
         progress: progress,
         queueRemaining: this.queue.length,
-        etymology: etymology
+        etymology: etymology,
+        batchIndex: (this.currentBatchCount % (batchSize || 1)) + 1,
+        batchSize: batchSize,
+        cooldownMinutes: cooldownMinutes
       });
     } catch (e) {
       console.error('[Scheduler] _showWord ERROR:', e.message);
@@ -553,7 +561,43 @@ class Scheduler {
     if (this._onStatsUpdate) {
       try { this._onStatsUpdate(); } catch (e) {}
     }
+
+    this.currentBatchCount = (this.currentBatchCount || 0) + 1;
+    const config = loadConfig();
+    const batchSize = config.batchSize !== undefined ? config.batchSize : 3;
+    const cooldownMinutes = config.cooldownMinutes !== undefined ? config.cooldownMinutes : 10;
+
+    // 如果启用了微批次限额 (batchSize > 0)，且当前批次已达到上限
+    if (batchSize > 0 && this.currentBatchCount >= batchSize) {
+      this.currentBatchCount = 0;
+      // 触发弹窗展示微结算卡片并冷却
+      try {
+        popupManager.showBatchCompletion({
+          batchSize,
+          cooldownMinutes,
+          queueRemaining: this.queue.length
+        });
+      } catch (e) {}
+
+      // 设置冷却时间后的下一次弹出
+      const cooldownMs = Math.max(1000, cooldownMinutes * 60 * 1000);
+      this.nextPopupTimer = setTimeout(() => this._popNext(), cooldownMs);
+      return;
+    }
+
     this.nextPopupTimer = setTimeout(() => this._popNext(), 300);
+  }
+
+  /**
+   * 立即开始下一轮批次学习（跳过冷却等待）
+   */
+  triggerNextBatchNow() {
+    if (this.nextPopupTimer) {
+      clearTimeout(this.nextPopupTimer);
+      this.nextPopupTimer = null;
+    }
+    this.currentBatchCount = 0;
+    this._popNext();
   }
 
   /**

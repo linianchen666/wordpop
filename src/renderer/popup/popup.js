@@ -62,21 +62,31 @@ function enterRevealPhase() {
   }
 }
 
-// === 双引擎发音系统（在线真人高保真发音 + 本地 Web Speech API 兜底） ===
+// === 多角色发音引擎（在线高清原声 + 角色合成引擎） ===
 let activeAudio = null;
 const audioCache = new Map();
 
-function pronounceWord(word, accent) {
+function pronounceWord(word, voiceType) {
   if (!word || typeof word !== 'string') return;
   const cleanWord = word.trim();
   if (!cleanWord) return;
 
-  const resolvedAccent = accent || (currentWord && currentWord.config && currentWord.config.pronounceAccent) || 'en-US';
-  const isUK = resolvedAccent === 'en-GB' || resolvedAccent === 'uk';
-  const type = isUK ? 1 : 2;
-  const audioUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(cleanWord)}&type=${type}`;
+  const resolvedVoice = voiceType || (currentWord && currentWord.config && (currentWord.config.pronounceVoice || currentWord.config.pronounceAccent)) || 'dict-us';
 
-  // 1. 优先使用真人原生高清发音
+  // 1. 标准美音/英音：优先使用词典原生高保真真人录音
+  if (resolvedVoice === 'dict-us' || resolvedVoice === 'en-US' || resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk') {
+    const isUK = resolvedVoice === 'dict-uk' || resolvedVoice === 'en-GB' || resolvedVoice === 'uk';
+    const type = isUK ? 1 : 2;
+    const audioUrl = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(cleanWord)}&type=${type}`;
+    playOnlineAudio(audioUrl, () => fallbackCharacterSynthesis(cleanWord, resolvedVoice));
+    return;
+  }
+
+  // 2. 角色音色（萝莉/御姐/大叔/速记）：调用多音色合成引擎
+  fallbackCharacterSynthesis(cleanWord, resolvedVoice);
+}
+
+function playOnlineAudio(audioUrl, fallbackFn) {
   try {
     if (activeAudio) {
       activeAudio.pause();
@@ -101,29 +111,21 @@ function pronounceWord(word, accent) {
     const triggerFallback = () => {
       if (!fallbackTriggered) {
         fallbackTriggered = true;
-        fallbackSpeechSynthesis(cleanWord, resolvedAccent);
+        if (fallbackFn) fallbackFn();
       }
     };
 
     const playPromise = audio.play();
     if (playPromise !== undefined) {
-      playPromise.catch((err) => {
-        console.warn('[Pronounce] Online audio play failed, falling back:', err);
-        triggerFallback();
-      });
+      playPromise.catch(() => triggerFallback());
     }
-
-    audio.onerror = () => {
-      triggerFallback();
-    };
+    audio.onerror = () => triggerFallback();
   } catch (err) {
-    console.warn('[Pronounce] Audio constructor error, falling back:', err);
-    fallbackSpeechSynthesis(cleanWord, resolvedAccent);
+    if (fallbackFn) fallbackFn();
   }
 }
 
-// 兜底发音：Web Speech API
-function fallbackSpeechSynthesis(word, accent) {
+function fallbackCharacterSynthesis(word, voiceType) {
   try {
     if (!('speechSynthesis' in window)) return;
     if (window.speechSynthesis.speaking) {
@@ -131,32 +133,99 @@ function fallbackSpeechSynthesis(word, accent) {
     }
 
     const utterance = new SpeechSynthesisUtterance(word);
-    utterance.lang = accent || 'en-US';
-    utterance.rate = 0.85;
-    utterance.pitch = 1.0;
-
-    // 防止 V8 垃圾回收 utterance 对象导致中断
     window._lastUtterance = utterance;
+
+    let pitch = 1.0;
+    let rate = 0.9;
+    let gender = 'female';
+    let langPattern = /en/i;
+
+    switch (voiceType) {
+      case 'loli': // 萝莉音 / 软萌少女
+        pitch = 1.45;
+        rate = 1.05;
+        gender = 'female';
+        break;
+      case 'mature': // 御姐音 / 知性优雅
+        pitch = 0.92;
+        rate = 0.92;
+        gender = 'female';
+        break;
+      case 'deep-male': // 磁性大叔音 / 沉稳男声
+        pitch = 0.76;
+        rate = 0.88;
+        gender = 'male';
+        break;
+      case 'fast': // 极速突击音
+        pitch = 1.05;
+        rate = 1.25;
+        gender = 'female';
+        break;
+      case 'dict-uk':
+      case 'en-GB':
+      case 'uk':
+        langPattern = /en[-_]gb/i;
+        break;
+      default:
+        langPattern = /en[-_]us/i;
+        break;
+    }
+
+    utterance.pitch = pitch;
+    utterance.rate = rate;
 
     const voices = window.speechSynthesis.getVoices();
     if (voices && voices.length > 0) {
-      const isUK = accent === 'en-GB' || accent === 'uk';
-      const langPattern = isUK ? /en[-_]gb/i : /en[-_]us/i;
-      const matchedVoice = voices.find(v => langPattern.test(v.lang)) || voices.find(v => /^en/i.test(v.lang));
-      if (matchedVoice) {
-        utterance.voice = matchedVoice;
+      const enVoices = voices.filter(v => langPattern.test(v.lang) || /^en/i.test(v.lang));
+      const targetList = enVoices.length > 0 ? enVoices : voices;
+
+      let matchedVoice = null;
+      if (gender === 'female') {
+        matchedVoice = targetList.find(v => /female|zira|aria|jenny|samantha|victoria|karen|susan|huihui/i.test(v.name));
+      } else if (gender === 'male') {
+        matchedVoice = targetList.find(v => /male|david|guy|george|mark|alex|daniel|tom|richard/i.test(v.name));
       }
+      utterance.voice = matchedVoice || targetList[0];
     }
 
     window.speechSynthesis.speak(utterance);
   } catch (e) {
-    console.error('[Pronounce] Fallback speech synthesis error:', e);
+    console.error('[Pronounce] Speech synthesis error:', e);
   }
 }
 
 // === 接收单词数据 ===
 window.wordpopAPI.onWordData((data) => {
   currentWord = data;
+
+  // 隐藏批次结算卡片（如果有）
+  const batchCompleteCard = document.getElementById('batch-complete-card');
+  if (batchCompleteCard) batchCompleteCard.classList.add('hidden');
+
+  // 形态切换：卡片 vs 胶囊
+  if (data.config && data.config.displayMode === 'pill') {
+    document.body.classList.add('pill-mode');
+  } else {
+    document.body.classList.remove('pill-mode');
+  }
+
+  // 渲染微批次小圆点
+  const batchDotsEl = document.getElementById('batch-dots');
+  if (batchDotsEl) {
+    if (data.batchSize && data.batchSize > 0) {
+      const idx = data.batchIndex || 1;
+      let dotsHtml = '';
+      for (let i = 1; i <= data.batchSize; i++) {
+        if (i < idx) dotsHtml += '<span class="batch-dot filled"></span>';
+        else if (i === idx) dotsHtml += '<span class="batch-dot current"></span>';
+        else dotsHtml += '<span class="batch-dot"></span>';
+      }
+      batchDotsEl.innerHTML = dotsHtml;
+      batchDotsEl.style.display = 'inline-flex';
+    } else {
+      batchDotsEl.style.display = 'none';
+    }
+  }
 
   // 更新显示
   wordText.textContent = data.word;
@@ -476,3 +545,24 @@ document.addEventListener('keydown', (e) => {
       break;
   }
 });
+
+// === 批次完成结算事件监听 ===
+const batchCompleteCard = document.getElementById('batch-complete-card');
+const batchCompleteSub = document.getElementById('batch-complete-sub');
+const btnNextBatch = document.getElementById('btn-next-batch');
+
+window.wordpopAPI.onBatchCompleted((data) => {
+  if (batchCompleteCard) {
+    if (batchCompleteSub) {
+      batchCompleteSub.textContent = `下次提醒：约 ${data.cooldownMinutes || 10} 分钟后`;
+    }
+    batchCompleteCard.classList.remove('hidden');
+  }
+});
+
+if (btnNextBatch) {
+  btnNextBatch.addEventListener('click', () => {
+    if (batchCompleteCard) batchCompleteCard.classList.add('hidden');
+    window.wordpopAPI.triggerNextBatch();
+  });
+}

@@ -9,10 +9,15 @@ const DEFAULT_CONFIG = {
   dailyNewWordsMode: 'fixed',      // fixed (固定词量) | target (智能目标模式)
   autoBalanceLoad: true,           // 智能负荷动态平衡：复习过多时自动削减/暂停新词
   maxDynamicNewWords: 50,          // 智能模式每日新词上限
+  batchSize: 3,                    // 单次弹窗批次词数：1, 3, 5, 0 (0为连续不间断)
+  cooldownMinutes: 10,             // 批次完成后的静默冷却时间（分钟）：1, 3, 5, 10, 15, 30
+  displayMode: 'card',             // card (标准卡片 380x440) | pill (灵动胶囊 300x54)
+  smartDisturbance: true,          // 智能打扰感知：高强度打字时暂缓弹出
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
   selectedWordlists: ['cet4'],     // 启用的词库列表
   autoPronounce: true,             // 自动发音
-  pronounceAccent: 'en-US',       // 发音口音：en-US (美式) | en-GB (英式)
+  pronounceVoice: 'dict-us',       // 发音音色：dict-us (标准美音) | dict-uk (标准英音) | loli (萝莉音) | mature (御姐音) | deep-male (大叔音) | fast (速记音)
+  pronounceAccent: 'en-US',       // 兼容保留字段
   autoStart: false,                // 开机自启
   showExample: true,               // 显示例句
   fontSize: 'medium',              // small | medium | large

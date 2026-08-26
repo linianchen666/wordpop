@@ -4,6 +4,7 @@ const { handleExportBackup, handleImportBackup } = require('./backup');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
 const popupManager = require('./popup-manager');
+const { openFocusWindow, closeFocusWindow, getFocusWords, submitFocusWord } = require('./focus-manager');
 const { startAutoUpdateCheck } = require('./tray');
 
 // ═════════════════════════╗
@@ -176,6 +177,41 @@ ipcMain.handle('reviews:smooth-overdue', (_event, days) => {
 
 ipcMain.handle('scheduler:quota-info', () => {
   return scheduler.getDynamicQuotaInfo();
+});
+
+ipcMain.handle('scheduler:trigger-next-batch', () => {
+  scheduler.triggerNextBatchNow();
+  return { success: true };
+});
+
+// ═════════════════════════╗
+//  沉浸专注刷词模式 (Focus)
+// ═════════════════════════╝
+
+ipcMain.handle('focus:open', () => {
+  openFocusWindow();
+  return { success: true };
+});
+
+ipcMain.handle('focus:close', () => {
+  closeFocusWindow();
+  return { success: true };
+});
+
+ipcMain.handle('focus:get-words', (_event, count) => {
+  const config = loadConfig();
+  const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
+    ? config.selectedWordlists
+    : ['cet4'];
+  return getFocusWords(count, wordlists);
+});
+
+ipcMain.handle('focus:submit-word', (_event, wordId, action) => {
+  const res = submitFocusWord(wordId, action);
+  BrowserWindow.getAllWindows().forEach(w => {
+    if (!w.isDestroyed()) w.webContents.send('stats:updated');
+  });
+  return res;
 });
 
 // ═════════════════════════╗

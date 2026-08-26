@@ -38,11 +38,18 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   exportBackup:       ()  => ipcRenderer.invoke('backup:export'),
   importBackup:       ()  => ipcRenderer.invoke('backup:import'),
 
-  // === 调度器操作与积压平摊 ===
+  // === 调度器操作、批次与积压平摊 ===
   getSchedulerStatus:  ()  => ipcRenderer.invoke('scheduler:status'),
   getDynamicQuotaInfo: ()  => ipcRenderer.invoke('scheduler:quota-info'),
   smoothOverdueReviews:(d) => ipcRenderer.invoke('reviews:smooth-overdue', d),
+  triggerNextBatch:    ()  => ipcRenderer.invoke('scheduler:trigger-next-batch'),
   togglePause:        ()  => ipcRenderer.invoke('scheduler:toggle-pause'),
+
+  // === 沉浸专注刷词模式 ===
+  openFocusSession:   ()   => ipcRenderer.invoke('focus:open'),
+  closeFocusSession:  ()   => ipcRenderer.invoke('focus:close'),
+  getFocusWords:      (c)  => ipcRenderer.invoke('focus:get-words', c),
+  submitFocusWord:    (id, a) => ipcRenderer.invoke('focus:submit-word', id, a),
 
   // === 系统操作 ===
   quitApp:            ()  => ipcRenderer.send('app:quit'),
@@ -51,4 +58,5 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   onConfigChanged:    (cb) => ipcRenderer.on('config:changed',   (_e,c) => cb(c)),
   onStatsUpdated:    (cb) => ipcRenderer.on('stats:updated',   () => cb()),
   onScrollToStubborn: (cb) => ipcRenderer.on('stats:scroll-to-stubborn', () => cb()),
+  onBatchCompleted:   (cb) => ipcRenderer.on('popup:batch-completed', (_e,d) => cb(d)),
 });

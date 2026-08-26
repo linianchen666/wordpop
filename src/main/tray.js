@@ -138,6 +138,17 @@ function buildMenu(status) {
       click: () => { try { if (trayOptions.onShowPopup) trayOptions.onShowPopup(); } catch (e) {} }
     },
     {
+      label: '🚀 沉浸专注刷词 (Focus)',
+      click: () => {
+        try {
+          const { openFocusWindow } = require('./focus-manager');
+          openFocusWindow();
+        } catch (e) {
+          console.error('[Tray] openFocusWindow error:', e.message);
+        }
+      }
+    },
+    {
       label: isPaused ? '▶ 恢复学习' : '⏸ 暂停学习',
       click: () => {
         try {

@@ -28,6 +28,22 @@ const targetDynamicBadge  = document.getElementById('target-dynamic-badge');
 const targetDynamicDesc   = document.getElementById('target-dynamic-desc');
 const autoBalanceLoad     = document.getElementById('autoBalanceLoad');
 
+// 节奏与防打扰 DOM
+const batchSizeSelect     = document.getElementById('batchSize');
+const cooldownMinSelect   = document.getElementById('cooldownMinutes');
+
+// 形态选择 DOM
+const dispOptCard         = document.getElementById('disp-opt-card');
+const dispOptPill         = document.getElementById('disp-opt-pill');
+let selectedDisplayMode   = 'card';
+
+// 音色选择与试听 DOM
+const pronounceVoiceSelect = document.getElementById('pronounceVoice');
+const btnPreviewVoice      = document.getElementById('btn-preview-voice');
+
+// 专注模式入口
+const btnOpenFocus        = document.getElementById('btn-open-focus');
+
 // 积压平摊 DOM
 const backlogOverdueCount = document.getElementById('backlog-overdue-count');
 const btnSmooth3          = document.getElementById('btn-smooth-3');
@@ -94,20 +110,30 @@ async function init() {
     autoBalanceLoad.checked = currentConfig.autoBalanceLoad !== false;
   }
 
+  // 节奏与防打扰
+  if (batchSizeSelect) {
+    batchSizeSelect.value = currentConfig.batchSize !== undefined ? String(currentConfig.batchSize) : '3';
+  }
+  if (cooldownMinSelect) {
+    cooldownMinSelect.value = currentConfig.cooldownMinutes !== undefined ? String(currentConfig.cooldownMinutes) : '10';
+  }
+
+  // 弹窗形态
+  selectedDisplayMode = currentConfig.displayMode || 'card';
+  setDisplayMode(selectedDisplayMode);
+
+  // 发音音色
+  if (pronounceVoiceSelect) {
+    pronounceVoiceSelect.value = currentConfig.pronounceVoice || 'dict-us';
+  }
+
   showExample.checked = currentConfig.showExample !== false;
   autoPronounce.checked = currentConfig.autoPronounce || false;
-  pronounceAccent.value = currentConfig.pronounceAccent || 'en-US';
-  pronounceAccentRow.style.display = autoPronounce.checked ? 'flex' : 'none';
   fontSize.value = currentConfig.fontSize || 'medium';
   autoStart.checked = currentConfig.autoStart || false;
   autoCheckUpdate.checked = currentConfig.autoCheckUpdate !== false;
   selectedWordlists = [...(currentConfig.selectedWordlists || ['cet4'])];
   selectedPosition = currentConfig.popupPosition || 'bottom-right';
-
-  // 自动发音开关联动
-  autoPronounce.addEventListener('change', () => {
-    pronounceAccentRow.style.display = autoPronounce.checked ? 'flex' : 'none';
-  });
 
   // 渲染词库列表
   renderWordlists();
@@ -133,6 +159,71 @@ async function init() {
   // 加载预测与配额数据
   await loadPrediction();
   await refreshQuotaAndBacklogInfo();
+}
+
+// === 弹窗形态切换 ===
+function setDisplayMode(mode) {
+  selectedDisplayMode = mode;
+  if (dispOptCard && dispOptPill) {
+    dispOptCard.classList.toggle('active', mode === 'card');
+    dispOptPill.classList.toggle('active', mode === 'pill');
+  }
+}
+
+if (dispOptCard) dispOptCard.addEventListener('click', () => setDisplayMode('card'));
+if (dispOptPill) dispOptPill.addEventListener('click', () => setDisplayMode('pill'));
+
+// === 音色即时试听 ===
+let previewAudio = null;
+function previewVoice(voiceType) {
+  const word = 'brilliant';
+  if (voiceType === 'dict-us' || voiceType === 'dict-uk') {
+    const type = voiceType === 'dict-uk' ? 1 : 2;
+    const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`;
+    if (previewAudio) { previewAudio.pause(); previewAudio.currentTime = 0; }
+    previewAudio = new Audio(url);
+    previewAudio.play().catch(() => synthFallback(word, voiceType));
+    return;
+  }
+  synthFallback(word, voiceType);
+}
+
+function synthFallback(word, voiceType) {
+  try {
+    if (!('speechSynthesis' in window)) return;
+    if (window.speechSynthesis.speaking) window.speechSynthesis.cancel();
+    const u = new SpeechSynthesisUtterance(word);
+    let pitch = 1.0, rate = 0.9, gender = 'female', lang = /en/i;
+    if (voiceType === 'loli') { pitch = 1.45; rate = 1.05; gender = 'female'; }
+    else if (voiceType === 'mature') { pitch = 0.92; rate = 0.92; gender = 'female'; }
+    else if (voiceType === 'deep-male') { pitch = 0.76; rate = 0.88; gender = 'male'; }
+    else if (voiceType === 'fast') { pitch = 1.05; rate = 1.25; }
+    u.pitch = pitch;
+    u.rate = rate;
+    const voices = window.speechSynthesis.getVoices();
+    if (voices && voices.length > 0) {
+      const en = voices.filter(v => lang.test(v.lang));
+      const list = en.length > 0 ? en : voices;
+      let matched = null;
+      if (gender === 'female') matched = list.find(v => /female|zira|aria|jenny/i.test(v.name));
+      else if (gender === 'male') matched = list.find(v => /male|david|guy/i.test(v.name));
+      u.voice = matched || list[0];
+    }
+    window.speechSynthesis.speak(u);
+  } catch (e) {}
+}
+
+if (btnPreviewVoice) {
+  btnPreviewVoice.addEventListener('click', () => {
+    previewVoice(pronounceVoiceSelect.value);
+  });
+}
+
+// === 专注模式启动 ===
+if (btnOpenFocus) {
+  btnOpenFocus.addEventListener('click', () => {
+    window.wordpopAPI.openFocusSession();
+  });
 }
 
 // === 每日新词模式切换 ===
@@ -448,11 +539,14 @@ btnSave.addEventListener('click', async () => {
       : parseInt(dailyNewWords.value),
     dailyNewWordsMode: selectedDailyMode,
     autoBalanceLoad: autoBalanceLoad ? autoBalanceLoad.checked : true,
+    batchSize: batchSizeSelect ? parseInt(batchSizeSelect.value) : 3,
+    cooldownMinutes: cooldownMinSelect ? parseInt(cooldownMinSelect.value) : 10,
+    displayMode: selectedDisplayMode,
+    pronounceVoice: pronounceVoiceSelect ? pronounceVoiceSelect.value : 'dict-us',
     popupPosition: selectedPosition,
     selectedWordlists: selectedWordlists,
     showExample: showExample.checked,
     autoPronounce: autoPronounce.checked,
-    pronounceAccent: pronounceAccent.value,
     fontSize: fontSize.value,
     autoStart: autoStart.checked,
     autoCheckUpdate: autoCheckUpdate.checked,

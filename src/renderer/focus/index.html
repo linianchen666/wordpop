@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WordPop - 沉浸专注刷词</title>
+  <link rel="stylesheet" href="../shared/common.css">
+  <link rel="stylesheet" href="focus.css">
+</head>
+<body>
+  <div class="focus-container" id="focus-container">
+    <!-- 顶部状态栏 -->
+    <div class="focus-header">
+      <div class="focus-brand">
+        <span class="brand-icon">🚀</span>
+        <span class="brand-text">专注刷词模式</span>
+      </div>
+      <div class="focus-stats-header">
+        <div class="stat-badge combo-badge" id="combo-badge" style="display:none">
+          <span class="combo-fire">🔥</span>
+          <span class="combo-text" id="combo-text">3 连击</span>
+        </div>
+        <div class="stat-badge progress-badge" id="focus-progress-badge">
+          <span id="current-index">0</span> / <span id="total-count">0</span>
+        </div>
+      </div>
+      <button class="btn-focus-close" id="btn-close" title="退出专注模式 (Esc)">✕</button>
+    </div>
+
+    <!-- 进度条 -->
+    <div class="focus-progress-bar">
+      <div class="focus-progress-fill" id="focus-progress-fill" style="width: 0%"></div>
+    </div>
+
+    <!-- 单词卡片核心区 -->
+    <div class="focus-card-area" id="focus-card-area">
+      <!-- 准备/加载状态 -->
+      <div class="focus-loading" id="focus-loading">
+        <div class="loading-spinner"></div>
+        <div class="loading-text">正在准备专属专注词库...</div>
+      </div>
+
+      <!-- 单词主体 -->
+      <div class="focus-card" id="focus-card" style="display:none">
+        <div class="word-stage-tag" id="word-stage-tag">复习词 (阶段 3/9)</div>
+        <div class="focus-word" id="focus-word" title="点击发音 (Space)">abandon</div>
+        <div class="focus-phonetic" id="focus-phonetic" title="点击发音">/əˈbændən/ 🔊</div>
+
+        <!-- 遮罩/展开提示 -->
+        <div class="focus-reveal-prompt" id="focus-reveal-prompt">
+          <div class="prompt-text">按下 <kbd>Space</kbd> 空格键 或 点击查看释义</div>
+        </div>
+
+        <!-- 详细释义区域 -->
+        <div class="focus-detail" id="focus-detail" style="display:none">
+          <div class="focus-translation" id="focus-translation">vt. 放弃；抛弃；遗弃</div>
+          <div class="focus-example" id="focus-example">
+            <div class="example-en" id="focus-example-en">He claimed that his parents had abandoned him.</div>
+            <div class="example-cn" id="focus-example-cn">他声称父母遗弃了他。</div>
+          </div>
+          <div class="focus-etymology" id="focus-etymology" style="display:none">
+            <span class="etymology-label">🔍 助记：</span>
+            <span class="etymology-body" id="focus-etymology-text"></span>
+          </div>
+        </div>
+      </div>
+
+      <!-- 结算完成报告卡片 -->
+      <div class="focus-summary" id="focus-summary" style="display:none">
+        <div class="summary-icon">🏆</div>
+        <div class="summary-title">专注冲刺完成！</div>
+        <div class="summary-subtitle">已高效消化本轮词汇，大脑记忆进一步加深</div>
+
+        <div class="summary-grid">
+          <div class="summary-card">
+            <div class="summary-value" id="sum-count">20</div>
+            <div class="summary-label">本次刷词</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-value" id="sum-accuracy">100%</div>
+            <div class="summary-label">正确率</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-value" id="sum-max-combo">12</div>
+            <div class="summary-label">最高连击</div>
+          </div>
+          <div class="summary-card">
+            <div class="summary-value" id="sum-time">1:45</div>
+            <div class="summary-label">总耗时</div>
+          </div>
+        </div>
+
+        <div class="summary-actions">
+          <button class="btn btn-outline" id="btn-again-20">再来 20 词 ▶</button>
+          <button class="btn btn-primary" id="btn-finish">返回日常伴随</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 底部操作按键栏 -->
+    <div class="focus-footer" id="focus-footer" style="display:none">
+      <button class="btn-focus-action action-unknown" id="btn-unknown">
+        <span class="key-hint">A</span>
+        <span class="btn-text">✗ 不认识</span>
+      </button>
+      <button class="btn-focus-action action-fuzzy" id="btn-fuzzy">
+        <span class="key-hint">S</span>
+        <span class="btn-text">~ 模糊</span>
+      </button>
+      <button class="btn-focus-action action-known" id="btn-known">
+        <span class="key-hint">Enter / D</span>
+        <span class="btn-text">✓ 认识</span>
+      </button>
+      <button class="btn-focus-action action-mastered" id="btn-mastered">
+        <span class="key-hint">M</span>
+        <span class="btn-text">★ 熟知</span>
+      </button>
+    </div>
+
+    <!-- 底部键盘快捷键常驻提示 -->
+    <div class="focus-shortcuts-bar">
+      <span><kbd>Space</kbd> 展开释义 / 朗读</span>
+      <span><kbd>A</kbd> 不认识</span>
+      <span><kbd>S</kbd> 模糊</span>
+      <span><kbd>Enter</kbd> / <kbd>D</kbd> 认识</span>
+      <span><kbd>M</kbd> 熟知</span>
+      <span><kbd>Esc</kbd> 退出</span>
+    </div>
+  </div>
+
+  <script src="../shared/utils.js"></script>
+  <script src="focus.js"></script>
+</body>
+</html>
