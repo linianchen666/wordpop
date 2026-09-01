@@ -1,4 +1,4 @@
-﻿const { BrowserWindow, screen, app } = require('electron');
+const { BrowserWindow, screen, app } = require('electron');
 const path = require('path');
 const { getDb } = require('./db');
 
@@ -161,26 +161,26 @@ function fetchWords() {
   try {
     const db = getDb();
     // Fetch stubborn words (wrong_count > 0, order by wrong_count DESC)
-    const rows = db.prepare(\
+    const rows = db.prepare(`
       SELECT w.id, w.word, w.translation, p.wrong_count 
       FROM words w 
       JOIN progress p ON w.id = p.word_id 
       WHERE p.wrong_count > 0 
       ORDER BY p.wrong_count DESC, p.last_review_at DESC 
       LIMIT 100
-    \).all();
+    `).all();
     
     if (rows && rows.length > 0) {
       wordList = rows;
     } else {
       // Fallback to latest learning words if no wrong words
-      wordList = db.prepare(\
+      wordList = db.prepare(`
         SELECT w.id, w.word, w.translation 
         FROM words w 
         JOIN progress p ON w.id = p.word_id 
         ORDER BY p.last_review_at DESC 
         LIMIT 20
-      \).all();
+      `).all();
     }
     currentIndex = 0;
   } catch (err) {
