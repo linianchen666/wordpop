@@ -23,8 +23,8 @@ function getAsarPath(...segments) {
   return path.join(__dirname, '..', '..', ...segments);
 }
 
-const PILL_WIDTH = 120;
-const PILL_HEIGHT = 48;
+const PILL_WIDTH = 140;
+const PILL_HEIGHT = 52;
 
 function createPillWindow() {
   if (pillWindow && !pillWindow.isDestroyed()) {
@@ -34,17 +34,17 @@ function createPillWindow() {
 
   try {
     const primary = screen.getPrimaryDisplay();
-    const { bounds } = primary;
-    
-    // 居中放置在任务栏位置 (假设任务栏在底部)
-    const x = Math.round(bounds.x + (bounds.width / 2) - (PILL_WIDTH / 2));
-    const y = bounds.y + bounds.height - PILL_HEIGHT;
+    // workArea 排除任务栏区域，workArea.y + workArea.height 就是任务栏顶部边界
+    // 胶囊悬浮贴着任务栏上方，不与任务栏重叠，这样就不会被遮挡
+    const { bounds, workArea } = primary;
+    const pillX = Math.round(bounds.x + (bounds.width / 2) - (PILL_WIDTH / 2));
+    const pillY = workArea.y + workArea.height - PILL_HEIGHT + 4;
 
     pillWindow = new BrowserWindow({
       width: PILL_WIDTH,
       height: PILL_HEIGHT,
-      x: x,
-      y: y,
+      x: pillX,
+      y: pillY,
       frame: false,
       resizable: false,
       skipTaskbar: true,
@@ -64,8 +64,8 @@ function createPillWindow() {
     const htmlPath = getAsarPath('src', 'renderer', 'pill', 'index.html');
     pillWindow.loadFile(htmlPath);
 
-    // 防止被其他全屏窗口覆盖，强制置顶在最前 (类似任务栏级别)
-    pillWindow.setAlwaysOnTop(true, 'screen-saver');
+    // 'pop-up-menu' 层级在 Windows 下可覆盖大多数应用窗口
+    pillWindow.setAlwaysOnTop(true, 'pop-up-menu');
 
     pillWindow.once('ready-to-show', () => {
       pillReady = true;
