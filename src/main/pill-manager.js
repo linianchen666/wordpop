@@ -26,6 +26,8 @@ function getAsarPath(...segments) {
 const PILL_WIDTH = 140;
 const PILL_HEIGHT = 48;
 
+let keepTopTimer = null;
+
 function createPillWindow() {
   if (pillWindow && !pillWindow.isDestroyed()) {
     return pillWindow;
@@ -55,6 +57,7 @@ function createPillWindow() {
       transparent: true,
       hasShadow: false,
       backgroundColor: '#00000000',
+      type: 'toolbar',
       webPreferences: {
         preload: getAsarPath('src', 'preload', 'preload.js'),
         contextIsolation: true,
@@ -66,8 +69,11 @@ function createPillWindow() {
     const htmlPath = getAsarPath('src', 'renderer', 'pill', 'index.html');
     pillWindow.loadFile(htmlPath);
 
-    // 必须用 'screen-saver' 最高层级，才能覆盖显示在任务栏窗口上方
-    pillWindow.setAlwaysOnTop(true, 'screen-saver');
+    // 必须用 'screen-saver' 最高层级 + relativeLevel: 1，才能覆盖显示在任务栏窗口上方
+    pillWindow.setAlwaysOnTop(true, 'screen-saver', 1);
+    try {
+      pillWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
+    } catch (_) {}
 
     pillWindow.once('ready-to-show', () => {
       pillReady = true;
@@ -75,48 +81,37 @@ function createPillWindow() {
       sendConfig();
       fetchWords();
       startTimer();
-    });
-
-    // 防止点击其他地方后消失：任何导致窗口隐藏/最小化的行为都重新显示
-    pillWindow.on('blur', () => {
-      if (pillWindow && !pillWindow.isDestroyed() && pillConfig.enabled) {
-        // 延迟一帧后重新确保置顶和可见
-        setTimeout(() => {
-          if (pillWindow && !pillWindow.isDestroyed()) {
-            pillWindow.setAlwaysOnTop(true, 'screen-saver');
-            pillWindow.showInactive();
-          }
-        }, 100);
-      }
-    });
-
-    pillWindow.on('hide', () => {
-      if (pillWindow && !pillWindow.isDestroyed() && pillConfig.enabled) {
-        setTimeout(() => {
-          if (pillWindow && !pillWindow.isDestroyed()) {
-            pillWindow.showInactive();
-          }
-        }, 100);
-      }
-    });
-
-    pillWindow.on('minimize', (e) => {
-      e.preventDefault();
-      if (pillWindow && !pillWindow.isDestroyed()) {
-        pillWindow.showInactive();
-      }
+      startKeepTop();
     });
 
     pillWindow.on('closed', () => {
       pillWindow = null;
       pillReady = false;
       stopTimer();
+      stopKeepTop();
     });
 
     return pillWindow;
   } catch (err) {
     console.error('[Pill] create ERROR:', err.message);
     return null;
+  }
+}
+
+function startKeepTop() {
+  stopKeepTop();
+  // 周期性调用 moveTop 保持在任务栏最顶层，防止点击任务栏其他图标时被 Explorer 盖住
+  keepTopTimer = setInterval(() => {
+    if (pillWindow && !pillWindow.isDestroyed() && pillConfig.enabled) {
+      pillWindow.moveTop();
+    }
+  }, 200);
+}
+
+function stopKeepTop() {
+  if (keepTopTimer) {
+    clearInterval(keepTopTimer);
+    keepTopTimer = null;
   }
 }
 
