@@ -1,4 +1,4 @@
-const { BrowserWindow, screen, app } = require('electron');
+﻿const { BrowserWindow, screen, app } = require('electron');
 const path = require('path');
 const { getDb } = require('./db');
 
@@ -11,8 +11,6 @@ let currentIndex = 0;
 let pillConfig = {
   enabled: false,
   intervalSeconds: 15,
-  x: null,
-  y: null,
   theme: 'light',
   autoPronounce: false,
   pronounceVoice: 'dict-us'
@@ -25,25 +23,22 @@ function getAsarPath(...segments) {
   return path.join(__dirname, '..', '..', ...segments);
 }
 
-let isSnapped = false; // 'left', 'right', or false
-let isHovered = false;
-const PILL_WIDTH = 160;
-const PILL_HEIGHT = 64;
-const SNAP_THRESHOLD = 20;
-const VISIBLE_EDGE = 24;
+const PILL_WIDTH = 120;
+const PILL_HEIGHT = 48;
 
 function createPillWindow() {
   if (pillWindow && !pillWindow.isDestroyed()) {
     return pillWindow;
   }
   pillReady = false;
-  isSnapped = false;
-  isHovered = false;
 
   try {
-    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    let x = pillConfig.x !== null ? pillConfig.x : width - PILL_WIDTH - 40;
-    let y = pillConfig.y !== null ? pillConfig.y : height - 120;
+    const primary = screen.getPrimaryDisplay();
+    const { bounds } = primary;
+    
+    // 居中放置在任务栏位置 (假设任务栏在底部)
+    const x = Math.round(bounds.x + (bounds.width / 2) - (PILL_WIDTH / 2));
+    const y = bounds.y + bounds.height - PILL_HEIGHT;
 
     pillWindow = new BrowserWindow({
       width: PILL_WIDTH,
@@ -56,7 +51,7 @@ function createPillWindow() {
       alwaysOnTop: true,
       focusable: false,
       transparent: true,
-      hasShadow: true,
+      hasShadow: false,
       backgroundColor: '#00000000',
       webPreferences: {
         preload: getAsarPath('src', 'preload', 'preload.js'),
@@ -69,19 +64,15 @@ function createPillWindow() {
     const htmlPath = getAsarPath('src', 'renderer', 'pill', 'index.html');
     pillWindow.loadFile(htmlPath);
 
+    // 防止被其他全屏窗口覆盖，强制置顶在最前 (类似任务栏级别)
+    pillWindow.setAlwaysOnTop(true, 'screen-saver');
+
     pillWindow.once('ready-to-show', () => {
       pillReady = true;
       pillWindow.showInactive(); 
       sendConfig();
       fetchWords();
       startTimer();
-      checkSnapPosition(); // check if initially snapped
-    });
-
-    pillWindow.on('moved', () => {
-      if (pillWindow && !pillWindow.isDestroyed()) {
-        checkSnapPosition();
-      }
     });
 
     pillWindow.on('closed', () => {
@@ -94,55 +85,6 @@ function createPillWindow() {
   } catch (err) {
     console.error('[Pill] create ERROR:', err.message);
     return null;
-  }
-}
-
-function checkSnapPosition() {
-  if (!pillWindow || pillWindow.isDestroyed()) return;
-  const [nx, ny] = pillWindow.getPosition();
-  const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
-  
-  // 检查是否靠近边缘
-  if (nx < SNAP_THRESHOLD && isHovered) {
-    isSnapped = 'left';
-  } else if (nx + PILL_WIDTH > sw - SNAP_THRESHOLD && isHovered) {
-    isSnapped = 'right';
-  } else {
-    // 只有在拖拽（hover=true）远离边缘时才解除吸附，或者如果已经被挤出去
-    if (nx > SNAP_THRESHOLD && nx + PILL_WIDTH < sw - SNAP_THRESHOLD) {
-      isSnapped = false;
-    }
-  }
-
-  if (!isSnapped) {
-    pillConfig.x = nx;
-    pillConfig.y = ny;
-  } else {
-    updateSnapBounds();
-  }
-}
-
-function updateSnapBounds() {
-  if (!pillWindow || pillWindow.isDestroyed() || !isSnapped) return;
-  const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
-  const [cx, cy] = pillWindow.getPosition();
-  
-  let targetX = cx;
-  if (isSnapped === 'left') {
-    targetX = isHovered ? 0 : -(PILL_WIDTH - VISIBLE_EDGE);
-  } else if (isSnapped === 'right') {
-    targetX = isHovered ? sw - PILL_WIDTH : sw - VISIBLE_EDGE;
-  }
-  
-  if (cx !== targetX) {
-    pillWindow.setPosition(targetX, cy);
-  }
-}
-
-function setHover(hover) {
-  isHovered = hover;
-  if (isSnapped) {
-    updateSnapBounds();
   }
 }
 
@@ -160,27 +102,25 @@ function sendConfig() {
 function fetchWords() {
   try {
     const db = getDb();
-    // Fetch stubborn words (wrong_count > 0, order by wrong_count DESC)
-    const rows = db.prepare(`
+    const rows = db.prepare(\
       SELECT w.id, w.word, w.translation, p.wrong_count 
       FROM words w 
       JOIN progress p ON w.id = p.word_id 
       WHERE p.wrong_count > 0 
       ORDER BY p.wrong_count DESC, p.last_review_at DESC 
       LIMIT 100
-    `).all();
+    \).all();
     
     if (rows && rows.length > 0) {
       wordList = rows;
     } else {
-      // Fallback to latest learning words if no wrong words
-      wordList = db.prepare(`
+      wordList = db.prepare(\
         SELECT w.id, w.word, w.translation 
         FROM words w 
         JOIN progress p ON w.id = p.word_id 
         ORDER BY p.last_review_at DESC 
         LIMIT 20
-      `).all();
+      \).all();
     }
     currentIndex = 0;
   } catch (err) {
@@ -240,18 +180,6 @@ function updateConfig(cfg) {
   }
 }
 
-function getPosition() {
-  return { x: pillConfig.x, y: pillConfig.y };
-}
-
-function setPosition(x, y) {
-  pillConfig.x = x;
-  pillConfig.y = y;
-}
-
 module.exports = {
-  updateConfig,
-  getPosition,
-  setPosition,
-  setHover
+  updateConfig
 };
