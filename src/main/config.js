@@ -11,7 +11,9 @@ const DEFAULT_CONFIG = {
   maxDynamicNewWords: 50,          // 智能模式每日新词上限
   batchSize: 3,                    // 单次弹窗批次词数：1, 3, 5, 0 (0为连续不间断)
   cooldownSeconds: 600,            // 批次完成后的静默冷却时间（秒）
-  displayMode: 'card',             // card (标准卡片 380x440) | pill (灵动胶囊 300x54)
+  pillEnabled: false,              // 常驻极简桌面胶囊开关
+  pillIntervalSeconds: 15,         // 桌面胶囊轮播间隔
+  displayMode: 'card',             // card (标准卡片)
   smartDisturbance: true,          // 智能打扰感知：高强度打字时暂缓弹出
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
   selectedWordlists: ['cet4'],     // 启用的词库列表

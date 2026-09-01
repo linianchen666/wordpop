@@ -35,7 +35,12 @@ const dispOptCard         = document.getElementById('disp-opt-card');
 const dispOptPill         = document.getElementById('disp-opt-pill');
 let selectedDisplayMode   = 'card';
 
-// 音色选择与试听 DOM
+// 胶囊 DOM
+const pillEnabled         = document.getElementById('pillEnabled');
+const pillIntervalSeconds = document.getElementById('pillIntervalSeconds');
+const pillIntervalRow     = document.getElementById('pill-interval-row');
+
+// 其他 DOM
 const pronounceVoiceSelect = document.getElementById('pronounceVoice');
 const btnPreviewVoice      = document.getElementById('btn-preview-voice');
 
@@ -129,6 +134,18 @@ async function init() {
   // 弹窗形态
   selectedDisplayMode = currentConfig.displayMode || 'card';
   setDisplayMode(selectedDisplayMode);
+
+  // 胶囊设置
+  if (pillEnabled) {
+    pillEnabled.checked = currentConfig.pillEnabled || false;
+    pillIntervalRow.style.display = pillEnabled.checked ? 'flex' : 'none';
+    pillEnabled.addEventListener('change', () => {
+      pillIntervalRow.style.display = pillEnabled.checked ? 'flex' : 'none';
+    });
+  }
+  if (pillIntervalSeconds) {
+    pillIntervalSeconds.value = currentConfig.pillIntervalSeconds || 15;
+  }
 
   // 发音音色
   if (pronounceVoiceSelect) {
@@ -523,6 +540,8 @@ btnSave.addEventListener('click', async () => {
     autoBalanceLoad: autoBalanceLoad ? autoBalanceLoad.checked : true,
     batchSize: batchSizeInput ? parseInt(batchSizeInput.value) || 0 : 3,
     cooldownSeconds: cooldownSecInput ? parseInt(cooldownSecInput.value) || 600 : 600,
+    pillEnabled: pillEnabled ? pillEnabled.checked : false,
+    pillIntervalSeconds: pillIntervalSeconds ? parseInt(pillIntervalSeconds.value) || 15 : 15,
     displayMode: selectedDisplayMode,
     pronounceVoice: pronounceVoiceSelect ? pronounceVoiceSelect.value : 'dict-us',
     popupPosition: selectedPosition,

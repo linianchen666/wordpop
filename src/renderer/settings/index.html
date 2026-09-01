@@ -109,14 +109,23 @@
         <span class="form-hint">完成一轮批次后自动静默隐退，绝不连环轰炸，保持工作心流</span>
       </div>
 
-      <!-- 弹窗显示形态 -->
+
+      
+      <!-- 常驻桌面胶囊 -->
       <div class="form-group">
-        <label class="form-label">🎨 弹窗显示形态</label>
-        <div class="mode-selector" id="display-mode-selector">
-          <div class="mode-option active" data-display="card" id="disp-opt-card">🗂️ 标准精致卡片</div>
-          <div class="mode-option" data-display="pill" id="disp-opt-pill">💊 灵动极简胶囊</div>
+        <label class="form-label">💊 常驻桌面复习胶囊 (灵动极简)</label>
+        <div class="toggle-row">
+          <span>开启桌面胶囊</span>
+          <label class="toggle">
+            <input type="checkbox" id="pillEnabled">
+            <span class="toggle-slider"></span>
+          </label>
         </div>
-        <span class="form-hint">灵动胶囊常驻屏幕边缘，极窄透明毛玻璃，绝不遮挡任何代码或文档工作区</span>
+        <div class="toggle-row" id="pill-interval-row" style="margin-top: 10px;">
+          <span>切换词汇间隔 (秒)</span>
+          <input type="number" class="form-input" id="pillIntervalSeconds" min="5" style="width: 150px; text-align: center;" placeholder="15">
+        </div>
+        <span class="form-hint">开启后会在桌面显示一个可拖动的极简胶囊，不间断轮播你历史复习中错误率最高的“顽固单词”。与弹窗卡片完全独立不冲突。</span>
       </div>
 
       <!-- 沉浸专注刷词模式入口 -->

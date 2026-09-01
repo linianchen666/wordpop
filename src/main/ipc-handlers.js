@@ -40,6 +40,15 @@ ipcMain.on('word:fuzzy',     () => scheduler.markFuzzy());
 ipcMain.on('word:mastered',  () => scheduler.markMastered());
 ipcMain.on('word:undo',      () => scheduler.undo());
 ipcMain.on('popup:minimize', () => popupManager.hide());
+ipcMain.on('pill:close', () => {
+  const pillManager = require('./pill-manager');
+  pillManager.updateConfig({ pillEnabled: false });
+  // 也需要通知前端更新配置并保存，因为用户是通过关掉界面关闭了胶囊
+  const config = require('./config');
+  const current = config.loadConfig();
+  current.pillEnabled = false;
+  config.saveConfig(current);
+});
 
 // ═════════════════════════╗
 //  配置
@@ -52,6 +61,8 @@ ipcMain.handle('config:save', (_ev, config) => {
   if (result.success) {
     scheduler.applyConfig(result.config);
     popupManager.updateConfig(result.config);
+    const pillManager = require('./pill-manager');
+    pillManager.updateConfig(result.config);
     // 同步自动检查更新状态
     if ('autoCheckUpdate' in config) {
       startAutoUpdateCheck(config.autoCheckUpdate);

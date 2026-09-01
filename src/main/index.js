@@ -126,6 +126,9 @@ app.whenReady().then(async () => {
 
   // 3.1 用当前配置初始化 popupManager
   popupManager.updateConfig(config);
+  
+  const pillManager = require('./pill-manager');
+  pillManager.updateConfig(config);
 
   // 4. 托盘
   const trayOk = safeStep('createTray', () => createTray({

@@ -11,6 +11,10 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   undo:            ()  => ipcRenderer.send('word:undo'),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),
 
+  // === 胶囊操作 ===
+  onPillData:         (cb) => ipcRenderer.on('pill-data', (_e, d) => cb(d)),
+  closePill:          ()   => ipcRenderer.send('pill:close'),
+
   // === 设置操作 ===
   getConfig:           ()  => ipcRenderer.invoke('config:get'),
   saveConfig:          (c) => ipcRenderer.invoke('config:save', c),
