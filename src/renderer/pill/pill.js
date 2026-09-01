@@ -1,4 +1,4 @@
-﻿const wordText = document.getElementById('pill-word');
+const wordText = document.getElementById('pill-word');
 const transText = document.getElementById('pill-trans');
 const btnAudio = document.getElementById('btn-audio');
 const btnClose = document.getElementById('btn-close');
@@ -18,12 +18,16 @@ window.wordpopAPI.onPillData((data) => {
     currentWord = data.word;
     wordText.textContent = data.word.word || '--';
     transText.textContent = data.word.translation || '--';
-    
-    // 自动发音
-    if (autoPronounce && currentWord && currentWord.word) {
-      playWordAudio(currentWord.word, voiceType);
-    }
+    // 胶囊更新时不再自动发音
   }
+});
+
+document.body.addEventListener('mouseenter', () => {
+  if (window.wordpopAPI.pillHover) window.wordpopAPI.pillHover(true);
+});
+
+document.body.addEventListener('mouseleave', () => {
+  if (window.wordpopAPI.pillHover) window.wordpopAPI.pillHover(false);
 });
 
 btnAudio.addEventListener('click', () => {

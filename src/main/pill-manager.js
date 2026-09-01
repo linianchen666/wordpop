@@ -1,4 +1,4 @@
-const { BrowserWindow, screen, app } = require('electron');
+﻿const { BrowserWindow, screen, app } = require('electron');
 const path = require('path');
 const { getDb } = require('./db');
 
@@ -25,20 +25,29 @@ function getAsarPath(...segments) {
   return path.join(__dirname, '..', '..', ...segments);
 }
 
+let isSnapped = false; // 'left', 'right', or false
+let isHovered = false;
+const PILL_WIDTH = 160;
+const PILL_HEIGHT = 64;
+const SNAP_THRESHOLD = 20;
+const VISIBLE_EDGE = 24;
+
 function createPillWindow() {
   if (pillWindow && !pillWindow.isDestroyed()) {
     return pillWindow;
   }
   pillReady = false;
+  isSnapped = false;
+  isHovered = false;
 
   try {
     const { width, height } = screen.getPrimaryDisplay().workAreaSize;
-    let x = pillConfig.x !== null ? pillConfig.x : width - 340;
-    let y = pillConfig.y !== null ? pillConfig.y : height - 80;
+    let x = pillConfig.x !== null ? pillConfig.x : width - PILL_WIDTH - 40;
+    let y = pillConfig.y !== null ? pillConfig.y : height - 120;
 
     pillWindow = new BrowserWindow({
-      width: 320,
-      height: 56,
+      width: PILL_WIDTH,
+      height: PILL_HEIGHT,
       x: x,
       y: y,
       frame: false,
@@ -62,18 +71,16 @@ function createPillWindow() {
 
     pillWindow.once('ready-to-show', () => {
       pillReady = true;
-      pillWindow.showInactive(); // Use showInactive to avoid stealing focus
+      pillWindow.showInactive(); 
       sendConfig();
       fetchWords();
       startTimer();
+      checkSnapPosition(); // check if initially snapped
     });
 
     pillWindow.on('moved', () => {
       if (pillWindow && !pillWindow.isDestroyed()) {
-        const [nx, ny] = pillWindow.getPosition();
-        pillConfig.x = nx;
-        pillConfig.y = ny;
-        // Optionally save to config file via config.js here
+        checkSnapPosition();
       }
     });
 
@@ -87,6 +94,55 @@ function createPillWindow() {
   } catch (err) {
     console.error('[Pill] create ERROR:', err.message);
     return null;
+  }
+}
+
+function checkSnapPosition() {
+  if (!pillWindow || pillWindow.isDestroyed()) return;
+  const [nx, ny] = pillWindow.getPosition();
+  const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
+  
+  // 检查是否靠近边缘
+  if (nx < SNAP_THRESHOLD && isHovered) {
+    isSnapped = 'left';
+  } else if (nx + PILL_WIDTH > sw - SNAP_THRESHOLD && isHovered) {
+    isSnapped = 'right';
+  } else {
+    // 只有在拖拽（hover=true）远离边缘时才解除吸附，或者如果已经被挤出去
+    if (nx > SNAP_THRESHOLD && nx + PILL_WIDTH < sw - SNAP_THRESHOLD) {
+      isSnapped = false;
+    }
+  }
+
+  if (!isSnapped) {
+    pillConfig.x = nx;
+    pillConfig.y = ny;
+  } else {
+    updateSnapBounds();
+  }
+}
+
+function updateSnapBounds() {
+  if (!pillWindow || pillWindow.isDestroyed() || !isSnapped) return;
+  const { width: sw } = screen.getPrimaryDisplay().workAreaSize;
+  const [cx, cy] = pillWindow.getPosition();
+  
+  let targetX = cx;
+  if (isSnapped === 'left') {
+    targetX = isHovered ? 0 : -(PILL_WIDTH - VISIBLE_EDGE);
+  } else if (isSnapped === 'right') {
+    targetX = isHovered ? sw - PILL_WIDTH : sw - VISIBLE_EDGE;
+  }
+  
+  if (cx !== targetX) {
+    pillWindow.setPosition(targetX, cy);
+  }
+}
+
+function setHover(hover) {
+  isHovered = hover;
+  if (isSnapped) {
+    updateSnapBounds();
   }
 }
 
@@ -105,26 +161,26 @@ function fetchWords() {
   try {
     const db = getDb();
     // Fetch stubborn words (wrong_count > 0, order by wrong_count DESC)
-    const rows = db.prepare(`
+    const rows = db.prepare(\
       SELECT w.id, w.word, w.translation, p.wrong_count 
       FROM words w 
       JOIN progress p ON w.id = p.word_id 
       WHERE p.wrong_count > 0 
       ORDER BY p.wrong_count DESC, p.last_review_at DESC 
       LIMIT 100
-    `).all();
+    \).all();
     
     if (rows && rows.length > 0) {
       wordList = rows;
     } else {
       // Fallback to latest learning words if no wrong words
-      wordList = db.prepare(`
+      wordList = db.prepare(\
         SELECT w.id, w.word, w.translation 
         FROM words w 
         JOIN progress p ON w.id = p.word_id 
         ORDER BY p.last_review_at DESC 
         LIMIT 20
-      `).all();
+      \).all();
     }
     currentIndex = 0;
   } catch (err) {
@@ -196,5 +252,6 @@ function setPosition(x, y) {
 module.exports = {
   updateConfig,
   getPosition,
-  setPosition
+  setPosition,
+  setHover
 };

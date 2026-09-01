@@ -49,6 +49,10 @@ ipcMain.on('pill:close', () => {
   current.pillEnabled = false;
   config.saveConfig(current);
 });
+ipcMain.on('pill:hover', (e, isHover) => {
+  const pillManager = require('./pill-manager');
+  if (pillManager.setHover) pillManager.setHover(isHover);
+});
 
 // ═════════════════════════╗
 //  配置

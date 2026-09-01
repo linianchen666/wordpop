@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   // === 胶囊操作 ===
   onPillData:         (cb) => ipcRenderer.on('pill-data', (_e, d) => cb(d)),
   closePill:          ()   => ipcRenderer.send('pill:close'),
+  pillHover:          (isHover) => ipcRenderer.send('pill:hover', isHover),
 
   // === 设置操作 ===
   getConfig:           ()  => ipcRenderer.invoke('config:get'),
