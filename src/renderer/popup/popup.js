@@ -422,7 +422,12 @@ const btnNextBatch = document.getElementById('btn-next-batch');
 window.wordpopAPI.onBatchCompleted((data) => {
   if (batchCompleteCard) {
     if (batchCompleteSub) {
-      batchCompleteSub.textContent = `下次提醒：约 ${data.cooldownMinutes || 10} 分钟后`;
+      const secs = data.cooldownSeconds || 600;
+      if (secs >= 60 && secs % 60 === 0) {
+        batchCompleteSub.textContent = `下次提醒：约 ${secs / 60} 分钟后`;
+      } else {
+        batchCompleteSub.textContent = `下次提醒：约 ${secs} 秒后`;
+      }
     }
     batchCompleteCard.classList.remove('hidden');
   }

@@ -99,24 +99,12 @@
       <div class="form-group">
         <label class="form-label">⏱️ 弹出节奏与防打扰</label>
         <div class="toggle-row">
-          <span>单次弹出批次</span>
-          <select class="form-select form-select-sm" id="batchSize" style="min-width: 150px;">
-            <option value="1">1 词即走（极简）</option>
-            <option value="3" selected>3 词一轮（推荐）</option>
-            <option value="5">5 词一组（小冲刺）</option>
-            <option value="0">连续不间断</option>
-          </select>
+          <span>单次弹出批次 (词)</span>
+          <input type="number" class="form-input" id="batchSize" min="0" style="width: 150px; text-align: center;" placeholder="0为连续">
         </div>
         <div class="toggle-row">
-          <span>批次完成冷却时间</span>
-          <select class="form-select form-select-sm" id="cooldownMinutes" style="min-width: 150px;">
-            <option value="1">1 分钟（快速）</option>
-            <option value="3">3 分钟</option>
-            <option value="5">5 分钟</option>
-            <option value="10" selected>10 分钟（推荐）</option>
-            <option value="15">15 分钟</option>
-            <option value="30">30 分钟（专注工作）</option>
-          </select>
+          <span>批次间歇时间 (秒)</span>
+          <input type="number" class="form-input" id="cooldownSeconds" min="5" style="width: 150px; text-align: center;" placeholder="秒数">
         </div>
         <span class="form-hint">完成一轮批次后自动静默隐退，绝不连环轰炸，保持工作心流</span>
       </div>

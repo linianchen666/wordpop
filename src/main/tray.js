@@ -104,7 +104,8 @@ function buildMenu(status) {
     if (diff <= 0) {
       nextLabel = '⏱ 单词即将弹出...';
     } else if (diff < 60000) {
-      nextLabel = '⏱ 单词即将弹出 (1分钟内)';
+      const secs = Math.ceil(diff / 1000);
+      nextLabel = `⏱ 单词即将弹出 (${secs}秒后)`;
     } else {
       const mins = Math.max(1, Math.ceil(diff / 60000));
       const hours = Math.floor(mins / 60);
@@ -359,7 +360,8 @@ function updateStatus(status) {
       if (diff <= 0) {
         tray.setToolTip('WordPop - 单词即将弹出');
       } else if (diff < 60000) {
-        tray.setToolTip('WordPop - 单词即将弹出 (1分钟内)');
+        const secs = Math.ceil(diff / 1000);
+        tray.setToolTip(`WordPop - 单词即将弹出 (${secs}秒后)`);
       } else {
         const mins = Math.max(1, Math.ceil(diff / 60000));
         const hours = Math.floor(mins / 60);

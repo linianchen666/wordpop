@@ -10,7 +10,7 @@ const DEFAULT_CONFIG = {
   autoBalanceLoad: true,           // 智能负荷动态平衡：复习过多时自动削减/暂停新词
   maxDynamicNewWords: 50,          // 智能模式每日新词上限
   batchSize: 3,                    // 单次弹窗批次词数：1, 3, 5, 0 (0为连续不间断)
-  cooldownMinutes: 10,             // 批次完成后的静默冷却时间（分钟）：1, 3, 5, 10, 15, 30
+  cooldownSeconds: 600,            // 批次完成后的静默冷却时间（秒）
   displayMode: 'card',             // card (标准卡片 380x440) | pill (灵动胶囊 300x54)
   smartDisturbance: true,          // 智能打扰感知：高强度打字时暂缓弹出
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
@@ -51,11 +51,19 @@ function loadConfig() {
     if (fs.existsSync(filePath)) {
       const raw = fs.readFileSync(filePath, 'utf-8');
       const userConfig = JSON.parse(raw);
+      
       // 迁移旧版配置中的 pronounceAccent -> pronounceVoice
       if (userConfig.pronounceAccent && !userConfig.pronounceVoice) {
         userConfig.pronounceVoice = (userConfig.pronounceAccent === 'en-GB' || userConfig.pronounceAccent === 'uk') ? 'dict-uk' : 'dict-us';
         delete userConfig.pronounceAccent;
       }
+      
+      // 迁移旧版 cooldownMinutes -> cooldownSeconds
+      if (userConfig.cooldownMinutes !== undefined && userConfig.cooldownSeconds === undefined) {
+        userConfig.cooldownSeconds = userConfig.cooldownMinutes * 60;
+        delete userConfig.cooldownMinutes;
+      }
+      
       cachedConfig = { ...DEFAULT_CONFIG, ...userConfig };
     } else {
       cachedConfig = { ...DEFAULT_CONFIG };

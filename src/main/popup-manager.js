@@ -14,7 +14,7 @@ let popupConfig = {
   pronounceVoice: 'dict-us',
   displayMode: 'card',
   batchSize: 3,
-  cooldownMinutes: 10
+  cooldownSeconds: 600
 };
 
 /**
@@ -239,7 +239,7 @@ function updateConfig(cfg) {
   if (cfg.pronounceVoice !== undefined) popupConfig.pronounceVoice = cfg.pronounceVoice;
   if (cfg.displayMode !== undefined) popupConfig.displayMode = cfg.displayMode;
   if (cfg.batchSize !== undefined) popupConfig.batchSize = cfg.batchSize;
-  if (cfg.cooldownMinutes !== undefined) popupConfig.cooldownMinutes = cfg.cooldownMinutes;
+  if (cfg.cooldownSeconds !== undefined) popupConfig.cooldownSeconds = cfg.cooldownSeconds;
 
   // 如果弹窗正在显示，立即调整尺寸与位置
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {

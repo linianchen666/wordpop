@@ -27,8 +27,8 @@ const targetDynamicDesc   = document.getElementById('target-dynamic-desc');
 const autoBalanceLoad     = document.getElementById('autoBalanceLoad');
 
 // 节奏与防打扰 DOM
-const batchSizeSelect     = document.getElementById('batchSize');
-const cooldownMinSelect   = document.getElementById('cooldownMinutes');
+const batchSizeInput      = document.getElementById('batchSize');
+const cooldownSecInput    = document.getElementById('cooldownSeconds');
 
 // 形态选择 DOM
 const dispOptCard         = document.getElementById('disp-opt-card');
@@ -119,11 +119,11 @@ async function init() {
   }
 
   // 节奏与防打扰
-  if (batchSizeSelect) {
-    batchSizeSelect.value = currentConfig.batchSize !== undefined ? String(currentConfig.batchSize) : '3';
+  if (batchSizeInput) {
+    batchSizeInput.value = currentConfig.batchSize !== undefined ? currentConfig.batchSize : 3;
   }
-  if (cooldownMinSelect) {
-    cooldownMinSelect.value = currentConfig.cooldownMinutes !== undefined ? String(currentConfig.cooldownMinutes) : '10';
+  if (cooldownSecInput) {
+    cooldownSecInput.value = currentConfig.cooldownSeconds !== undefined ? currentConfig.cooldownSeconds : 600;
   }
 
   // 弹窗形态
@@ -521,8 +521,8 @@ btnSave.addEventListener('click', async () => {
       : parseInt(dailyNewWords.value),
     dailyNewWordsMode: selectedDailyMode,
     autoBalanceLoad: autoBalanceLoad ? autoBalanceLoad.checked : true,
-    batchSize: batchSizeSelect ? parseInt(batchSizeSelect.value) : 3,
-    cooldownMinutes: cooldownMinSelect ? parseInt(cooldownMinSelect.value) : 10,
+    batchSize: batchSizeInput ? parseInt(batchSizeInput.value) || 0 : 3,
+    cooldownSeconds: cooldownSecInput ? parseInt(cooldownSecInput.value) || 600 : 600,
     displayMode: selectedDisplayMode,
     pronounceVoice: pronounceVoiceSelect ? pronounceVoiceSelect.value : 'dict-us',
     popupPosition: selectedPosition,

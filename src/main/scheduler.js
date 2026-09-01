@@ -169,7 +169,7 @@ class Scheduler {
 
     const config = loadConfig();
     const batchSize = config.batchSize !== undefined ? config.batchSize : 3;
-    const cooldownMinutes = config.cooldownMinutes !== undefined ? config.cooldownMinutes : 10;
+    const cooldownSeconds = config.cooldownSeconds !== undefined ? config.cooldownSeconds : 600;
 
     try {
       popupManager.show({
@@ -184,7 +184,7 @@ class Scheduler {
         etymology: etymology,
         batchIndex: (this.currentBatchCount % (batchSize || 1)) + 1,
         batchSize: batchSize,
-        cooldownMinutes: cooldownMinutes
+        cooldownSeconds: cooldownSeconds
       });
     } catch (e) {
       console.error('[Scheduler] _showWord ERROR:', e.message);
@@ -358,7 +358,8 @@ class Scheduler {
     if (!this.currentWord) return;
     try {
       this._updateProgress('unknown');
-      this._advanceToNext();
+      this._requeueCurrentWord();
+      this._advanceToNext(false);
     } catch (e) {
       console.error('[Scheduler] markUnknown ERROR:', e.message);
       this.currentWord = null;
@@ -370,12 +371,33 @@ class Scheduler {
     if (!this.currentWord) return;
     try {
       this._updateProgress('fuzzy');
-      this._advanceToNext();
+      this._requeueCurrentWord();
+      this._advanceToNext(false);
     } catch (e) {
       console.error('[Scheduler] markFuzzy ERROR:', e.message);
       this.currentWord = null;
       this.nextPopupTimer = setTimeout(() => this._popNext(), 500);
     }
+  }
+
+  _requeueCurrentWord() {
+    const config = loadConfig();
+    const batchSize = config.batchSize !== undefined ? config.batchSize : 3;
+    let insertPos = 0;
+    
+    if (batchSize > 0) {
+      // 放到当前批次的末尾
+      insertPos = batchSize - (this.currentBatchCount || 0) - 1;
+    } else {
+      // 如果没有批次限制（无限连续弹出），则放在后5个单词之后
+      insertPos = 5;
+    }
+    
+    // 边界检查
+    insertPos = Math.max(0, Math.min(insertPos, this.queue.length));
+    
+    // 将单词重新插入队列
+    this.queue.splice(insertPos, 0, this.currentWord);
   }
 
   markMastered() {
@@ -557,16 +579,18 @@ class Scheduler {
     }
   }
 
-  _advanceToNext() {
+  _advanceToNext(incrementBatch = true) {
     this.currentWord = null;
     if (this._onStatsUpdate) {
       try { this._onStatsUpdate(); } catch (e) {}
     }
 
-    this.currentBatchCount = (this.currentBatchCount || 0) + 1;
+    if (incrementBatch) {
+      this.currentBatchCount = (this.currentBatchCount || 0) + 1;
+    }
     const config = loadConfig();
     const batchSize = config.batchSize !== undefined ? config.batchSize : 3;
-    const cooldownMinutes = config.cooldownMinutes !== undefined ? config.cooldownMinutes : 10;
+    const cooldownSeconds = config.cooldownSeconds !== undefined ? config.cooldownSeconds : 600;
 
     // 如果启用了微批次限额 (batchSize > 0)，且当前批次已达到上限
     if (batchSize > 0 && this.currentBatchCount >= batchSize) {
@@ -575,13 +599,13 @@ class Scheduler {
       try {
         popupManager.showBatchCompletion({
           batchSize,
-          cooldownMinutes,
+          cooldownSeconds,
           queueRemaining: this.queue.length
         });
       } catch (e) {}
 
       // 设置冷却时间后的下一次弹出
-      const cooldownMs = Math.max(1000, cooldownMinutes * 60 * 1000);
+      const cooldownMs = Math.max(1000, cooldownSeconds * 1000);
       this.nextPopupTimer = setTimeout(() => this._popNext(), cooldownMs);
       return;
     }
