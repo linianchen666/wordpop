@@ -77,18 +77,22 @@ window.wordpopAPI.onWordData((data) => {
     document.body.classList.remove('pill-mode');
   }
 
-  // 渲染微批次小圆点
+  // 渲染微批次小圆点或数字徽标
   const batchDotsEl = document.getElementById('batch-dots');
   if (batchDotsEl) {
     if (data.batchSize && data.batchSize > 0) {
       const idx = data.batchIndex || 1;
-      let dotsHtml = '';
-      for (let i = 1; i <= data.batchSize; i++) {
-        if (i < idx) dotsHtml += '<span class="batch-dot filled"></span>';
-        else if (i === idx) dotsHtml += '<span class="batch-dot current"></span>';
-        else dotsHtml += '<span class="batch-dot"></span>';
+      if (data.batchSize <= 6) {
+        let dotsHtml = '';
+        for (let i = 1; i <= data.batchSize; i++) {
+          if (i < idx) dotsHtml += '<span class="batch-dot filled"></span>';
+          else if (i === idx) dotsHtml += '<span class="batch-dot current"></span>';
+          else dotsHtml += '<span class="batch-dot"></span>';
+        }
+        batchDotsEl.innerHTML = dotsHtml;
+      } else {
+        batchDotsEl.innerHTML = `<span class="batch-badge">${idx}/${data.batchSize}</span>`;
       }
-      batchDotsEl.innerHTML = dotsHtml;
       batchDotsEl.style.display = 'inline-flex';
     } else {
       batchDotsEl.style.display = 'none';
