@@ -77,6 +77,36 @@ function createPillWindow() {
       startTimer();
     });
 
+    // 防止点击其他地方后消失：任何导致窗口隐藏/最小化的行为都重新显示
+    pillWindow.on('blur', () => {
+      if (pillWindow && !pillWindow.isDestroyed() && pillConfig.enabled) {
+        // 延迟一帧后重新确保置顶和可见
+        setTimeout(() => {
+          if (pillWindow && !pillWindow.isDestroyed()) {
+            pillWindow.setAlwaysOnTop(true, 'screen-saver');
+            pillWindow.showInactive();
+          }
+        }, 100);
+      }
+    });
+
+    pillWindow.on('hide', () => {
+      if (pillWindow && !pillWindow.isDestroyed() && pillConfig.enabled) {
+        setTimeout(() => {
+          if (pillWindow && !pillWindow.isDestroyed()) {
+            pillWindow.showInactive();
+          }
+        }, 100);
+      }
+    });
+
+    pillWindow.on('minimize', (e) => {
+      e.preventDefault();
+      if (pillWindow && !pillWindow.isDestroyed()) {
+        pillWindow.showInactive();
+      }
+    });
+
     pillWindow.on('closed', () => {
       pillWindow = null;
       pillReady = false;
