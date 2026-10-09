@@ -44,4 +44,6 @@ nsis:
   include: assets/installer.nsh
 
 asar: true
+asarUnpack:
+  - node_modules/better-sqlite3/**/*.node
 compression: maximum
