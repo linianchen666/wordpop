@@ -1,0 +1,64 @@
+name: Windows test release
+
+on:
+  push:
+    branches: [release/v1.8.0-beta.1]
+    paths: [.github/workflows/windows-test-release.yml]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wordpop-v1.8.0-beta.1-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    env:
+      RELEASE_TAG: v1.8.0-beta.1
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: 58e81342a8d380bfffee090dce7de6b7ef360410
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install locked dependencies and Electron native addon
+        run: npm ci --strict-ssl=true
+      - name: Run regression tests on Windows
+        run: npm test
+      - name: Build Windows x64 NSIS installer
+        run: npm run build -- --win --x64 --publish never
+      - name: Prepare installer and checksum
+        shell: pwsh
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ("v$version" -ne $env:RELEASE_TAG) { throw 'Release version does not match source' }
+          $asset = "build/WordPop.Setup.$version.exe"
+          Copy-Item "build/WordPop Setup $version.exe" $asset
+          $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          "$hash  WordPop.Setup.$version.exe" | Set-Content build/SHA256SUMS.txt -Encoding ascii
+      - name: Upload and publish verified test release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $name = "WordPop.Setup.$version.exe"
+          $asset = "build/$name"
+          gh release upload $env:RELEASE_TAG $asset build/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/407641766" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect uploaded release' }
+          $exe = $release.assets | Where-Object { $_.name -eq $name }
+          $checksum = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' }
+          $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($release.tag_name -ne $env:RELEASE_TAG -or $exe.state -ne 'uploaded' -or $checksum.state -ne 'uploaded' -or $exe.digest -ne "sha256:$hash") {
+            throw 'Release asset verification failed'
+          }
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --prerelease --latest=false
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
