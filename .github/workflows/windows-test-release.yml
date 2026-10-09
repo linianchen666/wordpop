@@ -19,7 +19,7 @@ jobs:
     timeout-minutes: 30
     env:
       RELEASE_TAG: v1.8.0-beta.4
-      WORDPOP_TEST_SCREENSHOT_DIR: ${{ runner.temp }}/wordpop-captures
+      WORDPOP_TEST_SCREENSHOT_DIR: artifacts/transparent-popup-previews
     steps:
       - uses: actions/checkout@v4
         with:
@@ -82,5 +82,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: transparent-popup-previews
-          path: ${{ runner.temp }}/wordpop-captures/*.png
+          path: artifacts/transparent-popup-previews/*.png
           if-no-files-found: ignore
