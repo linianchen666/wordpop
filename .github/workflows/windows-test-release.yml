@@ -19,6 +19,7 @@ jobs:
     timeout-minutes: 30
     env:
       RELEASE_TAG: v1.8.0-beta.4
+      WORDPOP_TEST_SCREENSHOT_DIR: ${{ runner.temp }}/wordpop-captures
     steps:
       - uses: actions/checkout@v4
         with:
@@ -76,3 +77,10 @@ jobs:
           }
           gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --prerelease --latest=false
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+      - name: Save transparent popup screenshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: transparent-popup-previews
+          path: ${{ runner.temp }}/wordpop-captures/*.png
+          if-no-files-found: ignore

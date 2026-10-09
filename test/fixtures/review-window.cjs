@@ -41,6 +41,7 @@ async function windowFor(mode, width, height) {
       win.webContents.once('did-fail-load', (_event, code, message) => reject(new Error(`${code}: ${message}`)));
     });
     win.setContentSize(width, height);
+    win.showInactive();
     assert.strictEqual(win.isResizable(), true);
   } else {
     await win.loadFile(path.join(root, 'src/renderer', mode, 'index.html'));
@@ -96,18 +97,22 @@ app.whenReady().then(async () => {
         assert.strictEqual(paint.drag, 'drag');
         assert.strictEqual(paint.actions, 'no-drag');
         // Capture the actual transparent Chromium surface, not a CSS mock.
+        await popup.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
         const image = await popup.webContents.capturePage();
         const bitmap = image.toBitmap();
         const size = image.getSize();
         const scale = size.width / layout.width;
         const alpha = (x, y) => bitmap[(Math.floor(y * scale) * size.width + Math.floor(x * scale)) * 4 + 3];
         const wordSurface = paint.surfaces[1];
-        assert.strictEqual(alpha(wordSurface.left + 12, wordSurface.top + 12), 255);
-        assert.strictEqual(alpha(4, (wordSurface.top + wordSurface.bottom) / 2), 0);
         if (process.env.WORDPOP_TEST_SCREENSHOT_DIR) {
           fs.mkdirSync(process.env.WORDPOP_TEST_SCREENSHOT_DIR, { recursive: true });
           fs.writeFileSync(path.join(process.env.WORDPOP_TEST_SCREENSHOT_DIR, `popup-${theme}.png`), image.toPNG());
         }
+        const surfaceAlpha = alpha(wordSurface.left + 12, wordSurface.top + 12);
+        const gapAlpha = alpha(4, (wordSurface.top + wordSurface.bottom) / 2);
+        const details = JSON.stringify({ theme, size, scale, wordSurface, surfaceAlpha, gapAlpha });
+        assert.strictEqual(surfaceAlpha, 255, details);
+        assert.strictEqual(gapAlpha, 0, details);
       }
       await popup.webContents.executeJavaScript("document.documentElement.dataset.theme = 'light'");
     }
