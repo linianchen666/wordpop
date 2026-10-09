@@ -45,6 +45,9 @@ async function createHarness() {
     window: {
       wordpopAPI: {
         getConfig: async () => ({}),
+        getReviewPreview: async id => ({ success: true, wordId: id, state: 'new',
+          generatedAt: Date.now(), dueAt: null, intervals: Object.fromEntries(
+            ['unknown', 'fuzzy', 'known', 'easy'].map(action => [action, { interval: 60000, dueAt: Date.now() + 60000 }])) }),
         getFocusWords: async () => ({ success: true, words }),
         submitFocusWord(id, action) {
           calls.push({ id, action });
@@ -58,6 +61,7 @@ async function createHarness() {
     setTimeout,
     playWordAudio() {}
   });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/renderer/shared/review-preview.js'), 'utf8'), context);
   vm.runInContext(source, context, { filename: 'focus.js' });
   // Allow the renderer's actual initSession() config and word-list IPCs to settle.
   await new Promise(resolve => setImmediate(resolve));

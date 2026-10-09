@@ -21,6 +21,14 @@ let registered = false;
 function registerIpcHandlers() {
   if (registered) return;
 
+  ipcMain.handle('review:preview', (_event, wordId) => {
+    try {
+      return require('./review-preview').getReviewPreview(require('./db').getDb(), wordId);
+    } catch (error) {
+      return { success: false, error: error.message };
+    }
+  });
+
   ipcMain.handle('app:get-logs', () => {
     try {
       return { success: true, logs: fs.readFileSync(LOG_FILE, 'utf8') };

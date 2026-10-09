@@ -102,18 +102,22 @@
       <button class="btn-focus-action action-unknown" id="btn-unknown">
         <span class="key-hint">A</span>
         <span class="btn-text">✗ 不认识</span>
+      <span class="review-interval" id="interval-unknown"></span>
       </button>
       <button class="btn-focus-action action-fuzzy" id="btn-fuzzy">
         <span class="key-hint">S</span>
         <span class="btn-text">~ 模糊</span>
+      <span class="review-interval" id="interval-fuzzy"></span>
       </button>
       <button class="btn-focus-action action-known" id="btn-known">
         <span class="key-hint">Enter / D</span>
         <span class="btn-text">✓ 认识</span>
+      <span class="review-interval" id="interval-known"></span>
       </button>
       <button class="btn-focus-action action-mastered" id="btn-mastered">
         <span class="key-hint">M</span>
         <span class="btn-text">★ 轻松</span>
+      <span class="review-interval" id="interval-easy"></span>
       </button>
     </div>
 
@@ -129,6 +133,7 @@
   </div>
 
   <script src="../shared/utils.js"></script>
+  <script src="../shared/review-preview.js"></script>
   <script src="focus.js"></script>
 </body>
 </html>

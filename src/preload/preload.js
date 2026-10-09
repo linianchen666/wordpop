@@ -14,6 +14,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
 
   // === 设置操作 ===
   getConfig:           ()  => ipcRenderer.invoke('config:get'),
+  getReviewPreview:    (id) => ipcRenderer.invoke('review:preview', id),
   saveConfig:          (c) => ipcRenderer.invoke('config:save', c),
   getWordlists:        ()  => ipcRenderer.invoke('wordlists:get'),
   importWordlist:      (id) => ipcRenderer.invoke('wordlist:import', id),

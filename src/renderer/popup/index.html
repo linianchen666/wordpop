@@ -16,7 +16,7 @@
       <span class="batch-dots" id="batch-dots" title="本轮批次进度"></span>
       <span class="popup-progress" id="progress-text">--</span>
       <div class="popup-actions">
-        <button class="popup-btn-icon btn-mastered-icon hidden" id="btn-mastered" title="轻松：容易回忆，延长下次复习间隔">★</button>
+        <button class="popup-btn-icon btn-mastered-icon hidden" id="btn-mastered" title="轻松：容易回忆，延长下次复习间隔"><span>★</span><span class="review-interval" id="interval-easy"></span></button>
         <button class="popup-btn-icon" id="btn-minimize" title="最小化到托盘">─</button>
       </div>
     </div>
@@ -44,13 +44,13 @@
     <!-- 操作按钮区 -->
     <div class="popup-footer hidden" id="action-buttons">
       <button class="btn btn-lg btn-danger btn-action" id="btn-unknown">
-        ✗ 不认识
+        <span>✗ 不认识</span><span class="review-interval" id="interval-unknown"></span>
       </button>
       <button class="btn btn-lg btn-warning btn-action" id="btn-fuzzy">
-        ~ 模糊
+        <span>~ 模糊</span><span class="review-interval" id="interval-fuzzy"></span>
       </button>
       <button class="btn btn-lg btn-success btn-action" id="btn-known">
-        ✓ 认识
+        <span>✓ 认识</span><span class="review-interval" id="interval-known"></span>
       </button>
     </div>
 
@@ -69,6 +69,7 @@
   </div>
 
   <script src="../shared/utils.js"></script>
+  <script src="../shared/review-preview.js"></script>
   <script src="popup.js"></script>
 </body>
 </html>

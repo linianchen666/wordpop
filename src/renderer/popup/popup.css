@@ -582,3 +582,12 @@ body.pill-mode .word-phonetic {
   margin: 0 !important;
   padding: 2px 6px !important;
 }
+
+/* Prediction labels remain visible without expanding the star into a fourth footer action. */
+.btn-action { flex-direction: column; gap: 2px; min-width: 0; }
+.review-interval { font-size: 11px; font-weight: 400; white-space: nowrap; }
+.btn-mastered-icon { flex-direction: column; width: auto; min-width: 42px; height: auto; padding: 3px; opacity: 1; }
+.btn-mastered-icon .review-interval { font-size: 10px; }
+.popup-title { flex-shrink: 0; }
+.popup-progress { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.popup-actions { flex-shrink: 0; }

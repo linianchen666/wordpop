@@ -28,6 +28,16 @@ const etymologySection = document.getElementById('etymology-section');
 const etymologyContent = document.getElementById('etymology-content');
 
 let currentWord = null;
+const reviewPreview = window.createReviewPreview({
+  status: progressText,
+  suffix: () => currentWord?.queueRemaining > 0 ? ` | 剩余 ${currentWord.queueRemaining}` : '',
+  buttons: {
+    unknown: { button: btnUnknown, hint: document.getElementById('interval-unknown') },
+    fuzzy: { button: btnFuzzy, hint: document.getElementById('interval-fuzzy') },
+    known: { button: btnKnown, hint: document.getElementById('interval-known') },
+    easy: { button: btnMastered, hint: document.getElementById('interval-easy') }
+  }
+});
 
 // === 切换到回忆阶段（新单词出现时） ===
 function enterRecallPhase() {
@@ -43,6 +53,7 @@ function enterRecallPhase() {
 // === 切换到显示阶段（用户点击显示释义后） ===
 function enterRevealPhase() {
   phase = 'reveal';
+  reviewPreview.refresh(currentWord.id);
   revealArea.classList.add('hidden');
   wordDetail.classList.remove('hidden');
   actionButtons.classList.remove('hidden');
@@ -180,24 +191,10 @@ window.wordpopAPI.onWordData((data) => {
     document.documentElement.setAttribute('data-theme', data.config.theme);
   }
 
-  // 进度信息（9 阶段：0-8，共 9 格；stage 9 = 已掌握）
-  if (data.progress) {
-    const stage = data.progress.stage;
-    if (stage >= 9) {
-      progressText.textContent = '已掌握';
-      progressFill.style.width = '100%';
-    } else {
-      progressText.textContent = `阶段 ${stage + 1}/9`;
-      progressFill.style.width = `${((stage + 1) / 9) * 100}%`;
-    }
-  } else {
-    progressText.textContent = '新词';
-    progressFill.style.width = '0%';
-  }
-
-  if (data.queueRemaining !== undefined && data.queueRemaining > 0) {
-    progressText.textContent += ` | 剩余 ${data.queueRemaining}`;
-  }
+  // The bar represents the current batch, never legacy learning stages.
+  progressFill.style.width = data.batchSize > 0
+    ? `${Math.max(0, (data.batchIndex - 1) / data.batchSize) * 100}%` : '0%';
+  reviewPreview.refresh(data.id);
 
   // 确保弹窗内容可见（移除 hiding 状态）
   container.classList.remove('hiding');
@@ -283,6 +280,7 @@ btnKnown.addEventListener('click', () => {
   setTimeout(() => { btnKnown.style.transform = ''; }, 150);
 
   window.wordpopAPI.markKnown();
+  reviewPreview.cancel();
   currentWord = null;
   flashContainer();
 });
@@ -296,6 +294,7 @@ btnUnknown.addEventListener('click', () => {
   setTimeout(() => { btnUnknown.style.transform = ''; }, 150);
 
   window.wordpopAPI.markUnknown();
+  reviewPreview.cancel();
   currentWord = null;
   flashContainer();
 });
@@ -309,6 +308,7 @@ btnFuzzy.addEventListener('click', () => {
   setTimeout(() => { btnFuzzy.style.transform = ''; }, 150);
 
   window.wordpopAPI.markFuzzy();
+  reviewPreview.cancel();
   currentWord = null;
   flashContainer();
 });
@@ -319,6 +319,7 @@ btnMastered.addEventListener('click', () => {
   disableActionButtons();
 
   window.wordpopAPI.markEasy();
+  reviewPreview.cancel();
   currentWord = null;
   flashContainer();
 });

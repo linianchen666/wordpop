@@ -50,6 +50,15 @@ let sessionStartTime = Date.now();
 let activeAudio = null;
 let currentConfig = {};
 let isSubmitting = false;
+const reviewPreview = window.createReviewPreview({
+  status: wordStageTag,
+  buttons: {
+    unknown: { button: btnUnknown, hint: document.getElementById('interval-unknown') },
+    fuzzy: { button: btnFuzzy, hint: document.getElementById('interval-fuzzy') },
+    known: { button: btnKnown, hint: document.getElementById('interval-known') },
+    easy: { button: btnMastered, hint: document.getElementById('interval-easy') }
+  }
+});
 
 // === 初始化 ===
 async function initSession(targetCount = 20) {
@@ -116,8 +125,7 @@ function showCurrentWord() {
   focusWordEl.textContent = word.word;
   focusPhoneticEl.textContent = word.phonetic ? `/${word.phonetic}/ 🔊` : '🔊 发音';
 
-  const isNew = !word.stage || word.stage === 0;
-  wordStageTag.textContent = isNew ? '新词' : `复习 (阶段 ${word.stage}/9)`;
+  reviewPreview.refresh(word.id);
 
   focusTranslation.textContent = word.translation || '';
 
@@ -159,6 +167,7 @@ function showCurrentWord() {
 function revealDetail() {
   if (phase === 'reveal') return;
   phase = 'reveal';
+  reviewPreview.refresh(sessionWords[currentIndex].id);
   focusRevealPrompt.style.display = 'none';
   focusDetail.style.display = 'block';
 }

@@ -180,6 +180,26 @@ try {
    assert.equal(db.prepare('SELECT COUNT(*) AS n FROM review_history').get().n, 2);
   }
  });
+ test('预览读取真实新词/旧进度/FSRS卡片，四档与保存算法一致且不修改数据库', () => {
+  const { getReviewPreview } = require('../src/main/review-preview');
+  clear(); seed(1);
+  for (const kind of ['new', 'legacy', 'fsrs']) {
+   if (kind === 'legacy') db.prepare('INSERT INTO progress (word_id,stage,interval,last_review_at,next_review_at) VALUES (1,5,?,?,?)').run(3 * DAY, now - 3 * DAY, now);
+   if (kind === 'fsrs') recordReview(db, 1, 'easy', now - DAY);
+   const before = JSON.stringify(row(1));
+   const historyBefore = db.prepare('SELECT COUNT(*) n FROM review_history').get().n;
+   const preview = getReviewPreview(db, 1, now);
+   for (const action of ['unknown', 'fuzzy', 'known', 'easy']) {
+    const calculated = calculateReview(row(1), action, now);
+    assert.equal(preview.intervals[action].interval, calculated.interval);
+    assert.equal(preview.intervals[action].dueAt, calculated.next_review_at);
+   }
+   assert.equal(JSON.stringify(row(1)), before);
+   assert.equal(db.prepare('SELECT COUNT(*) n FROM review_history').get().n, historyBefore);
+  }
+  assert.throws(() => getReviewPreview(db, -1, now));
+  assert.throws(() => getReviewPreview(db, 999, now));
+ });
  test('FSRS状态和官方日志连同统计在一个事务中保存', () => {
   clear(); seed(1);
   recordReview(db, 1, 'known', now);

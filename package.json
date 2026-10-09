@@ -1,6 +1,6 @@
 {
   "name": "wordpop",
-  "version": "1.8.0-beta.2",
+  "version": "1.8.0-beta.3",
   "description": "基于 FSRS 的 Windows 桌面弹窗背单词工具",
   "main": "src/main/index.js",
   "author": "WordPop Team",
