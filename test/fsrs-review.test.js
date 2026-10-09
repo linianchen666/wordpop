@@ -141,7 +141,7 @@ try {
   if (request === 'electron') return {
    app: { getPath: () => testDir }, BrowserWindow: { getAllWindows: () => [] }, dialog: {}
   };
-  if (parent?.filename.includes('/src/main/')) {
+  if (parent?.filename.includes(path.join('src', 'main') + path.sep)) {
    if (request === './db') return { getDb: () => db, importWordlist() {} };
    if (request === './config') return { loadConfig: () => config, saveConfig: value => ({ success: true, config: value }) };
    if (request === './popup-manager') return { show() {} };
