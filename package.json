@@ -5,6 +5,10 @@
   "main": "src/main/index.js",
   "author": "WordPop Team",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/linianchen666/wordpop.git"
+  },
   "scripts": {
     "start": "electron .",
     "dev": "electron . --dev",
