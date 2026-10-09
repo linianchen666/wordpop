@@ -4,6 +4,7 @@ const { importWordlist, getWordlistIndex, importCustomWordlist, diagnoseDatabase
 const { handleExportBackup, handleImportBackup } = require('./backup');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
+const ambientPill = require('./ambient-pill');
 const { learningRepository } = require('./learning-repository');
 const { selectedWordlists } = require('./study-policy');
 const popupManager = require('./popup-manager');
@@ -20,6 +21,7 @@ let registered = false;
 
 function registerIpcHandlers() {
   if (registered) return;
+  scheduler.on('stats-updated', () => ambientPill.refresh());
 
   ipcMain.handle('review:preview', (_event, wordId) => {
     try {
@@ -69,6 +71,7 @@ function registerIpcHandlers() {
     if (result.success) {
       scheduler.applyConfig(result.config);
       popupManager.updateConfig(result.config);
+      ambientPill.updateConfig(result.config);
       // 同步自动检查更新状态
       if ('autoCheckUpdate' in config) {
         startAutoUpdateCheck(config.autoCheckUpdate);
@@ -187,9 +190,11 @@ function registerIpcHandlers() {
     return handleExportBackup(win);
   });
 
-  ipcMain.handle('backup:import', (event) => {
+  ipcMain.handle('backup:import', async (event) => {
     const win = BrowserWindow.fromWebContents(event.sender);
-    return handleImportBackup(win);
+    const result = await handleImportBackup(win);
+    if (result.success) ambientPill.updateConfig(loadConfig());
+    return result;
   });
 
   // ═════════════════════════╗
@@ -245,6 +250,7 @@ function registerIpcHandlers() {
 
   ipcMain.handle('focus:submit-word', (_event, wordId, action) => {
     const res = submitFocusWord(wordId, action);
+    if (res.success) ambientPill.refresh();
     BrowserWindow.getAllWindows().forEach(w => {
       if (!w.isDestroyed()) w.webContents.send('stats:updated');
     });

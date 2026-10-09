@@ -9,10 +9,8 @@ let pendingWordData = null;
 let popupSizes = {};
 let sizeSaveTimer = null;
 
-function minimumSize(displayMode) {
-  return displayMode === 'pill'
-    ? { minWidth: 280, minHeight: 56 }
-    : { minWidth: 320, minHeight: 300 };
+function minimumSize() {
+  return { minWidth: 320, minHeight: 300 };
 }
 
 function savePopupSizes() {
@@ -54,13 +52,12 @@ function createPopupWindow() {
   pendingWordData = null;
 
   try {
-    const isPill = popupConfig.displayMode === 'pill';
-    const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
+    const bounds = getPopupBounds(popupConfig.position);
 
     popupWindow = new BrowserWindow({
       width: bounds.width,
       height: bounds.height,
-      ...minimumSize(popupConfig.displayMode),
+      ...minimumSize(),
       x: bounds.x,
       y: bounds.y,
       frame: false,
@@ -79,7 +76,7 @@ function createPopupWindow() {
         sandbox: false
       }
     });
-    popupWindowMode = isPill ? 'pill' : 'card';
+    popupWindowMode = 'card';
 
     const htmlPath = getAsarPath('src', 'renderer', 'popup', 'index.html');
     popupWindow.loadFile(htmlPath);
@@ -175,9 +172,9 @@ function _displayWord(wordData) {
   }
 
   try {
-    const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
-    popupWindowMode = popupConfig.displayMode === 'pill' ? 'pill' : 'card';
-    const { minWidth, minHeight } = minimumSize(popupConfig.displayMode);
+    const bounds = getPopupBounds(popupConfig.position);
+    popupWindowMode = 'card';
+    const { minWidth, minHeight } = minimumSize();
     popupWindow.setMinimumSize(minWidth, minHeight);
     popupWindow.setBounds(bounds);
 
@@ -247,22 +244,21 @@ function closeImmediately() {
   popupReady = false;
 }
 
-function getPopupBounds(position, displayMode = 'card') {
+function getPopupBounds(position) {
   try {
     const display = screen.getPrimaryDisplay();
     const { x = 0, y = 0, width, height } = display.workArea || display.workAreaSize;
-    const isPill = displayMode === 'pill';
-    const mode = isPill ? 'pill' : 'card';
+    const mode = 'card';
     let saved = popupSizes[mode];
     // Read the native size too: a new word can arrive before the resize event.
     if (popupWindow && !popupWindow.isDestroyed() && popupWindowMode === mode) {
       const [currentWidth, currentHeight] = popupWindow.getSize();
       saved = { width: currentWidth, height: currentHeight };
     }
-    const { minWidth, minHeight } = minimumSize(displayMode);
+    const { minWidth, minHeight } = minimumSize();
     const M = 20;
-    const W = Math.min(Math.max(minWidth, Number.isFinite(saved?.width) ? Math.round(saved.width) : (isPill ? 320 : 380)), width - M * 2);
-    const H = Math.min(Math.max(minHeight, Number.isFinite(saved?.height) ? Math.round(saved.height) : (isPill ? 56 : 440)), height - M * 2);
+    const W = Math.min(Math.max(minWidth, Number.isFinite(saved?.width) ? Math.round(saved.width) : 380), width - M * 2);
+    const H = Math.min(Math.max(minHeight, Number.isFinite(saved?.height) ? Math.round(saved.height) : 440), height - M * 2);
     const size = { width: W, height: H };
     switch (position) {
       case 'top-left':     return { ...size, x: x + M, y: y + M };
@@ -270,7 +266,7 @@ function getPopupBounds(position, displayMode = 'card') {
       case 'bottom-left':  return { ...size, x: x + M, y: y + height - H - M };
       default:             return { ...size, x: x + width - W - M, y: y + height - H - M };
     }
-  } catch (e) { return { x: 100, y: 100, width: displayMode === 'pill' ? 320 : 380, height: displayMode === 'pill' ? 56 : 440 }; }
+  } catch (e) { return { x: 100, y: 100, width: 380, height: 440 }; }
 }
 
 function updateConfig(cfg) {
@@ -281,15 +277,15 @@ function updateConfig(cfg) {
   if (cfg.theme !== undefined) popupConfig.theme = cfg.theme;
   if (cfg.autoPronounce !== undefined) popupConfig.autoPronounce = cfg.autoPronounce;
   if (cfg.pronounceVoice !== undefined) popupConfig.pronounceVoice = cfg.pronounceVoice;
-  if (cfg.displayMode !== undefined) popupConfig.displayMode = cfg.displayMode;
+  popupConfig.displayMode = 'card';
   if (cfg.batchSize !== undefined) popupConfig.batchSize = cfg.batchSize;
   if (cfg.cooldownMinutes !== undefined) popupConfig.cooldownMinutes = cfg.cooldownMinutes;
 
   // 如果弹窗正在显示，立即调整尺寸与位置
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
-    const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
-    popupWindowMode = popupConfig.displayMode === 'pill' ? 'pill' : 'card';
-    const { minWidth, minHeight } = minimumSize(popupConfig.displayMode);
+    const bounds = getPopupBounds(popupConfig.position);
+    popupWindowMode = 'card';
+    const { minWidth, minHeight } = minimumSize();
     popupWindow.setMinimumSize(minWidth, minHeight);
     popupWindow.setBounds(bounds);
   }

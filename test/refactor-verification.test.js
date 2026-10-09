@@ -134,6 +134,17 @@ try {
     assert.strictEqual(loaded.dailyNewWords, 13);
   });
 
+  test('旧胶囊形态迁移成独立开关，保留卡片尺寸且允许显式关闭', () => {
+    const loaded = loadFileConfig({ displayMode: 'pill', popupSizes: { card: { width: 600, height: 500 } } });
+    assert.strictEqual(loaded.displayMode, 'card');
+    assert.strictEqual(loaded.ambientPillEnabled, true);
+    assert.strictEqual(loaded.popupSizes.card.width, 600);
+    assert.strictEqual(config.saveConfig({ ambientPillEnabled: false }).success, true);
+    config.clearCache();
+    assert.strictEqual(config.loadConfig().ambientPillEnabled, false);
+    assert.strictEqual(loadFileConfig({ displayMode: 'pill', ambientPillEnabled: false }).ambientPillEnabled, false);
+  });
+
   test('缺少配置文件时实际模块返回默认配置', () => {
     fs.unlinkSync(configFile);
     config.clearCache();

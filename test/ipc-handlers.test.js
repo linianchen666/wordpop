@@ -104,7 +104,7 @@ try {
         loadConfig: () => ({ selectedWordlists: ['cet4'] }),
         saveConfig: config => ({ success: true, config })
       };
-      if (request === './scheduler') return { getStatus: () => status };
+      if (request === './scheduler') return { getStatus: () => status, on() {} };
       if (['./backup', './popup-manager', './focus-manager', './tray'].includes(request)) return {};
     }
     return originalLoad.apply(this, arguments);

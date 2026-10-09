@@ -11,7 +11,8 @@ const DEFAULT_CONFIG = {
   maxDynamicNewWords: 50,          // 智能模式每日新词上限
   batchSize: 3,                    // 单次弹窗批次词数：1, 3, 5, 0 (0为连续不间断)
   cooldownMinutes: 10,             // 批次完成后的静默冷却时间（分钟）：1, 3, 5, 10, 15, 30
-  displayMode: 'card',             // card (标准卡片 380x440) | pill (灵动胶囊 300x54)
+  displayMode: 'card',             // 普通复习始终使用卡片
+  ambientPillEnabled: false,       // 独立任务栏胶囊，仅轮播待巩固词
   smartDisturbance: true,          // 智能打扰感知：高强度打字时暂缓弹出
   popupPosition: 'bottom-right',   // top-left | top-right | bottom-left | bottom-right
   selectedWordlists: ['cet4'],     // 启用的词库列表
@@ -56,6 +57,12 @@ function loadConfig() {
         userConfig.pronounceVoice = (userConfig.pronounceAccent === 'en-GB' || userConfig.pronounceAccent === 'uk') ? 'dict-uk' : 'dict-us';
         delete userConfig.pronounceAccent;
       }
+      // Preserve the intent of the old pill selection without shrinking the
+      // ordinary study window. An explicit new toggle always takes precedence.
+      if (userConfig.displayMode === 'pill' && userConfig.ambientPillEnabled === undefined) {
+        userConfig.ambientPillEnabled = true;
+      }
+      userConfig.displayMode = 'card';
       cachedConfig = { ...DEFAULT_CONFIG, ...userConfig };
     } else {
       cachedConfig = { ...DEFAULT_CONFIG };
@@ -76,6 +83,8 @@ function saveConfig(config) {
   const filePath = getConfigPath();
   try {
     const merged = { ...loadConfig(), ...config };
+    if (config.displayMode === 'pill' && config.ambientPillEnabled === undefined) merged.ambientPillEnabled = true;
+    merged.displayMode = 'card';
     fs.writeFileSync(filePath, JSON.stringify(merged, null, 2), 'utf-8');
     cachedConfig = merged;
     if ('autoStart' in config) {

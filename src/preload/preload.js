@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer, shell } = require('electron');
 
 contextBridge.exposeInMainWorld('wordpopAPI', {
+  onAmbientWord: (cb) => ipcRenderer.on('ambient:word', (_e, data) => cb(data)),
   // === 弹窗操作 ===
   onWordData:      (cb) => ipcRenderer.on('popup:word',  (_e,d) => cb(d)),
   onHide:          (cb) => ipcRenderer.on('popup:hide',         () => cb()),

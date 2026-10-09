@@ -2,7 +2,7 @@ name: Windows test release
 
 on:
   push:
-    branches: [release/v1.8.0-beta.5]
+    branches: [release/v1.8.0-beta.6]
     paths: [.github/workflows/windows-test-release.yml]
   workflow_dispatch:
 
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: wordpop-v1.8.0-beta.5-release
+  group: wordpop-v1.8.0-beta.6-release
   cancel-in-progress: false
 
 jobs:
@@ -18,12 +18,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      RELEASE_TAG: v1.8.0-beta.5
+      RELEASE_TAG: v1.8.0-beta.6
       WORDPOP_TEST_SCREENSHOT_DIR: artifacts/transparent-popup-previews
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.8.0-beta.5
+          ref: v1.8.0-beta.6
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -46,6 +46,12 @@ jobs:
           $env:WORDPOP_TEST_APP_ROOT = (Resolve-Path 'build/win-unpacked/resources/app.asar').Path
           & .\node_modules\.bin\electron.cmd test/fixtures/review-window.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Packaged review preview validation failed' }
+      - name: Verify packaged independent taskbar pill
+        shell: pwsh
+        run: |
+          $env:WORDPOP_TEST_APP_ROOT = (Resolve-Path 'build/win-unpacked/resources/app.asar').Path
+          & .\node_modules\.bin\electron.cmd test/fixtures/ambient-window.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged ambient pill validation failed' }
       - name: Prepare installer and checksum
         shell: pwsh
         run: |

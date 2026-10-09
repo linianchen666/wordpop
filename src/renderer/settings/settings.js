@@ -30,10 +30,7 @@ const autoBalanceLoad     = document.getElementById('autoBalanceLoad');
 const batchSizeSelect     = document.getElementById('batchSize');
 const cooldownMinSelect   = document.getElementById('cooldownMinutes');
 
-// 形态选择 DOM
-const dispOptCard         = document.getElementById('disp-opt-card');
-const dispOptPill         = document.getElementById('disp-opt-pill');
-let selectedDisplayMode   = 'card';
+const ambientPillEnabled = document.getElementById('ambientPillEnabled');
 
 // 音色选择与试听 DOM
 const pronounceVoiceSelect = document.getElementById('pronounceVoice');
@@ -127,8 +124,7 @@ async function init() {
   }
 
   // 弹窗形态
-  selectedDisplayMode = currentConfig.displayMode || 'card';
-  setDisplayMode(selectedDisplayMode);
+  ambientPillEnabled.checked = currentConfig.ambientPillEnabled === true;
 
   // 发音音色
   if (pronounceVoiceSelect) {
@@ -168,18 +164,6 @@ async function init() {
   await loadPrediction();
   await refreshQuotaAndBacklogInfo();
 }
-
-// === 弹窗形态切换 ===
-function setDisplayMode(mode) {
-  selectedDisplayMode = mode;
-  if (dispOptCard && dispOptPill) {
-    dispOptCard.classList.toggle('active', mode === 'card');
-    dispOptPill.classList.toggle('active', mode === 'pill');
-  }
-}
-
-if (dispOptCard) dispOptCard.addEventListener('click', () => setDisplayMode('card'));
-if (dispOptPill) dispOptPill.addEventListener('click', () => setDisplayMode('pill'));
 
 // === 音色即时试听 ===
 if (btnPreviewVoice) {
@@ -523,7 +507,8 @@ btnSave.addEventListener('click', async () => {
     autoBalanceLoad: autoBalanceLoad ? autoBalanceLoad.checked : true,
     batchSize: batchSizeSelect ? parseInt(batchSizeSelect.value) : 3,
     cooldownMinutes: cooldownMinSelect ? parseInt(cooldownMinSelect.value) : 10,
-    displayMode: selectedDisplayMode,
+    displayMode: 'card',
+    ambientPillEnabled: ambientPillEnabled.checked,
     pronounceVoice: pronounceVoiceSelect ? pronounceVoiceSelect.value : 'dict-us',
     popupPosition: selectedPosition,
     selectedWordlists: selectedWordlists,

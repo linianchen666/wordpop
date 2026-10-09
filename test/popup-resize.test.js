@@ -85,40 +85,36 @@ async function run() {
       window.setBounds({ ...window.bounds, width: 600, height: 640 });
     });
 
-    test('卡片和胶囊各自保留尺寸，切换模式更新最小尺寸', () => {
-      popup.updateConfig({ displayMode: 'pill' });
-      assert.deepStrictEqual(window.getSize(), [320, 56]);
-      assert.deepStrictEqual(window.minimum, [280, 56]);
-      window.setBounds({ ...window.bounds, width: 480, height: 96 });
-      popup.show({ id: 3, word: 'pill' });
-      assert.deepStrictEqual(window.getSize(), [480, 96]);
-      popup.updateConfig({ displayMode: 'card' });
+    test('独立胶囊开关与旧模式值都不会把复习卡片压扁', () => {
+      popup.updateConfig({ ambientPillEnabled: true, displayMode: 'pill' });
       assert.deepStrictEqual(window.getSize(), [600, 640]);
       assert.deepStrictEqual(window.minimum, [320, 300]);
-      popup.updateConfig({ displayMode: 'pill' });
-      assert.deepStrictEqual(window.getSize(), [480, 96]);
+      popup.show({ id: 3, word: 'card' });
+      assert.strictEqual(window.messages.at(-1)[1].config.displayMode, 'card');
+      popup.updateConfig({ ambientPillEnabled: false });
+      assert.deepStrictEqual(window.getSize(), [600, 640]);
     });
 
     await new Promise(resolve => setTimeout(resolve, 300));
     test('缩放经实际配置模块保存，不覆盖其他配置', () => {
       const onDisk = JSON.parse(fs.readFileSync(path.join(directory, 'config.json'), 'utf8'));
-      assert.deepStrictEqual(onDisk.popupSizes, { card: { width: 600, height: 640 }, pill: { width: 480, height: 96 } });
+      assert.deepStrictEqual(onDisk.popupSizes, { card: { width: 600, height: 640 } });
       assert.strictEqual(onDisk.dailyNewWords, 20);
     });
 
     test('关闭时立即保存最终尺寸，新模块实例从配置恢复', () => {
-      window.setBounds({ ...window.bounds, width: 520, height: 100 });
+      window.setBounds({ ...window.bounds, width: 520, height: 500 });
       popup.destroy();
       config.clearCache();
       delete require.cache[modules[0]];
       popup = require('../src/main/popup-manager');
       popup.updateConfig(config.loadConfig());
       const reopened = popup.createPopupWindow();
-      assert.deepStrictEqual(reopened.getSize(), [600, 640]);
+      assert.deepStrictEqual(reopened.getSize(), [520, 500]);
       popup.updateConfig({ displayMode: 'pill' });
       reopened.emit('ready-to-show');
       popup.show({ id: 4, word: 'restored' });
-      assert.deepStrictEqual(reopened.getSize(), [520, 100]);
+      assert.deepStrictEqual(reopened.getSize(), [520, 500]);
     });
 
     test('保存的大尺寸适配较小屏幕和工作区偏移', () => {

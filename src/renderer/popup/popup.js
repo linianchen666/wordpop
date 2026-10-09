@@ -81,13 +81,6 @@ window.wordpopAPI.onWordData((data) => {
   const batchCompleteCard = document.getElementById('batch-complete-card');
   if (batchCompleteCard) batchCompleteCard.classList.add('hidden');
 
-  // 形态切换：卡片 vs 胶囊
-  if (data.config && data.config.displayMode === 'pill') {
-    document.body.classList.add('pill-mode');
-  } else {
-    document.body.classList.remove('pill-mode');
-  }
-
   // 渲染微批次小圆点
   const batchDotsEl = document.getElementById('batch-dots');
   if (batchDotsEl) {

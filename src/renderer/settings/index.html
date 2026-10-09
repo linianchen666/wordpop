@@ -132,14 +132,16 @@
         <span class="form-hint">完成一轮批次后自动静默隐退，绝不连环轰炸，保持工作心流</span>
       </div>
 
-      <!-- 弹窗显示形态 -->
+      <!-- 独立任务栏胶囊 -->
       <div class="form-group">
-        <label class="form-label">🎨 弹窗显示形态</label>
-        <div class="mode-selector" id="display-mode-selector">
-          <div class="mode-option active" data-display="card" id="disp-opt-card">🗂️ 标准精致卡片</div>
-          <div class="mode-option" data-display="pill" id="disp-opt-pill">💊 灵动极简胶囊</div>
+        <div class="toggle-row">
+          <span>💊 灵动胶囊</span>
+          <label class="toggle">
+            <input type="checkbox" id="ambientPillEnabled">
+            <span class="toggle-slider"></span>
+          </label>
         </div>
-        <span class="form-hint">灵动胶囊常驻屏幕边缘，极窄透明毛玻璃，绝不遮挡任何代码或文档工作区</span>
+        <span class="form-hint">开启后，在任务栏中间轮播最近「不认识」或多次反馈「不认识／模糊」的单词，每 8 秒换一个。鼠标点击可穿透到任务栏；正常复习卡片照常使用。</span>
       </div>
 
       <!-- 沉浸专注刷词模式入口 -->

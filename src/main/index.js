@@ -10,6 +10,7 @@ const { loadConfig, saveConfig } = require('./config');
 const { createTray, destroyTray, updateStatus, startAutoUpdateCheck } = require('./tray');
 const popupManager = require('./popup-manager');
 const scheduler = require('./scheduler');
+const ambientPill = require('./ambient-pill');
 const { registerIpcHandlers } = require('./ipc-handlers');
 
 // ── 日志系统 ──
@@ -113,6 +114,7 @@ app.whenReady().then(async () => {
 
   // 3.1 用当前配置初始化 popupManager
   popupManager.updateConfig(config);
+  safeStep('ambientPill', () => ambientPill.updateConfig(config));
 
   // 4. 托盘
   const trayOk = safeStep('createTray', () => createTray({
@@ -393,5 +395,6 @@ function showPopup() {
 app.on('window-all-closed', () => {});
 app.on('activate', () => { try { openStatsWindow(); } catch (_) {} });
 app.on('before-quit', () => {
+  ambientPill.destroy();
   try { scheduler.stop(); destroyTray(); require('./db').closeDatabase(); } catch (_) {}
 });
