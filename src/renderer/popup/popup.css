@@ -8,11 +8,11 @@ html, body { background: transparent; }
   flex-direction: column;
   height: 100vh;
   background: transparent;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
+  border: none;
   box-shadow: none;
+  padding: 10px;
+  position: relative;
   overflow: hidden;
-  animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1);
   transition: opacity 0.3s ease, transform 0.3s ease;
 }
 
@@ -22,16 +22,24 @@ html, body { background: transparent; }
   transform: translateY(12px) scale(0.98);
 }
 
-/* 新词出现时的边框提醒动画 */
-.popup-container.new-word-alert {
-  animation: popIn 0.4s cubic-bezier(0.16, 1, 0.3, 1), borderPulse 2s ease;
+/* Animate the content card while keeping the surrounding canvas clear. */
+.popup-container.new-word-alert .study-card {
+  animation: popIn 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-@keyframes borderPulse {
-  0%   { border-color: var(--color-primary); box-shadow: 0 10px 40px var(--color-shadow-lg), 0 0 0 2px var(--color-primary-glow); }
-  30%  { border-color: var(--color-border); box-shadow: 0 10px 40px var(--color-shadow-lg); }
-  60%  { border-color: var(--color-primary); box-shadow: 0 10px 40px var(--color-shadow-lg), 0 0 0 2px var(--color-primary-glow); }
-  100% { border-color: var(--color-border); box-shadow: 0 10px 40px var(--color-shadow-lg); }
+.study-card {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: 100%;
+  min-height: 0;
+  flex-shrink: 0;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 18px;
+  box-shadow: 0 6px 18px var(--color-shadow-lg);
+  overflow: hidden;
+  position: relative;
 }
 
 @keyframes popIn {
@@ -587,53 +595,100 @@ body.pill-mode .word-phonetic {
 .popup-progress { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .popup-actions { flex-shrink: 0; }
 
-/* Filled islands keep every label readable over busy desktop content. */
+/* One continuous reading surface, with transparent space outside it. */
 body:not(.pill-mode) .popup-header {
-  margin: 6px 6px 0;
-  padding: 8px 10px;
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  box-shadow: 0 2px 8px var(--color-shadow);
+  padding: 10px 12px 6px;
+  border: none;
+  background: transparent;
+}
+
+body:not(.pill-mode) .popup-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  letter-spacing: 0;
+}
+
+body:not(.pill-mode) .popup-progress {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+  margin-right: 8px;
+  font-size: 10px;
+  font-weight: 400;
+}
+
+body:not(.pill-mode) .batch-dots { gap: 3px; margin-left: 6px; margin-right: 6px; }
+body:not(.pill-mode) .batch-dot { width: 4px; height: 4px; }
+
+body:not(.pill-mode) .popup-body {
+  flex: 0 1 auto;
+  justify-content: flex-start;
+  padding: 14px 18px 18px;
+  gap: 4px;
 }
 
 body:not(.pill-mode) .word-main {
   color: var(--color-primary);
-  background: var(--color-bg-secondary);
-  -webkit-background-clip: border-box;
+  background: none;
   -webkit-text-fill-color: currentColor;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 6px 14px;
-  box-shadow: 0 2px 8px var(--color-shadow);
+  border: none;
+  padding: 2px 0;
+  box-shadow: none;
+  font-size: 32px;
+  letter-spacing: -0.5px;
 }
-
-.word-translation {
-  background: var(--color-bg-secondary);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  padding: 10px 12px;
-  box-shadow: 0 2px 8px var(--color-shadow);
-}
+body:not(.pill-mode) .word-main[data-font="small"] { font-size: 26px; }
+body:not(.pill-mode) .word-main[data-font="large"] { font-size: 38px; }
 
 body:not(.pill-mode) .word-phonetic {
-  border: 1px solid var(--color-border);
+  background: transparent;
+  border: none;
+  padding: 0;
+  margin-top: 0;
+  font-size: 12px;
 }
 
+body:not(.pill-mode) .word-reveal-area { margin-top: 18px; }
 body:not(.pill-mode) .btn-reveal {
-  background: var(--color-bg-secondary);
-  border-color: var(--color-primary);
+  background: var(--color-bg-tertiary);
+  color: var(--color-text-secondary);
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 8px 18px;
+  font-size: 12px;
   backdrop-filter: none;
-  box-shadow: 0 2px 8px var(--color-shadow);
+  box-shadow: none;
 }
+.reveal-shortcut { margin-left: 10px; font-size: 10px; opacity: 0.7; }
+body:not(.pill-mode) .btn-reveal:hover { background: var(--color-primary); color: white; }
 
-body:not(.pill-mode) .btn-reveal:hover {
-  background: var(--color-primary);
-  color: white;
+body:not(.pill-mode) .word-translation {
+  margin: 12px 0 6px;
+  padding: 12px 0 0;
+  border-top: 1px solid var(--color-border);
+  font-size: 14px;
+  font-weight: 500;
 }
+body:not(.pill-mode) .word-example,
+body:not(.pill-mode) .etymology-section {
+  background: var(--color-bg-tertiary);
+  border: none;
+  box-shadow: none;
+  border-radius: var(--radius-sm);
+}
+body:not(.pill-mode) .etymology-summary { padding: 7px 10px; font-size: 11px; }
+body:not(.pill-mode) .etymology-content { padding: 0 10px 9px; }
+body:not(.pill-mode) .etymology-mnemonic { font-size: 11px; }
+body:not(.pill-mode) .popup-footer { padding: 0 12px 12px; gap: 8px; }
+body:not(.pill-mode) .btn-action { max-width: none; font-size: 13px; padding: 8px 6px; border-radius: 9px; }
+body:not(.pill-mode) .popup-progress-bar { height: 2px; }
 
-.batch-complete-card {
-  inset: 6px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+.batch-complete-card { inset: 0; border: none; border-radius: 18px; }
+body.pill-mode .study-card { display: contents; }
+@media (max-width: 320px) {
+  .popup-container { padding: 8px; }
+  body:not(.pill-mode) .popup-body { padding: 12px 14px 14px; }
+  body:not(.pill-mode) .word-main { font-size: 28px; }
+  body:not(.pill-mode) .popup-title { font-size: 10px; }
 }

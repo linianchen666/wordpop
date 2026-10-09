@@ -10,9 +10,10 @@
 <body>
   <!-- 弹窗容器 -->
   <div id="popup-container" class="popup-container">
+    <div class="study-card">
     <!-- 标题栏 -->
     <div class="popup-header">
-      <span class="popup-title">📖 WordPop</span>
+      <span class="popup-title">WordPop</span>
       <span class="batch-dots" id="batch-dots" title="本轮批次进度"></span>
       <span class="popup-progress" id="progress-text">--</span>
       <div class="popup-actions">
@@ -26,7 +27,7 @@
       <div class="word-main" id="word-text" title="点击发音">Loading...</div>
       <div class="word-phonetic" id="phonetic-text" title="点击发音"></div>
       <div class="word-reveal-area" id="reveal-area">
-        <button class="btn-reveal" id="btn-reveal">点击显示释义</button>
+        <button class="btn-reveal" id="btn-reveal">显示释义 <span class="reveal-shortcut">空格</span></button>
       </div>
       <div class="word-detail hidden" id="word-detail">
         <div class="word-translation" id="translation-text"></div>
@@ -65,6 +66,7 @@
     <!-- 进度指示器 -->
     <div class="popup-progress-bar">
       <div class="progress-fill" id="progress-fill"></div>
+    </div>
     </div>
   </div>
 

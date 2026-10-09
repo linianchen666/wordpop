@@ -67,6 +67,11 @@ app.whenReady().then(async () => {
       batchIndex: 1, batchSize: 3, config: { autoPronounce: false } });
     await until(() => popup.webContents.executeJavaScript("document.getElementById('interval-easy').textContent === '8天后'"));
     assert.strictEqual(db.prepare('SELECT COUNT(*) n FROM review_history WHERE word_id=?').get(word.id).n, 0);
+    if (index === 0 && process.env.WORDPOP_TEST_SCREENSHOT_DIR) {
+      await popup.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+      fs.mkdirSync(process.env.WORDPOP_TEST_SCREENSHOT_DIR, { recursive: true });
+      fs.writeFileSync(path.join(process.env.WORDPOP_TEST_SCREENSHOT_DIR, 'popup-recall.png'), (await popup.webContents.capturePage()).toPNG());
+    }
     await popup.webContents.executeJavaScript("document.getElementById('btn-reveal').click()");
     await until(() => popup.webContents.executeJavaScript("document.getElementById('interval-known').textContent === '10分钟后'"));
     const layout = await popup.webContents.executeJavaScript(`({
@@ -85,7 +90,7 @@ app.whenReady().then(async () => {
       for (const theme of ['light', 'dark']) {
         const paint = await popup.webContents.executeJavaScript(`(() => {
           document.documentElement.dataset.theme = '${theme}';
-          const selectors = ['.popup-header', '.word-main', '.word-phonetic', '.word-translation', '.etymology-section'];
+          const selectors = ['.study-card', '.word-main', '.word-phonetic', '.word-translation'];
           return { canvas: [document.documentElement, document.body, document.getElementById('popup-container')].map(e => getComputedStyle(e).backgroundColor),
             surfaces: selectors.map(selector => { const e = document.querySelector(selector); const r = e.getBoundingClientRect(); const style = getComputedStyle(e);
               return { background: style.backgroundColor, border: style.borderTopWidth, left: r.left, top: r.top, right: r.right, bottom: r.bottom }; }),
@@ -93,7 +98,9 @@ app.whenReady().then(async () => {
             actions: getComputedStyle(document.querySelector('.popup-actions')).getPropertyValue('-webkit-app-region') };
         })()`);
         assert.ok(paint.canvas.every(color => color === 'rgba(0, 0, 0, 0)'));
-        assert.ok(paint.surfaces.every(surface => surface.background.startsWith('rgb(') && surface.border === '1px'));
+        assert.ok(paint.surfaces[0].background.startsWith('rgb(') && paint.surfaces[0].border === '1px');
+        assert.ok(paint.surfaces.slice(1).every(surface => surface.background === 'rgba(0, 0, 0, 0)'));
+        assert.ok(paint.surfaces[0].bottom < layout.height - 10, 'Compact card should leave transparent space below');
         assert.strictEqual(paint.drag, 'drag');
         assert.strictEqual(paint.actions, 'no-drag');
         // Capture the actual transparent Chromium surface, not a CSS mock.
@@ -109,7 +116,7 @@ app.whenReady().then(async () => {
           fs.writeFileSync(path.join(process.env.WORDPOP_TEST_SCREENSHOT_DIR, `popup-${theme}.png`), image.toPNG());
         }
         const surfaceAlpha = alpha(wordSurface.left + 12, wordSurface.top + 12);
-        const gapAlpha = alpha(4, (wordSurface.top + wordSurface.bottom) / 2);
+        const gapAlpha = alpha(2, layout.height - 2);
         const details = JSON.stringify({ theme, size, scale, wordSurface, surfaceAlpha, gapAlpha });
         assert.strictEqual(surfaceAlpha, 255, details);
         assert.strictEqual(gapAlpha, 0, details);
