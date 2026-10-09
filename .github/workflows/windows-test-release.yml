@@ -58,8 +58,10 @@ jobs:
           $asset = "build/$name"
           gh release upload $env:RELEASE_TAG $asset build/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect uploaded release' }
+          $release = $releases | Where-Object { $_.tag_name -eq $env:RELEASE_TAG }
+          if (-not $release) { throw 'Release draft was not found' }
           $exe = $release.assets | Where-Object { $_.name -eq $name }
           $checksum = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' }
           $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
