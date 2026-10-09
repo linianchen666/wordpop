@@ -69,9 +69,9 @@ function createPopupWindow() {
       alwaysOnTop: true,
       focusable: true,
       show: false,
-      transparent: isPill,
-      hasShadow: true,
-      backgroundColor: isPill ? '#00000000' : '#FFFFFF',
+      transparent: true,
+      hasShadow: false,
+      backgroundColor: '#00000000',
       webPreferences: {
         preload: getAsarPath('src', 'preload', 'preload.js'),
         contextIsolation: true,

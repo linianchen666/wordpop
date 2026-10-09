@@ -60,6 +60,8 @@ async function run() {
 
     test('实际弹窗允许缩放，并设置可用的最小卡片尺寸', () => {
       assert.strictEqual(window.options.resizable, true);
+      assert.strictEqual(window.options.transparent, true);
+      assert.strictEqual(window.options.backgroundColor, '#00000000');
       assert.strictEqual(window.options.minWidth, 320);
       assert.strictEqual(window.options.minHeight, 300);
       assert.deepStrictEqual(window.getSize(), [380, 440]);
