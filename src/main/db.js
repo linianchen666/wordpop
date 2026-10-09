@@ -3,6 +3,7 @@ const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
 const { migrateFsrs } = require('./fsrs-schema');
+const { initializeMemory } = require('./memory-initialization');
 
 let db = null;
 
@@ -309,6 +310,10 @@ function migrate(db) {
   }
 
   if (currentVersion < 7) migrateFsrs(db);
+  if (currentVersion < 8) {
+    const result = initializeMemory(db);
+    console.log('[DB] Memory initialization finished:', result.updated, 'records');
+  }
 }
 
 const BUILTIN_WORDLISTS_INDEX = [

@@ -120,8 +120,8 @@ try {
     clock.advance(3 * 60000 - 1);
     assert.strictEqual(scheduler.currentWord, null);
     clock.advance(1);
-    assert.strictEqual(scheduler.currentWord.id, 4);
-    assert.deepStrictEqual(words.map(event => event.word.id), [1, 2, 3, 4]);
+    assert.strictEqual(scheduler.currentWord.id, 2, '冷却后优先复习模糊词的一分钟重学');
+    assert.deepStrictEqual(words.map(event => event.word.id), [1, 2, 3, 2]);
     assert.deepStrictEqual(words.map(event => event.batchCount), [0, 1, 2, 0]);
     assert.strictEqual(history().length, 3);
     assert.strictEqual(scheduler.getStatus().dailyNewWordsCount, 3);

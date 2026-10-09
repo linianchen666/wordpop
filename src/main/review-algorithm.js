@@ -11,7 +11,8 @@ const FSRS_OPTIONS = Object.freeze({
   enable_short_term: true
 });
 const engine = fsrs(generatorParameters(FSRS_OPTIONS));
-const RATINGS = Object.freeze({ unknown: Rating.Again, fuzzy: Rating.Hard,
+// “模糊” means needing the definition to confirm: failed independent recall.
+const RATINGS = Object.freeze({ unknown: Rating.Again, fuzzy: Rating.Again,
   known: Rating.Good, easy: Rating.Easy, mastered: Rating.Easy });
 const LEGACY_INTERVALS = [0, 5 * MINUTE, 30 * MINUTE, 4 * HOUR,
   DAY, 2 * DAY, 4 * DAY, 7 * DAY, 15 * DAY, MAX_INTERVAL];
@@ -64,7 +65,9 @@ function cardForProgress(existing, now) {
   seed.reps = Math.max(1, existing.repetitions || 1);
   seed.scheduled_days = interval / DAY;
   seed.state = interval >= DAY ? State.Review : State.Learning;
-  seed.learning_steps = interval < 10 * MINUTE ? 0 : 1;
+  // Review cards have no pending learning step. Carrying step 1 into Review
+  // skips the sole 10-minute relearning step after an Again rating.
+  seed.learning_steps = seed.state === State.Review || interval < 10 * MINUTE ? 0 : 1;
   return seed;
 }
 

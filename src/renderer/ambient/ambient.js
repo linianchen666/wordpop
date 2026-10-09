@@ -11,7 +11,7 @@ window.wordpopAPI.onAmbientWord(data => {
   } else {
     wordText.textContent = data.word.word;
     translation.textContent = data.word.translation;
-    reason.textContent = data.word.latest_rating === 1 ? '最近不认识' : '困难反馈 ' + Math.round(data.word.error_rate * 100) + '%';
+    reason.textContent = data.word.latest_rating === 1 ? '最近回忆失败' : '困难反馈 ' + Math.round(data.word.error_rate * 100) + '%';
     counter.textContent = `${data.index} / ${data.total}`;
   }
   wordText.title = wordText.textContent;

@@ -21,8 +21,8 @@ test('依赖实际运行的是 FSRS-6，目标记忆率为90%', () => {
   assert.match(FSRSVersion, /FSRS-6/);
   assert.equal(upstream.parameters.request_retention, 0.9);
 });
-test('新词四种评分精确对应上游 Again / Hard / Good / Easy', () => {
-  for (const [action, rating] of [['unknown', 1], ['fuzzy', 2], ['known', 3], ['easy', 4]]) {
+test('四种界面反馈按独立回忆结果对应上游评分', () => {
+  for (const [action, rating] of [['unknown', 1], ['fuzzy', 1], ['known', 3], ['easy', 4]]) {
     const actual = calculateReview(null, action, now);
     const expected = upstream.next(createEmptyCard(new Date(now)), new Date(now), rating);
     assert.deepEqual(JSON.parse(actual.fsrs_card), JSON.parse(JSON.stringify(expected.card)));
@@ -30,8 +30,8 @@ test('新词四种评分精确对应上游 Again / Hard / Good / Easy', () => {
     assert.equal(actual.rating, rating);
   }
 });
-test('新词默认 Again 1分钟、Hard 6分钟、Good 10分钟、Easy 8天', () => {
-  for (const [action, delay] of [['unknown', MINUTE], ['fuzzy', 6 * MINUTE],
+test('新词不认识/模糊1分钟、认识10分钟、轻松8天', () => {
+  for (const [action, delay] of [['unknown', MINUTE], ['fuzzy', MINUTE],
     ['known', 10 * MINUTE], ['easy', 8 * DAY]]) {
     assert.equal(calculateReview(null, action, now).interval, delay);
   }
@@ -46,7 +46,7 @@ test('多次混合评分与上游FSRS逐次完全一致，包含长期遗忘与�
   let actual = null;
   let time = now;
   for (const [action, rating] of [['known', 3], ['known', 3], ['known', 3],
-    ['unknown', 1], ['fuzzy', 2], ['known', 3], ['easy', 4]]) {
+    ['unknown', 1], ['fuzzy', 1], ['known', 3], ['easy', 4]]) {
     const scheduled = upstream.next(expected, new Date(time), rating);
     actual = calculateReview(actual, action, time);
     assert.equal(actual.fsrs_card, JSON.stringify(scheduled.card));
@@ -92,6 +92,17 @@ test('旧进度按实际间隔初始化稳定性，但不虚构历史日志或�
   assert.equal(card.due.getTime(), previous.next_review_at);
   assert.equal(card.state, State.Review);
   assert.equal(previous.fsrs_card, undefined);
+});
+test('旧长期进度选不认识进入10分钟重学，不跳过重学步骤', () => {
+  for (const days of [1, 3, 15, 90]) {
+    const previous = legacy(days * DAY);
+    assert.equal(cardForProgress(previous, now).learning_steps, 0);
+    const result = calculateReview(previous, 'unknown', now);
+    assert.deepEqual(calculateReview(previous, 'fuzzy', now), result);
+    assert.equal(result.interval, 10 * MINUTE);
+    assert.equal(deserializeCard(result.fsrs_card).state, State.Relearning);
+    assert.equal(result.rating, Rating.Again);
+  }
 });
 test('FSRS状态可以JSON往返，日期恢复后仍产生相同的下一次调度', () => {
   const previous = calculateReview(null, 'known', now);
@@ -208,7 +219,7 @@ try {
   assert.equal(history.length, 2);
   assert.equal(history[1].card_before, history[0].card_after);
   assert.equal(history[1].card_after, row(1).fsrs_card);
-  assert.equal(JSON.parse(history[1].log).rating, Rating.Hard);
+  assert.equal(JSON.parse(history[1].log).rating, Rating.Again);
   const stats = db.prepare('SELECT * FROM daily_stats').get();
   assert.equal(stats.words_learned, 1); assert.equal(stats.words_reviewed, 2);
  });

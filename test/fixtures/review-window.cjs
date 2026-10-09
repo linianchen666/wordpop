@@ -59,7 +59,7 @@ app.whenReady().then(async () => {
   scheduler = require(path.join(root, 'src/main/scheduler.js'));
   const words = db.prepare('SELECT * FROM words LIMIT 6').all();
   const popup = await windowFor('popup', 380, 440);
-  const actions = [['unknown', 1], ['fuzzy', 2], ['known', 3], ['mastered', 4], ['m', 4]];
+  const actions = [['unknown', 1], ['fuzzy', 1], ['known', 3], ['mastered', 4], ['m', 4]];
   for (const [index, [action, rating]] of actions.entries()) {
     const word = words[index];
     scheduler.currentWord = word;
