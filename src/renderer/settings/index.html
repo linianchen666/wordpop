@@ -17,6 +17,17 @@
 
     <!-- 设置内容 -->
     <div class="settings-content">
+      <!-- 词库选择 -->
+      <div class="form-group">
+        <label class="form-label">📚 学习词库</label>
+        <div class="wordlist-options" id="wordlist-options">
+          <!-- 动态填充 -->
+        </div>
+        <div class="wordlist-actions">
+          <button class="btn btn-sm btn-ghost" id="btn-import-custom">📂 导入自定义词表</button>
+        </div>
+      </div>
+
       <!-- 每日新词模式 -->
       <div class="form-group">
         <label class="form-label">📅 每日新词模式</label>
@@ -151,17 +162,6 @@
         </div>
       </div>
 
-      <!-- 词库选择 -->
-      <div class="form-group">
-        <label class="form-label">📚 学习词库</label>
-        <div class="wordlist-options" id="wordlist-options">
-          <!-- 动态填充 -->
-        </div>
-        <div class="wordlist-actions">
-          <button class="btn btn-sm btn-ghost" id="btn-import-custom">📂 导入自定义词表</button>
-        </div>
-      </div>
-
       <!-- 发音与音色 -->
       <div class="form-group">
         <label class="form-label">🎙️ 发音与音色角色</label>
@@ -185,6 +185,17 @@
             </select>
             <button class="btn btn-sm btn-ghost" id="btn-preview-voice" title="试听当前音色">🔊 试听</button>
           </div>
+        </div>
+      </div>
+
+      <!-- 例句显示 -->
+      <div class="form-group">
+        <div class="toggle-row">
+          <span>📖 显示例句</span>
+          <label class="toggle">
+            <input type="checkbox" id="showExample" checked>
+            <span class="toggle-slider"></span>
+          </label>
         </div>
       </div>
 

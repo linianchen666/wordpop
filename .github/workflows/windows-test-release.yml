@@ -2,7 +2,7 @@ name: Windows test release
 
 on:
   push:
-    branches: [release/v1.8.0-beta.1]
+    branches: [release/v1.8.0-beta.2]
     paths: [.github/workflows/windows-test-release.yml]
   workflow_dispatch:
 
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: wordpop-v1.8.0-beta.1-release
+  group: wordpop-v1.8.0-beta.2-release
   cancel-in-progress: false
 
 jobs:
@@ -18,11 +18,11 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      RELEASE_TAG: v1.8.0-beta.1
+      RELEASE_TAG: v1.8.0-beta.2
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.8.0-beta.1
+          ref: v1.8.0-beta.2
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -33,6 +33,12 @@ jobs:
         run: npm test
       - name: Build Windows x64 NSIS installer
         run: npm run build -- --win --x64 --publish never
+      - name: Verify packaged first-run wordlists and settings
+        shell: pwsh
+        run: |
+          $env:WORDPOP_TEST_APP_ROOT = (Resolve-Path 'build/win-unpacked/resources/app.asar').Path
+          & .\node_modules\.bin\electron.cmd test/fixtures/settings-window.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged settings validation failed' }
       - name: Prepare installer and checksum
         shell: pwsh
         run: |
@@ -52,7 +58,7 @@ jobs:
           $asset = "build/$name"
           gh release upload $env:RELEASE_TAG $asset build/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/407641766" | ConvertFrom-Json
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$env:RELEASE_TAG" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect uploaded release' }
           $exe = $release.assets | Where-Object { $_.name -eq $name }
           $checksum = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' }
