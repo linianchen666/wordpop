@@ -1,201 +1,338 @@
-/**
- * 微批次冷却、专注刷词模式与多角色音色自动化测试
- */
+/** Real session, SQLite persistence and browser audio regressions. */
 const assert = require('assert');
-const Database = require('better-sqlite3');
-const path = require('path');
+const Module = require('module');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const vm = require('vm');
+const { createScheduler } = require('../src/main/study-scheduler');
+const { attachSchedulerPresenter } = require('../src/main/scheduler-presenter');
+const { createFocusSession } = require('../src/main/focus-session');
+const { createLearningRepository } = require('../src/main/learning-repository');
+const { recordReview } = require('../src/main/review-progress');
 
-const testDbPath = path.join(__dirname, 'test_batch_focus.db');
-if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
-if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
-if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+const initialNow = new Date(2026, 9, 9, 12).getTime();
+let passed = 0;
+function test(name, fn) { fn(); passed++; console.log(`  ✓ ${name}`); }
+console.log('=== 真实微批次、专注模式与浏览器音色回归 ===');
 
-console.log('=== 开始测试：微批次、专注模式与多角色音色系统 ===');
-
-const db = new Database(testDbPath);
-db.pragma('journal_mode = WAL');
-
-// 初始化表结构
-db.exec(`
-  CREATE TABLE IF NOT EXISTS words (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word TEXT NOT NULL UNIQUE,
-    phonetic TEXT DEFAULT '',
-    translation TEXT NOT NULL,
-    example TEXT DEFAULT '',
-    wordlist TEXT NOT NULL DEFAULT 'cet4',
-    frequency_rank INTEGER DEFAULT 999999
-  );
-  CREATE TABLE IF NOT EXISTS progress (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word_id INTEGER NOT NULL UNIQUE,
-    stage INTEGER NOT NULL DEFAULT 0,
-    next_review_at INTEGER NOT NULL DEFAULT 0,
-    last_review_at INTEGER DEFAULT NULL,
-    correct_count INTEGER DEFAULT 0,
-    wrong_count INTEGER DEFAULT 0,
-    efactor REAL DEFAULT 2.5,
-    interval INTEGER DEFAULT 0,
-    repetitions INTEGER DEFAULT 0,
-    mastered_count INTEGER NOT NULL DEFAULT 0
-  );
-  CREATE TABLE IF NOT EXISTS daily_stats (
-    date TEXT PRIMARY KEY,
-    words_reviewed INTEGER DEFAULT 0,
-    words_learned INTEGER DEFAULT 0
-  );
-  CREATE TABLE IF NOT EXISTS word_wordlists (
-    word_id INTEGER NOT NULL,
-    wordlist TEXT NOT NULL,
-    PRIMARY KEY (word_id, wordlist)
-  );
-`);
-
-// 插入 100 个单词
-const insertWord = db.prepare('INSERT INTO words (word, translation, wordlist, frequency_rank) VALUES (?, ?, ?, ?)');
-const insertRel = db.prepare('INSERT INTO word_wordlists (word_id, wordlist) VALUES (?, ?)');
-
-db.transaction(() => {
-  for (let i = 1; i <= 100; i++) {
-    const res = insertWord.run('focus_word_' + i, '释义_' + i, 'cet4', i);
-    insertRel.run(res.lastInsertRowid, 'cet4');
-  }
-})();
-
-console.log('  ✓ 初始插入 100 个单词');
-
-// ── 测试 1：微批次计数与冷却流转 ──
-let currentBatchCount = 0;
-const batchSize = 3;
-let batchCompletedEvents = 0;
-
-function advanceMockWord() {
-  currentBatchCount++;
-  if (batchSize > 0 && currentBatchCount >= batchSize) {
-    currentBatchCount = 0;
-    batchCompletedEvents++;
-    return 'cooldown';
-  }
-  return 'continue';
+// Only the clock/timer mechanism is fake; all learning rules execute production modules.
+function createClock() {
+  let now = initialNow;
+  let nextId = 0;
+  const tasks = new Map();
+  return {
+    now: () => now,
+    setTimeout(callback, delay) {
+      const id = ++nextId;
+      tasks.set(id, { callback, at: now + delay });
+      return id;
+    },
+    clearTimeout: id => tasks.delete(id),
+    pending: () => tasks.size,
+    advance(milliseconds) {
+      const until = now + milliseconds;
+      for (;;) {
+        const next = [...tasks].filter(([, task]) => task.at <= until)
+          .sort((a, b) => a[1].at - b[1].at || a[0] - b[0])[0];
+        if (!next) break;
+        const [id, task] = next;
+        tasks.delete(id);
+        now = task.at;
+        task.callback();
+      }
+      now = until;
+    }
+  };
 }
 
-assert.strictEqual(advanceMockWord(), 'continue', '第 1 词应继续');
-assert.strictEqual(currentBatchCount, 1);
-assert.strictEqual(advanceMockWord(), 'continue', '第 2 词应继续');
-assert.strictEqual(currentBatchCount, 2);
-assert.strictEqual(advanceMockWord(), 'cooldown', '第 3 词应触发冷却结算');
-assert.strictEqual(currentBatchCount, 0, '结算后批次计数应归 0');
-assert.strictEqual(batchCompletedEvents, 1, '应触发 1 次批次完成事件');
-console.log('  ✓ 测试 1 通过：微批次限额与冷却结算触发验证完全正确');
-
-// ── 测试 2：专注模式词库抽取 (getFocusWords) ──
-const now = Date.now();
-// 注入 15 个逾期复习词
-const insertProg = db.prepare('INSERT INTO progress (word_id, stage, next_review_at) VALUES (?, ?, ?)');
-db.transaction(() => {
-  for (let id = 1; id <= 15; id++) {
-    insertProg.run(id, 2, now - 10000);
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordpop-sessions-'));
+const dbModulePath = require.resolve('../src/main/db');
+const cachedDb = require.cache[dbModulePath];
+const originalLoad = Module._load;
+const activeSchedulers = [];
+let productionDb;
+try {
+  Module._load = function(request) {
+    if (request === 'electron') return { app: { isPackaged: false, getPath: () => testDir } };
+    return originalLoad.apply(this, arguments);
+  };
+  delete require.cache[dbModulePath];
+  productionDb = require('../src/main/db');
+  Module._load = originalLoad;
+  const db = productionDb.initDatabase();
+  const repository = createLearningRepository(() => db);
+  const logger = { error() {} };
+  const insert = db.prepare('INSERT INTO words (id,word,translation,wordlist,frequency_rank) VALUES (?,?,?,?,?)');
+  const relate = db.prepare('INSERT INTO word_wordlists (word_id,wordlist) VALUES (?,?)');
+  function seed(dueCount = 0) {
+    for (const scheduler of activeSchedulers) scheduler.stop();
+    db.exec('DELETE FROM review_history; DELETE FROM progress; DELETE FROM daily_stats; DELETE FROM word_wordlists; DELETE FROM words;');
+    db.transaction(() => {
+      for (let id = 1; id <= 100; id++) {
+        insert.run(id, `focus_word_${id}`, `释义_${id}`, 'cet4', id);
+        relate.run(id, 'cet4');
+        if (id <= dueCount) recordReview(db, id, 'known', initialNow - (100 - id) * 3600000);
+      }
+    })();
   }
-})();
-
-function getFocusWordsMock(count, wordlists) {
-  const placeholders = wordlists.map(() => '?').join(',');
-  let dueWords = db.prepare(`
-    SELECT w.id, w.word, w.translation, p.stage, p.next_review_at
-    FROM words w
-    JOIN progress p ON w.id = p.word_id
-    WHERE p.next_review_at <= ? AND p.stage < 9
-      AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
-    ORDER BY p.stage ASC, p.next_review_at ASC
-  `).all(now, ...wordlists);
-
-  let targetCount = count > 0 ? count : dueWords.length;
-  let selected = dueWords.slice(0, targetCount);
-
-  if (selected.length < targetCount) {
-    const remainingNeeded = targetCount - selected.length;
-    const newWords = db.prepare(`
-      SELECT w.id, w.word, w.translation, 0 as stage
-      FROM words w
-      LEFT JOIN progress p ON w.id = p.word_id
-      WHERE p.word_id IS NULL
-        AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
-      LIMIT ?
-    `).all(...wordlists, remainingNeeded);
-
-    selected = [...selected, ...newWords];
+  function makeScheduler(clock, overrides = {}) {
+    const scheduler = createScheduler({ repository, now: clock.now,
+      getConfig: () => ({ selectedWordlists: ['cet4'], dailyNewWords: 20,
+        autoBalanceLoad: false, batchSize: 3, cooldownMinutes: 3, ...overrides }),
+      recordReview: (id, action, now) => recordReview(db, id, action, now),
+      setTimeout: clock.setTimeout, clearTimeout: clock.clearTimeout, logger });
+    activeSchedulers.push(scheduler);
+    return scheduler;
   }
+  function makeFocus(clock) {
+    return createFocusSession({ repository, now: clock.now, logger,
+      recordReview: (id, action, now) => recordReview(db, id, action, now) });
+  }
+  const progress = id => db.prepare('SELECT * FROM progress WHERE word_id=?').get(id);
+  const history = () => db.prepare('SELECT * FROM review_history ORDER BY id').all();
 
-  return selected;
+  test('真实调度在第三词后发出结算事件，并完整等待三分钟冷却', () => {
+    seed();
+    const clock = createClock();
+    const scheduler = makeScheduler(clock);
+    const words = [];
+    const completions = [];
+    scheduler.on('word', event => words.push(event));
+    scheduler.on('batch-complete', event => completions.push(event));
+    scheduler.start();
+    assert.strictEqual(scheduler.currentWord.id, 1);
+    scheduler.markKnown();
+    assert.strictEqual(scheduler.currentBatchCount, 1);
+    clock.advance(299);
+    assert.strictEqual(scheduler.currentWord, null);
+    clock.advance(1);
+    assert.strictEqual(scheduler.currentWord.id, 2);
+    scheduler.markFuzzy();
+    clock.advance(300);
+    assert.strictEqual(scheduler.currentWord.id, 3);
+    scheduler.markEasy();
+    assert.strictEqual(scheduler.currentBatchCount, 0);
+    assert.strictEqual(completions.length, 1);
+    assert.strictEqual(completions[0].batchSize, 3);
+    assert.strictEqual(completions[0].cooldownMinutes, 3);
+    assert.strictEqual(scheduler.currentWord, null);
+    clock.advance(3 * 60000 - 1);
+    assert.strictEqual(scheduler.currentWord, null);
+    clock.advance(1);
+    assert.strictEqual(scheduler.currentWord.id, 4);
+    assert.deepStrictEqual(words.map(event => event.word.id), [1, 2, 3, 4]);
+    assert.deepStrictEqual(words.map(event => event.batchCount), [0, 1, 2, 0]);
+    assert.strictEqual(history().length, 3);
+    assert.strictEqual(scheduler.getStatus().dailyNewWordsCount, 3);
+  });
+
+  test('立即下一批取消旧冷却计时器，不重复弹出正在显示的词', () => {
+    seed();
+    const clock = createClock();
+    const scheduler = makeScheduler(clock, { batchSize: 1, cooldownMinutes: 10 });
+    const seen = [];
+    scheduler.on('word', event => seen.push(event.word.id));
+    scheduler.start();
+    scheduler.markEasy();
+    assert.strictEqual(clock.pending(), 1);
+    clock.advance(1000);
+    scheduler.triggerNextBatchNow();
+    assert.strictEqual(scheduler.currentWord.id, 2);
+    assert.strictEqual(clock.pending(), 0);
+    clock.advance(10 * 60000);
+    assert.deepStrictEqual(seen, [1, 2]);
+    assert.strictEqual(scheduler.currentWord.id, 2);
+  });
+
+  test('暂停取消待弹计时器，恢复保留当前词并继续真实队列', () => {
+    seed();
+    const clock = createClock();
+    const scheduler = makeScheduler(clock);
+    let pauses = 0;
+    let resumes = 0;
+    scheduler.on('paused', () => pauses++);
+    scheduler.on('resumed', () => resumes++);
+    scheduler.start();
+    scheduler.pause();
+    scheduler.resume();
+    assert.strictEqual(scheduler.currentWord.id, 1, '恢复不能跳过未反馈单词');
+    scheduler.markEasy();
+    scheduler.pause();
+    assert.strictEqual(clock.pending(), 0);
+    clock.advance(5000);
+    assert.strictEqual(scheduler.currentWord, null);
+    scheduler.resume();
+    assert.strictEqual(scheduler.currentWord.id, 2);
+    assert.strictEqual(pauses, 2);
+    assert.strictEqual(resumes, 2);
+    scheduler.stop();
+    assert.strictEqual(clock.pending(), 0);
+    assert.strictEqual(scheduler.currentWord, null);
+  });
+
+  test('连续模式不触发批次冷却，每个反馈后继续弹词', () => {
+    seed();
+    const clock = createClock();
+    const scheduler = makeScheduler(clock, { batchSize: 0 });
+    let completions = 0;
+    scheduler.on('batch-complete', () => completions++);
+    scheduler.start();
+    for (let id = 1; id <= 4; id++) {
+      assert.strictEqual(scheduler.currentWord.id, id);
+      scheduler.markEasy();
+      clock.advance(300);
+    }
+    assert.strictEqual(scheduler.currentWord.id, 5);
+    assert.strictEqual(completions, 0);
+    assert.strictEqual(history().length, 4);
+  });
+
+  test('保存失败保留当前词、回滚FSRS数据，修复数据库后可以重试', () => {
+    seed();
+    const clock = createClock();
+    const scheduler = makeScheduler(clock);
+    const shown = [];
+    const detachPresenter = attachSchedulerPresenter(scheduler, {
+      popupManager: { show: word => shown.push(word), hide() {}, restore() {},
+        isVisible: () => true, showBatchCompletion() {} },
+      analyzeWord: () => null, getConfig: scheduler.getConfig, logger
+    });
+    let failures = 0;
+    scheduler.on('review-failed', () => failures++);
+    try {
+      scheduler.start();
+      scheduler.markEasy();
+      clock.advance(300);
+      const original = shown[shown.length - 1];
+      assert.strictEqual(original.id, 2);
+      assert.strictEqual(original.batchIndex, 2);
+      db.exec("CREATE TRIGGER reject_stats BEFORE INSERT ON daily_stats BEGIN SELECT RAISE(ABORT,'test write failure'); END;");
+      try {
+        scheduler.markKnown();
+        assert.strictEqual(scheduler.currentWord.id, 2);
+        assert.strictEqual(scheduler.currentBatchCount, 1);
+        assert.strictEqual(clock.pending(), 0);
+        assert.strictEqual(progress(2), undefined);
+        assert.strictEqual(history().length, 1);
+        assert.strictEqual(failures, 1);
+        assert.strictEqual(shown.length, 3, '实际 presenter 应再次显示失败的单词以允许重试');
+        assert.deepStrictEqual(shown[shown.length - 1], original, '重试展示应保留词ID、队列数量和原批次索引');
+      } finally {
+        db.exec('DROP TRIGGER reject_stats');
+      }
+      scheduler.markKnown();
+      assert.strictEqual(scheduler.currentWord, null);
+      assert.ok(progress(2).fsrs_card);
+      assert.strictEqual(clock.pending(), 1);
+      clock.advance(300);
+      assert.strictEqual(scheduler.currentWord.id, 3);
+      assert.strictEqual(shown[shown.length - 1].id, 3);
+      assert.strictEqual(shown[shown.length - 1].batchIndex, 3);
+      assert.strictEqual(history().length, 2, '只有成功保存才推进学习数据和批次');
+    } finally {
+      detachPresenter();
+    }
+  });
+
+  test('实际专注挑词按到期顺序优先复习，再补新词并遵守词库筛选', () => {
+    seed(15);
+    const focus = makeFocus(createClock());
+    const selection = focus.getFocusWords(20, ['cet4']);
+    assert.strictEqual(selection.success, true);
+    assert.strictEqual(selection.totalDue, 15);
+    assert.deepStrictEqual(selection.words.map(word => word.id), Array.from({ length: 20 }, (_, i) => i + 1));
+    assert.strictEqual(focus.getFocusWords(0, ['cet4']).words.length, 15);
+    assert.deepStrictEqual(focus.getFocusWords(20, ['cet6']).words, []);
+    assert.deepStrictEqual(focus.getFocusWords(20, []).words, []);
+    seed();
+    assert.strictEqual(focus.getFocusWords(0, ['cet4']).words.length, 20, '没有到期词时默认补20个新词');
+  });
+
+  test('实际专注提交保存FSRS状态与评级日志，统计区分旧词和新词', () => {
+    seed(15);
+    const clock = createClock();
+    const focus = makeFocus(clock);
+    const previousCount = progress(1).correct_count;
+    const first = focus.submitFocusWord(1, 'known');
+    const second = focus.submitFocusWord(16, 'easy');
+    assert.strictEqual(first.success, true);
+    assert.strictEqual(second.success, true);
+    assert.strictEqual(progress(1).correct_count, previousCount + 1);
+    assert.strictEqual(progress(16).correct_count, 1);
+    assert.ok(progress(16).stage < 9, 'Easy仍继续安排复习');
+    assert.ok(second.nextReviewAt > clock.now());
+    assert.strictEqual(second.nextReviewAt, progress(16).next_review_at);
+    const latest = history().slice(-2);
+    assert.deepStrictEqual(latest.map(row => row.rating), [3, 4]);
+    assert.strictEqual(latest[1].card_after, progress(16).fsrs_card);
+    assert.deepStrictEqual(repository.getStats(null, clock.now()).today, { words_reviewed: 2, words_learned: 1 });
+  });
+
+  test('非法专注反馈或数据库失败不产生部分进度、日志或统计', () => {
+    seed();
+    const focus = makeFocus(createClock());
+    for (const [id, action] of [[0, 'known'], ['bad', 'known'], [1, 'invalid'], [999, 'known']]) {
+      assert.strictEqual(focus.submitFocusWord(id, action).success, false);
+    }
+    db.exec("CREATE TRIGGER reject_stats BEFORE INSERT ON daily_stats BEGIN SELECT RAISE(ABORT,'test focus failure'); END;");
+    try {
+      assert.strictEqual(focus.submitFocusWord(1, 'known').success, false);
+      assert.strictEqual(progress(1), undefined);
+      assert.strictEqual(history().length, 0);
+      assert.deepStrictEqual(repository.getStats(null, initialNow).today, { words_reviewed: 0, words_learned: 0 });
+    } finally {
+      db.exec('DROP TRIGGER reject_stats');
+    }
+  });
+} finally {
+  Module._load = originalLoad;
+  for (const scheduler of activeSchedulers) scheduler.stop();
+  if (productionDb) productionDb.closeDatabase();
+  if (cachedDb) require.cache[dbModulePath] = cachedDb;
+  else delete require.cache[dbModulePath];
+  fs.rmSync(testDir, { recursive: true, force: true });
 }
 
-const focusList20 = getFocusWordsMock(20, ['cet4']);
-assert.strictEqual(focusList20.length, 20, '专注模式目标 20 词应返回 20 个');
-// 前 15 个为复习词，后 5 个补充新词
-assert.strictEqual(focusList20.filter(w => w.stage > 0).length, 15, '前 15 个应为待复习词');
-assert.strictEqual(focusList20.filter(w => w.stage === 0).length, 5, '后 5 个应补充未学新词');
-console.log('  ✓ 测试 2 通过：专注模式专属词库抽取（复习优先+新词自动补足）验证正确');
+const spoken = [];
+const streams = [];
+const female = { name: 'Microsoft Zira', lang: 'en-US' };
+const male = { name: 'Microsoft David', lang: 'en-US' };
+const renderer = vm.createContext({
+  window: { speechSynthesis: { paused: false, cancel() {},
+    getVoices: () => [female, male], speak: utterance => spoken.push(utterance) } },
+  SpeechSynthesisUtterance: class { constructor(word) { this.text = word; } },
+  Audio: class {
+    constructor(url) { this.url = url; streams.push(this); }
+    play() { return Promise.resolve(); }
+    pause() {}
+  },
+  setTimeout: callback => { callback(); return 1; }
+});
+const utilsPath = path.join(__dirname, '..', 'src', 'renderer', 'shared', 'utils.js');
+vm.runInContext(fs.readFileSync(utilsPath, 'utf8'), renderer, { filename: utilsPath });
 
-// ── 测试 3：专注模式单词提交与 SQLite 事务一致性 ──
-function submitWordMock(wordId, action) {
-  const existing = db.prepare('SELECT * FROM progress WHERE word_id = ?').get(wordId);
-  let stage = existing ? existing.stage : 0;
-  let correctCount = existing ? existing.correct_count : 0;
-  let wrongCount = existing ? existing.wrong_count : 0;
-
-  if (action === 'known') {
-    correctCount++;
-    stage = Math.min(9, stage + 1);
-  } else if (action === 'unknown') {
-    wrongCount++;
-    stage = Math.max(1, stage - 1);
+test('实际角色发音引擎使用对应音高、语速和发音人', () => {
+  for (const [voice, pitch, rate, selected] of [['loli', 1.45, 1.05, female],
+    ['mature', 0.9, 0.9, female], ['deep-male', 0.75, 0.85, male], ['fast', 1.05, 1.25, female]]) {
+    renderer.playWordAudio('example', voice);
+    const utterance = spoken[spoken.length - 1];
+    assert.strictEqual(utterance.text, 'example');
+    assert.strictEqual(utterance.pitch, pitch);
+    assert.strictEqual(utterance.rate, rate);
+    assert.strictEqual(utterance.voice, selected);
+    assert.strictEqual(utterance.lang, 'en-US');
   }
+});
 
-  if (existing) {
-    db.prepare('UPDATE progress SET stage = ?, correct_count = ?, wrong_count = ? WHERE word_id = ?').run(stage, correctCount, wrongCount, wordId);
-  } else {
-    db.prepare('INSERT INTO progress (word_id, stage, correct_count, wrong_count) VALUES (?, ?, ?, ?)').run(wordId, stage, correctCount, wrongCount);
-  }
-
-  db.prepare(`
-    INSERT INTO daily_stats (date, words_reviewed, words_learned)
-    VALUES (date('now','localtime'), 1, ?)
-    ON CONFLICT(date) DO UPDATE SET
-      words_reviewed = words_reviewed + 1,
-      words_learned = words_learned + ?
-  `).run(existing ? 0 : 1, existing ? 0 : 1);
-}
-
-// 模拟提交
-submitWordMock(1, 'known'); // 复习词 1 认识 -> stage 2->3
-const w1 = db.prepare('SELECT stage, correct_count FROM progress WHERE word_id = 1').get();
-assert.strictEqual(w1.stage, 3);
-assert.strictEqual(w1.correct_count, 1);
-
-submitWordMock(16, 'known'); // 新词 16 认识 -> 新学插入
-const w16 = db.prepare('SELECT stage, correct_count FROM progress WHERE word_id = 16').get();
-assert.strictEqual(w16.stage, 1);
-
-const stats = db.prepare("SELECT * FROM daily_stats WHERE date = date('now','localtime')").get();
-assert.strictEqual(stats.words_reviewed, 2, '打卡复习总数应为 2');
-assert.strictEqual(stats.words_learned, 1, '打卡新学词数应为 1');
-console.log('  ✓ 测试 3 通过：专注模式数据更新与打卡统计完全正确');
-
-// ── 测试 4：多音色角色与形态参数有效性校验 ──
-const validVoices = ['dict-us', 'dict-uk', 'loli', 'mature', 'deep-male', 'fast'];
-const validModes = ['card', 'pill'];
-
-assert.ok(validVoices.includes('loli'), '萝莉音应合法');
-assert.ok(validVoices.includes('mature'), '御姐音应合法');
-assert.ok(validVoices.includes('deep-male'), '大叔音应合法');
-assert.ok(validModes.includes('pill'), '灵动胶囊形态应合法');
-console.log('  ✓ 测试 4 通过：多音色角色与形态枚举校验通过');
-
-db.close();
-if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
-if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
-if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
-
-console.log('\n🎉 所有微批次、专注模式与多角色音色系统测试全部通过！\n');
-process.exit(0);
+test('实际词典发音选择英美音并编码词语，空输入不会播放', () => {
+  renderer.playWordAudio('my word', 'dict-us');
+  assert.strictEqual(streams[streams.length - 1].url, 'https://dict.youdao.com/dictvoice?audio=my%20word&type=2');
+  renderer.playWordAudio('example', 'dict-uk');
+  assert.strictEqual(streams[streams.length - 1].url, 'https://dict.youdao.com/dictvoice?audio=example&type=1');
+  const streamCount = streams.length;
+  renderer.playWordAudio('   ');
+  renderer.playWordAudio(null);
+  assert.strictEqual(streams.length, streamCount);
+});
+console.log(`\n🎉 ${passed} 项真实业务回归测试全部通过！\n`);

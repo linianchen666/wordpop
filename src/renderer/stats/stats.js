@@ -102,7 +102,7 @@ function renderDailyChart(dailyStats) {
 function renderStageChart(stageDist) {
   if (!Array.isArray(stageDist)) return;
 
-  const stageNames = ['新学', '5分', '30分', '4时', '1天', '2天', '4天', '7天', '15天'];
+  const stageNames = ['新学', '短期', '30分+', '4时+', '1天+', '2天+', '4天+', '7天+', '15天+'];
   const colors = ['#E74C3C', '#E67E22', '#F39C12', '#F1C40F', '#2ECC71', '#27AE60', '#1ABC9C', '#3498DB', '#9B59B6'];
 
   const data = stageNames.map((name, i) => {
@@ -149,7 +149,7 @@ function renderStubbornWords(words) {
   hintEl.style.display = 'block';
 
   listEl.innerHTML = words.map(w => {
-    const stageNames = ['新学', '5分', '30分', '4时', '1天', '2天', '4天', '7天', '15天'];
+    const stageNames = ['新学', '短期', '30分+', '4时+', '1天+', '2天+', '4天+', '7天+', '15天+'];
     const stageLabel = stageNames[w.stage] || ('阶段' + w.stage);
     const rate = w.correct_count + w.wrong_count > 0
       ? Math.round(w.correct_count / (w.correct_count + w.wrong_count) * 100)

@@ -7,7 +7,8 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   markKnown:       ()  => ipcRenderer.send('word:known'),
   markUnknown:     ()  => ipcRenderer.send('word:unknown'),
   markFuzzy:       ()  => ipcRenderer.send('word:fuzzy'),
-  markMastered:    ()  => ipcRenderer.send('word:mastered'),
+  markEasy:        ()  => ipcRenderer.send('word:easy'),
+  markMastered:    ()  => ipcRenderer.send('word:easy'), // older renderers
   undo:            ()  => ipcRenderer.send('word:undo'),
   minimizePopup:  ()  => ipcRenderer.send('popup:minimize'),
 

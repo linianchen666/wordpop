@@ -1,9 +1,24 @@
 const { BrowserWindow, screen, app } = require('electron');
 const path = require('path');
+const { saveConfig } = require('./config');
 
 let popupWindow = null;
+let popupWindowMode = null;
 let popupReady = false;
 let pendingWordData = null;
+let popupSizes = {};
+let sizeSaveTimer = null;
+
+function minimumSize(displayMode) {
+  return displayMode === 'pill'
+    ? { minWidth: 280, minHeight: 56 }
+    : { minWidth: 320, minHeight: 300 };
+}
+
+function savePopupSizes() {
+  const result = saveConfig({ popupSizes });
+  if (!result.success) console.error('[Popup] Save size:', result.error);
+}
 
 let popupConfig = {
   position: 'bottom-right',
@@ -43,12 +58,13 @@ function createPopupWindow() {
     const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
 
     popupWindow = new BrowserWindow({
-      width: isPill ? 320 : 380,
-      height: isPill ? 56 : 440,
+      width: bounds.width,
+      height: bounds.height,
+      ...minimumSize(popupConfig.displayMode),
       x: bounds.x,
       y: bounds.y,
       frame: false,
-      resizable: false,
+      resizable: true,
       skipTaskbar: true,
       alwaysOnTop: true,
       focusable: true,
@@ -63,9 +79,23 @@ function createPopupWindow() {
         sandbox: false
       }
     });
+    popupWindowMode = isPill ? 'pill' : 'card';
 
     const htmlPath = getAsarPath('src', 'renderer', 'popup', 'index.html');
     popupWindow.loadFile(htmlPath);
+
+    const window = popupWindow;
+    window.on('resize', () => {
+      if (window.isDestroyed()) return;
+      const [width, height] = window.getSize();
+      const mode = popupWindowMode;
+      popupSizes[mode] = { width, height };
+      clearTimeout(sizeSaveTimer);
+      sizeSaveTimer = setTimeout(() => {
+        sizeSaveTimer = null;
+        savePopupSizes();
+      }, 250);
+    });
 
     popupWindow.once('ready-to-show', () => {
       popupReady = true;
@@ -81,6 +111,11 @@ function createPopupWindow() {
     });
 
     popupWindow.on('closed', () => {
+      if (sizeSaveTimer) {
+        clearTimeout(sizeSaveTimer);
+        sizeSaveTimer = null;
+        savePopupSizes();
+      }
       popupWindow = null;
       popupReady = false;
     });
@@ -140,13 +175,11 @@ function _displayWord(wordData) {
   }
 
   try {
-    const isPill = popupConfig.displayMode === 'pill';
     const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
-    popupWindow.setBounds({
-      ...bounds,
-      width: isPill ? 320 : 380,
-      height: isPill ? 56 : 440
-    });
+    popupWindowMode = popupConfig.displayMode === 'pill' ? 'pill' : 'card';
+    const { minWidth, minHeight } = minimumSize(popupConfig.displayMode);
+    popupWindow.setMinimumSize(minWidth, minHeight);
+    popupWindow.setBounds(bounds);
 
     popupWindow.webContents.send('popup:word', {
       ...wordData,
@@ -216,21 +249,32 @@ function closeImmediately() {
 
 function getPopupBounds(position, displayMode = 'card') {
   try {
-    const { width, height } = screen.getPrimaryDisplay().workAreaSize;
+    const display = screen.getPrimaryDisplay();
+    const { x = 0, y = 0, width, height } = display.workArea || display.workAreaSize;
     const isPill = displayMode === 'pill';
-    const W = isPill ? 320 : 380;
-    const H = isPill ? 56 : 440;
-    const M = 20;
-    switch (position) {
-      case 'top-left':     return { x: M, y: M };
-      case 'top-right':    return { x: width - W - M, y: M };
-      case 'bottom-left':  return { x: M, y: height - H - M };
-      default:             return { x: width - W - M, y: height - H - M };
+    const mode = isPill ? 'pill' : 'card';
+    let saved = popupSizes[mode];
+    // Read the native size too: a new word can arrive before the resize event.
+    if (popupWindow && !popupWindow.isDestroyed() && popupWindowMode === mode) {
+      const [currentWidth, currentHeight] = popupWindow.getSize();
+      saved = { width: currentWidth, height: currentHeight };
     }
-  } catch (e) { return { x: 100, y: 100 }; }
+    const { minWidth, minHeight } = minimumSize(displayMode);
+    const M = 20;
+    const W = Math.min(Math.max(minWidth, Number.isFinite(saved?.width) ? Math.round(saved.width) : (isPill ? 320 : 380)), width - M * 2);
+    const H = Math.min(Math.max(minHeight, Number.isFinite(saved?.height) ? Math.round(saved.height) : (isPill ? 56 : 440)), height - M * 2);
+    const size = { width: W, height: H };
+    switch (position) {
+      case 'top-left':     return { ...size, x: x + M, y: y + M };
+      case 'top-right':    return { ...size, x: x + width - W - M, y: y + M };
+      case 'bottom-left':  return { ...size, x: x + M, y: y + height - H - M };
+      default:             return { ...size, x: x + width - W - M, y: y + height - H - M };
+    }
+  } catch (e) { return { x: 100, y: 100, width: displayMode === 'pill' ? 320 : 380, height: displayMode === 'pill' ? 56 : 440 }; }
 }
 
 function updateConfig(cfg) {
+  if (cfg.popupSizes) popupSizes = { ...popupSizes, ...cfg.popupSizes };
   if (cfg.popupPosition !== undefined) popupConfig.position = cfg.popupPosition;
   if (cfg.fontSize !== undefined) popupConfig.fontSize = cfg.fontSize;
   if (cfg.showExample !== undefined) popupConfig.showExample = cfg.showExample;
@@ -243,13 +287,11 @@ function updateConfig(cfg) {
 
   // 如果弹窗正在显示，立即调整尺寸与位置
   if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
-    const isPill = popupConfig.displayMode === 'pill';
     const bounds = getPopupBounds(popupConfig.position, popupConfig.displayMode);
-    popupWindow.setBounds({
-      ...bounds,
-      width: isPill ? 320 : 380,
-      height: isPill ? 56 : 440
-    });
+    popupWindowMode = popupConfig.displayMode === 'pill' ? 'pill' : 'card';
+    const { minWidth, minHeight } = minimumSize(popupConfig.displayMode);
+    popupWindow.setMinimumSize(minWidth, minHeight);
+    popupWindow.setBounds(bounds);
   }
 }
 

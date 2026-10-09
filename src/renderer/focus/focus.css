@@ -40,6 +40,7 @@ body {
 
 /* 顶部状态栏 */
 .focus-header {
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -104,6 +105,7 @@ body {
 
 /* 进度条 */
 .focus-progress-bar {
+  flex-shrink: 0;
   height: 3px;
   background: rgba(255, 255, 255, 0.05);
 }
@@ -117,10 +119,12 @@ body {
 /* 主卡片区 */
 .focus-card-area {
   flex: 1;
+  min-height: 0;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
+  justify-content: flex-start;
   padding: 24px 36px;
   position: relative;
 }
@@ -147,6 +151,8 @@ body {
 }
 
 .focus-card {
+  flex-shrink: 0;
+  margin-block: auto;
   width: 100%;
   max-width: 580px;
   display: flex;
@@ -172,6 +178,8 @@ body {
 }
 
 .focus-word {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: 40px;
   font-weight: 800;
   letter-spacing: -0.5px;
@@ -275,6 +283,7 @@ kbd {
 
 /* 底部操作按钮 */
 .focus-footer {
+  flex-shrink: 0;
   display: flex;
   gap: 12px;
   padding: 16px 24px;
@@ -356,6 +365,8 @@ kbd {
 
 /* 结算卡片 */
 .focus-summary {
+  flex-shrink: 0;
+  margin-block: auto;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -415,6 +426,7 @@ kbd {
 
 /* 底部快捷键条 */
 .focus-shortcuts-bar {
+  flex-shrink: 0;
   display: flex;
   justify-content: center;
   gap: 16px;

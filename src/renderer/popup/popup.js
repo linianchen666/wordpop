@@ -313,12 +313,12 @@ btnFuzzy.addEventListener('click', () => {
   flashContainer();
 });
 
-// === 点击「熟知」(右上角) ===
+// === 点击「轻松」(右上角) ===
 btnMastered.addEventListener('click', () => {
   if (!currentWord || phase !== 'reveal') return;
   disableActionButtons();
 
-  window.wordpopAPI.markMastered();
+  window.wordpopAPI.markEasy();
   currentWord = null;
   flashContainer();
 });
@@ -403,7 +403,7 @@ document.addEventListener('keydown', (e) => {
       }
       break;
     case 'm':
-      // 熟知 — 仅在显示阶段可用
+      // 轻松 — 仅在显示阶段可用
       if (phase === 'reveal' && !btnMastered.disabled) {
         btnMastered.click();
       }

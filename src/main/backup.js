@@ -4,6 +4,7 @@ const { dialog, BrowserWindow } = require('electron');
 const { getDb, importWordlist } = require('./db');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
+const { deserializeCard } = require('./review-algorithm');
 const popupManager = require('./popup-manager');
 
 /**
@@ -17,9 +18,15 @@ function createBackupData() {
   const progressRows = db.prepare(`
     SELECT w.word, p.stage, p.next_review_at, p.last_review_at,
            p.correct_count, p.wrong_count, p.efactor, p.interval,
-           p.repetitions, p.mastered_count
+           p.repetitions, p.mastered_count, p.fsrs_card
     FROM progress p
     JOIN words w ON p.word_id = w.id
+  `).all();
+
+  const historyRows = db.prepare(`
+    SELECT w.word, h.reviewed_at, h.rating, h.card_before, h.card_after, h.log
+    FROM review_history h JOIN words w ON h.word_id = w.id
+    ORDER BY h.id
   `).all();
 
   // 2. 导出 daily_stats
@@ -46,12 +53,13 @@ function createBackupData() {
 
   return {
     appName: 'WordPop',
-    appVersion: '1.3.0',
-    schemaVersion: 6,
+    appVersion: require('../../package.json').version,
+    schemaVersion: 7,
     exportedAt: new Date().toISOString(),
     config: config,
     data: {
       progress: progressRows,
+      review_history: historyRows,
       daily_stats: statsRows,
       custom_words: customWords,
       custom_word_wordlists: customRelations
@@ -106,8 +114,9 @@ function restoreBackupData(backupObj) {
     throw new Error('无效的 WordPop 备份文件格式');
   }
 
+  if (backupObj.schemaVersion > 7) throw new Error('备份版本高于当前支持的版本');
   const db = getDb();
-  const { progress = [], daily_stats = [], custom_words = [], custom_word_wordlists = [] } = backupObj.data;
+  const { review_history = [], progress = [], daily_stats = [], custom_words = [], custom_word_wordlists = [] } = backupObj.data;
 
   // 1. 确保内置词库已初始化 (根据选中的词库或全部基础词库)
   const configToRestore = backupObj.config || {};
@@ -170,8 +179,8 @@ function restoreBackupData(backupObj) {
         INSERT INTO progress (
           word_id, stage, next_review_at, last_review_at,
           correct_count, wrong_count, efactor, interval,
-          repetitions, mastered_count
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          repetitions, mastered_count, fsrs_card
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(word_id) DO UPDATE SET
           stage = excluded.stage,
           next_review_at = excluded.next_review_at,
@@ -181,7 +190,8 @@ function restoreBackupData(backupObj) {
           efactor = excluded.efactor,
           interval = excluded.interval,
           repetitions = excluded.repetitions,
-          mastered_count = excluded.mastered_count
+          mastered_count = excluded.mastered_count,
+          fsrs_card = excluded.fsrs_card
       `);
 
       for (const p of progress) {
@@ -197,6 +207,8 @@ function restoreBackupData(backupObj) {
         }
 
         if (wordRow && wordRow.id) {
+          if (p.fsrs_card != null) deserializeCard(p.fsrs_card);
+          db.prepare('DELETE FROM review_history WHERE word_id = ?').run(wordRow.id);
           upsertProgressStmt.run(
             wordRow.id,
             p.stage ?? 0,
@@ -207,11 +219,34 @@ function restoreBackupData(backupObj) {
             p.efactor ?? 2.5,
             p.interval ?? 0,
             p.repetitions ?? 0,
-            p.mastered_count ?? 0
+            p.mastered_count ?? 0,
+            p.fsrs_card ?? null
           );
           restoredProgress++;
         }
       }
+    }
+
+    // Restore exact FSRS state and history; old backups simply have no history.
+    const restoredWords = new Set(progress.map(p => (p.word || '').trim().toLowerCase()));
+    const insertHistory = db.prepare(`
+      INSERT INTO review_history (word_id, reviewed_at, rating, card_before, card_after, log)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `);
+    for (const history of review_history) {
+      const word = (history.word || '').trim().toLowerCase();
+      if (!restoredWords.has(word)) throw new Error('FSRS history has no matching progress');
+      deserializeCard(history.card_before);
+      deserializeCard(history.card_after);
+      const log = JSON.parse(history.log);
+      if (![1, 2, 3, 4].includes(history.rating) || log.rating !== history.rating ||
+          !Number.isFinite(history.reviewed_at) ||
+          new Date(log.review).getTime() !== history.reviewed_at) {
+        throw new Error('Invalid FSRS review history');
+      }
+      const wordRow = db.prepare('SELECT id FROM words WHERE word = ?').get(word);
+      insertHistory.run(wordRow.id, history.reviewed_at, history.rating,
+        history.card_before, history.card_after, history.log);
     }
 
     // 5. 恢复 daily_stats

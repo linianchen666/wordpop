@@ -2,6 +2,7 @@ const Database = require('better-sqlite3');
 const path = require('path');
 const fs = require('fs');
 const { app } = require('electron');
+const { migrateFsrs } = require('./fsrs-schema');
 
 let db = null;
 
@@ -10,7 +11,7 @@ let db = null;
  * - 创建数据库文件（存储在 userData 目录）
  * - 开启 WAL 模式和外键约束
  * - 执行 schema 迁移
- * - 如果迁移失败（数据库结构严重损坏），删除后重建
+ * - 如果迁移失败，保留原数据库并报告错误
  */
 function initDatabase() {
   const userDataPath = app.getPath('userData');
@@ -29,33 +30,10 @@ function initDatabase() {
     migrate(db);
   } catch (err) {
     console.error('[DB] Migration failed:', err.message);
-    console.log('[DB] Attempting to recreate database (learning data will be lost)...');
-
-    // 迁移失败，关闭并删除损坏的数据库
+    // A failed upgrade must never erase learning data. Leave the file intact.
     try { db.close(); } catch (_) {}
     db = null;
-
-    // 删除旧的数据库文件
-    try {
-      if (fs.existsSync(dbPath)) fs.unlinkSync(dbPath);
-      const walPath = dbPath + '-wal';
-      const shmPath = dbPath + '-shm';
-      if (fs.existsSync(walPath)) fs.unlinkSync(walPath);
-      if (fs.existsSync(shmPath)) fs.unlinkSync(shmPath);
-    } catch (e) {
-      console.error('[DB] Failed to delete old database:', e.message);
-    }
-
-    // 重新创建
-    db = new Database(dbPath);
-    db.pragma('journal_mode = WAL');
-    db.pragma('foreign_keys = ON');
-    db.pragma('synchronous = NORMAL');
-    db.pragma('cache_size = -8000');
-
-    // 在全新数据库上执行迁移（这次应该不会失败）
-    migrate(db);
-    console.log('[DB] Database recreated successfully');
+    throw err;
   }
 
   return db;
@@ -329,6 +307,8 @@ function migrate(db) {
     }
     db.pragma('user_version = 6');
   }
+
+  if (currentVersion < 7) migrateFsrs(db);
 }
 
 const BUILTIN_WORDLISTS_INDEX = [
@@ -401,42 +381,7 @@ function getWordFrequencyRank(word) {
  * @returns {{ totalWords: number, learnedWords: number, masteredWords: number, remainingWords: number }}
  */
 function getProgressSummary(wordlistIds) {
-  const d = getDb();
-  if (!wordlistIds || wordlistIds.length === 0) {
-    return { totalWords: 0, learnedWords: 0, masteredWords: 0, remainingWords: 0 };
-  }
-
-  const placeholders = wordlistIds.map(() => '?').join(',');
-
-  // 选中词库的总词数（去重）
-  const totalRow = d.prepare(`
-    SELECT COUNT(DISTINCT word_id) as total
-    FROM word_wordlists
-    WHERE wordlist IN (${placeholders})
-  `).get(...wordlistIds);
-
-  // 已学单词（stage 0-8，有 progress 记录但未掌握）
-  const learnedRow = d.prepare(`
-    SELECT COUNT(DISTINCT p.word_id) as learned
-    FROM progress p
-    WHERE p.stage < 9
-      AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
-  `).get(...wordlistIds);
-
-  // 已掌握（stage = 9）
-  const masteredRow = d.prepare(`
-    SELECT COUNT(DISTINCT p.word_id) as mastered
-    FROM progress p
-    WHERE p.stage >= 9
-      AND p.word_id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))
-  `).get(...wordlistIds);
-
-  const total = totalRow.total || 0;
-  const learned = learnedRow.learned || 0;
-  const mastered = masteredRow.mastered || 0;
-  const remaining = Math.max(0, total - learned - mastered);
-
-  return { totalWords: total, learnedWords: learned, masteredWords: mastered, remainingWords: remaining };
+  return require('./learning-repository').learningRepository.getProgressSummary(wordlistIds);
 }
 
 /**
@@ -697,56 +642,7 @@ function repairDatabase() {
  */
 function smoothOverdueReviews(days = 3, wordlists = null) {
   if (!db) return { success: false, count: 0, error: '数据库未初始化' };
-  const targetDays = Math.max(1, Math.min(30, parseInt(days) || 3));
-  const now = Date.now();
-
-  let query = `
-    SELECT p.word_id, p.stage, p.efactor, p.next_review_at
-    FROM progress p
-    JOIN words w ON p.word_id = w.id
-    WHERE p.next_review_at <= ? AND p.stage < 9
-  `;
-  const params = [now];
-
-  if (Array.isArray(wordlists) && wordlists.length > 0) {
-    const placeholders = wordlists.map(() => '?').join(',');
-    query += ` AND w.id IN (SELECT word_id FROM word_wordlists WHERE wordlist IN (${placeholders}))`;
-    params.push(...wordlists);
-  }
-
-  // 排序：生疏的记忆 (stage低) 优先排在近处，较稳固的记忆 (stage高) 分散到更远天数
-  query += ` ORDER BY p.stage ASC, p.efactor ASC, p.next_review_at ASC`;
-
-  const overdueList = db.prepare(query).all(...params);
-  if (!overdueList || overdueList.length === 0) {
-    return { success: true, count: 0, days: targetDays };
-  }
-
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  const updateStmt = db.prepare('UPDATE progress SET next_review_at = ? WHERE word_id = ?');
-
-  const transaction = db.transaction(() => {
-    overdueList.forEach((row, index) => {
-      // 均匀分配在 0 ~ (targetDays - 1) 天
-      const dayOffset = index % targetDays;
-      let newTime;
-      if (dayOffset === 0) {
-        newTime = now;
-      } else {
-        const jitter = (Math.random() - 0.5) * 2 * 3600 * 1000;
-        newTime = now + (dayOffset * ONE_DAY_MS) + jitter;
-      }
-      updateStmt.run(Math.round(newTime), row.word_id);
-    });
-  });
-
-  transaction();
-
-  return {
-    success: true,
-    count: overdueList.length,
-    days: targetDays
-  };
+  return require('./learning-repository').learningRepository.smoothOverdueReviews(days, wordlists);
 }
 
 module.exports = {

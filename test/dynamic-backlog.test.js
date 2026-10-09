@@ -1,229 +1,141 @@
-/**
- * 智能目标动态新词与积压平摊算法测试
- */
+/** Actual quota policy and SQLite backlog repository regression tests. */
 const assert = require('assert');
-const Database = require('better-sqlite3');
-const path = require('path');
+const Module = require('module');
 const fs = require('fs');
+const os = require('os');
+const path = require('path');
+const { calculateDailyQuota } = require('../src/main/study-policy');
+const { createLearningRepository } = require('../src/main/learning-repository');
+const { recordReview } = require('../src/main/review-progress');
 
-const rootDir = path.join(__dirname, '..');
-const testDbPath = path.join(__dirname, 'test_dynamic_backlog.db');
+const DAY = 86400000;
+const HOUR = 3600000;
+const now = new Date(2026, 9, 9, 12).getTime();
+let passed = 0;
+function test(name, fn) { fn(); passed++; console.log(`  ✓ ${name}`); }
+console.log('=== 智能目标规划与真实积压平摊回归 ===');
 
-// 清理旧测试文件
-if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
-if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
-if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+const targetConfig = {
+  dailyNewWordsMode: 'target', targetDate: '2026-11-03',
+  autoBalanceLoad: true, maxDynamicNewWords: 50
+};
+const quota = (config, unlearnedCount, dueCount) =>
+  calculateDailyQuota(config, { unlearnedCount, dueCount }, now);
 
-console.log('=== 开始测试：智能目标动态新词与积压平摊算法 ===');
-
-const db = new Database(testDbPath);
-db.pragma('journal_mode = WAL');
-
-// 初始化表结构
-db.exec(`
-  CREATE TABLE IF NOT EXISTS words (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word TEXT NOT NULL,
-    phonetic TEXT DEFAULT '',
-    translation TEXT NOT NULL,
-    example TEXT DEFAULT '',
-    wordlist TEXT NOT NULL DEFAULT 'custom',
-    frequency_rank INTEGER DEFAULT 999999
-  );
-  CREATE UNIQUE INDEX IF NOT EXISTS idx_words_word ON words(word);
-
-  CREATE TABLE IF NOT EXISTS progress (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    word_id INTEGER NOT NULL UNIQUE,
-    stage INTEGER NOT NULL DEFAULT 0,
-    next_review_at INTEGER NOT NULL DEFAULT 0,
-    last_review_at INTEGER DEFAULT NULL,
-    correct_count INTEGER DEFAULT 0,
-    wrong_count INTEGER DEFAULT 0,
-    efactor REAL DEFAULT 2.5,
-    interval INTEGER DEFAULT 0,
-    repetitions INTEGER DEFAULT 0,
-    mastered_count INTEGER NOT NULL DEFAULT 0,
-    FOREIGN KEY (word_id) REFERENCES words(id) ON DELETE CASCADE
-  );
-
-  CREATE TABLE IF NOT EXISTS daily_stats (
-    date TEXT PRIMARY KEY,
-    words_reviewed INTEGER DEFAULT 0,
-    words_learned INTEGER DEFAULT 0
-  );
-
-  CREATE TABLE IF NOT EXISTS word_wordlists (
-    word_id INTEGER NOT NULL,
-    wordlist TEXT NOT NULL,
-    PRIMARY KEY (word_id, wordlist),
-    FOREIGN KEY (word_id) REFERENCES words(id) ON DELETE CASCADE
-  );
-`);
-
-// 插入 500 个单词
-const insertWord = db.prepare('INSERT INTO words (word, translation, wordlist, frequency_rank) VALUES (?, ?, ?, ?)');
-const insertRel = db.prepare('INSERT INTO word_wordlists (word_id, wordlist) VALUES (?, ?)');
-
-db.transaction(() => {
-  for (let i = 1; i <= 500; i++) {
-    const res = insertWord.run('word_' + i, '释义_' + i, 'cet4', i);
-    insertRel.run(res.lastInsertRowid, 'cet4');
-  }
-})();
-
-console.log('  ✓ 初始插入 500 个单词');
-
-// ── 测试 1：动态新词计算函数 ──
-function calculateDynamicQuota(config, totalUnlearned, dueCount) {
-  let baseLimit = parseInt(config.dailyNewWords) || 20;
-  const mode = config.dailyNewWordsMode || 'fixed';
-
-  if (mode === 'target' && config.targetDate) {
-    const targetTime = new Date(config.targetDate);
-    targetTime.setHours(23, 59, 59, 999);
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const daysLeft = Math.ceil((targetTime.getTime() - today.getTime()) / (24 * 3600 * 1000));
-
-    if (daysLeft > 0 && totalUnlearned > 0) {
-      const calculated = Math.ceil(totalUnlearned / daysLeft);
-      const maxCap = parseInt(config.maxDynamicNewWords) || 50;
-      baseLimit = Math.min(maxCap, Math.max(1, calculated));
-    }
-  }
-
-  let effectiveLimit = baseLimit;
-  let loadState = 'normal';
-
-  if (config.autoBalanceLoad !== false && baseLimit > 0) {
-    if (dueCount >= 80) {
-      effectiveLimit = 0;
-      loadState = 'overload';
-    } else if (dueCount >= 40) {
-      effectiveLimit = Math.max(1, Math.floor(baseLimit / 2));
-      loadState = 'heavy';
-    }
-  }
-
-  return { effectiveLimit, baseLimit, loadState };
-}
-
-// 目标日期 25 天后，剩余 500 词 -> 500 / 25 = 20 词/天
-const future25 = new Date();
-future25.setDate(future25.getDate() + 25);
-const dateStr25 = future25.toISOString().split('T')[0];
-
-const q1 = calculateDynamicQuota({
-  dailyNewWordsMode: 'target',
-  targetDate: dateStr25,
-  autoBalanceLoad: true,
-  maxDynamicNewWords: 50
-}, 500, 10);
-
-assert.strictEqual(q1.baseLimit, 20, '目标模式基础新词应为 20');
-assert.strictEqual(q1.effectiveLimit, 20, '复习负荷正常时有效新词应为 20');
-assert.strictEqual(q1.loadState, 'normal');
-console.log('  ✓ 测试 1 通过：智能目标规划基础新词计算正常 (20 词/天)');
-
-// ── 测试 2：智能负荷动态平衡（中度负荷减半，重度负荷归零） ──
-// 中度负荷 (dueCount = 50) -> 20 / 2 = 10
-const q2 = calculateDynamicQuota({
-  dailyNewWordsMode: 'target',
-  targetDate: dateStr25,
-  autoBalanceLoad: true
-}, 500, 50);
-
-assert.strictEqual(q2.effectiveLimit, 10, '中度负荷（50词积压）应自动减半至 10');
-assert.strictEqual(q2.loadState, 'heavy');
-
-// 重度负荷 (dueCount = 95) -> 0
-const q3 = calculateDynamicQuota({
-  dailyNewWordsMode: 'target',
-  targetDate: dateStr25,
-  autoBalanceLoad: true
-}, 500, 95);
-
-assert.strictEqual(q3.effectiveLimit, 0, '重度负荷（95词积压）应自动暂停推新 (0)');
-assert.strictEqual(q3.loadState, 'overload');
-console.log('  ✓ 测试 2 通过：智能负荷动态平衡（中度减半、重度熔断暂停）验证正常');
-
-// ── 测试 3：积压复习平摊算法（smoothOverdueReviews） ──
-const now = Date.now();
-// 为 150 个单词注入逾期记录
-const insertProg = db.prepare(`
-  INSERT INTO progress (word_id, stage, next_review_at, efactor, interval, repetitions)
-  VALUES (?, ?, ?, ?, ?, ?)
-`);
-
-db.transaction(() => {
-  for (let id = 1; id <= 150; id++) {
-    insertProg.run(id, id % 8, now - (id * 3600 * 1000), 2.5, 86400000, 2);
-  }
-})();
-
-// 模拟平摊实现
-function testSmooth(days, wordlists) {
-  const targetDays = Math.max(1, Math.min(30, parseInt(days) || 3));
-  const query = `
-    SELECT p.word_id, p.stage, p.efactor, p.next_review_at
-    FROM progress p
-    JOIN words w ON p.word_id = w.id
-    WHERE p.next_review_at <= ? AND p.stage < 9
-    ORDER BY p.stage ASC, p.efactor ASC, p.next_review_at ASC
-  `;
-  const overdueList = db.prepare(query).all(now);
-  const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-  const updateStmt = db.prepare('UPDATE progress SET next_review_at = ? WHERE word_id = ?');
-
-  db.transaction(() => {
-    overdueList.forEach((row, index) => {
-      const dayOffset = index % targetDays;
-      let newTime;
-      if (dayOffset === 0) {
-        newTime = now;
-      } else {
-        const jitter = (Math.random() - 0.5) * 2 * 3600 * 1000;
-        newTime = now + (dayOffset * ONE_DAY_MS) + jitter;
-      }
-      updateStmt.run(Math.round(newTime), row.word_id);
-    });
-  })();
-
-  return { success: true, count: overdueList.length, days: targetDays };
-}
-
-const smoothRes = testSmooth(3, ['cet4']);
-assert.strictEqual(smoothRes.count, 150, '应成功平摊 150 个逾期单词');
-assert.strictEqual(smoothRes.days, 3, '平摊天数应为 3');
-
-// 检验平摊后的各天分布
-const updatedRows = db.prepare('SELECT word_id, next_review_at FROM progress WHERE word_id <= 150').all();
-assert.strictEqual(updatedRows.length, 150);
-
-let day0Count = 0;
-let day1Count = 0;
-let day2Count = 0;
-
-const ONE_DAY_MS = 24 * 60 * 60 * 1000;
-updatedRows.forEach(r => {
-  const diffDays = Math.round((r.next_review_at - now) / ONE_DAY_MS);
-  if (diffDays === 0) day0Count++;
-  else if (diffDays === 1) day1Count++;
-  else if (diffDays === 2) day2Count++;
+test('目标日期依据注入时间计算配额，不依赖运行测试的日期', () => {
+  const actual = quota(targetConfig, 500, 10);
+  assert.strictEqual(actual.baseLimit, 20);
+  assert.strictEqual(actual.effectiveLimit, 20);
+  assert.strictEqual(actual.loadState, 'normal');
+  assert.strictEqual(actual.mode, 'target');
+  assert.strictEqual(actual.dueCount, 10);
 });
 
-console.log('     平摊后分布：今天 =', day0Count, ', 明天 =', day1Count, ', 后天 =', day2Count);
-assert.strictEqual(day0Count, 50, '今天应分得 50 词');
-assert.strictEqual(day1Count, 50, '明天应分得 50 词');
-assert.strictEqual(day2Count, 50, '后天应分得 50 词');
+test('40与80个到期词是减半和暂停推新的边界', () => {
+  const config = { dailyNewWords: 20, autoBalanceLoad: true };
+  for (const [due, effective, state] of [[39, 20, 'normal'], [40, 10, 'heavy'],
+    [79, 10, 'heavy'], [80, 0, 'overload']]) {
+    const actual = quota(config, 500, due);
+    assert.strictEqual(actual.effectiveLimit, effective);
+    assert.strictEqual(actual.loadState, state);
+  }
+});
 
-console.log('  ✓ 测试 3 通过：积压平摊算法均匀分配验证完全正确 (150 -> 50 / 50 / 50)');
+test('关闭负荷调整保留配额，小配额减半至少保留一个新词', () => {
+  assert.strictEqual(quota({ dailyNewWords: 7, autoBalanceLoad: false }, 500, 100).effectiveLimit, 7);
+  assert.strictEqual(quota({ dailyNewWords: 1 }, 500, 40).effectiveLimit, 1);
+});
 
-db.close();
-if (fs.existsSync(testDbPath)) fs.unlinkSync(testDbPath);
-if (fs.existsSync(testDbPath + '-wal')) fs.unlinkSync(testDbPath + '-wal');
-if (fs.existsSync(testDbPath + '-shm')) fs.unlinkSync(testDbPath + '-shm');
+test('目标模式遵守每日上限，词库学完时配额归零', () => {
+  assert.strictEqual(quota(targetConfig, 5000, 0).baseLimit, 50);
+  assert.strictEqual(quota(targetConfig, 0, 0).effectiveLimit, 0);
+  assert.strictEqual(quota({ ...targetConfig, targetDate: '2026-10-01', dailyNewWords: 13 }, 500, 0).baseLimit, 13);
+});
 
-console.log('\n🎉 所有智能目标规划与积压平摊算法测试全部通过！\n');
-process.exit(0);
+const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordpop-backlog-'));
+const originalLoad = Module._load;
+const dbModulePath = require.resolve('../src/main/db');
+const cachedDb = require.cache[dbModulePath];
+let productionDb;
+try {
+  Module._load = function(request) {
+    if (request === 'electron') return { app: { isPackaged: false, getPath: () => testDir } };
+    return originalLoad.apply(this, arguments);
+  };
+  delete require.cache[dbModulePath];
+  productionDb = require('../src/main/db');
+  Module._load = originalLoad;
+  const db = productionDb.initDatabase();
+  // Build the real schema, then replace built-in vocabulary with small deterministic fixtures.
+  db.exec('DELETE FROM review_history; DELETE FROM progress; DELETE FROM daily_stats; DELETE FROM word_wordlists; DELETE FROM words;');
+  const repository = createLearningRepository(() => db);
+  const insert = db.prepare('INSERT INTO words (id,word,translation,wordlist,frequency_rank) VALUES (?,?,?,?,?)');
+  const relate = db.prepare('INSERT INTO word_wordlists (word_id,wordlist) VALUES (?,?)');
+  db.transaction(() => {
+    for (let id = 1; id <= 153; id++) {
+      const list = id === 151 ? 'cet6' : 'cet4';
+      insert.run(id, `backlog_${id}`, `释义_${id}`, list, id);
+      relate.run(id, list);
+      recordReview(db, id, 'known', now - id * HOUR);
+    }
+    relate.run(1, 'cet6');
+    db.prepare('UPDATE progress SET next_review_at=? WHERE word_id=152').run(now + DAY);
+    db.prepare('UPDATE progress SET stage=9 WHERE word_id=153').run();
+  })();
+  const allProgress = () => db.prepare('SELECT * FROM progress ORDER BY word_id').all();
+  const history = () => db.prepare('SELECT * FROM review_history ORDER BY id').all();
+  const dailyStats = () => db.prepare('SELECT * FROM daily_stats ORDER BY date').all();
+
+  test('真实 repository 统计选定词库，跨词库共享词只计一次', () => {
+    assert.strictEqual(repository.countDue(['cet4'], now), 150);
+    assert.strictEqual(repository.countDue(['cet4', 'cet6'], now), 151);
+    assert.strictEqual(repository.countUnlearned(['cet4']), 0);
+  });
+
+  test('真实平摊将150个到期词均分为三天，隔离未选择词库及未来/掌握词', () => {
+    const before = allProgress();
+    const beforeHistory = history();
+    const beforeStats = dailyStats();
+    assert.deepStrictEqual(repository.smoothOverdueReviews(3, ['cet4'], now),
+      { success: true, count: 150, days: 3 });
+    const after = allProgress();
+    const distribution = [0, 0, 0];
+    for (let i = 0; i < after.length; i++) {
+      const row = after[i];
+      const previous = before[i];
+      if (row.word_id > 150) {
+        assert.deepStrictEqual(row, previous);
+      } else {
+        const { next_review_at: ignoredBefore, ...originalMemory } = previous;
+        const { next_review_at: nextReview, ...currentMemory } = row;
+        assert.deepStrictEqual(currentMemory, originalMemory, '平摊不能改动FSRS记忆状态和答题计数');
+        const day = Math.round((nextReview - now) / DAY);
+        assert.ok(day >= 0 && day <= 2);
+        assert.ok(Math.abs(nextReview - now - day * DAY) <= HOUR, '每日抖动应在一小时内');
+        distribution[day]++;
+      }
+    }
+    assert.deepStrictEqual(distribution, [50, 50, 50]);
+    assert.deepStrictEqual(history(), beforeHistory, '延期不能伪造新的复习记录');
+    assert.deepStrictEqual(dailyStats(), beforeStats, '延期不能伪造学习统计');
+  });
+
+  test('数据库更新失败时真实平摊回滚整批到期时间', () => {
+    db.prepare('UPDATE progress SET next_review_at=? WHERE word_id<=150').run(now - HOUR);
+    const before = allProgress();
+    db.exec("CREATE TRIGGER reject_deferral BEFORE UPDATE OF next_review_at ON progress WHEN NEW.word_id=10 BEGIN SELECT RAISE(ABORT,'test deferral failure'); END;");
+    try {
+      assert.throws(() => repository.smoothOverdueReviews(3, ['cet4'], now), /test deferral failure/);
+      assert.deepStrictEqual(allProgress(), before);
+    } finally {
+      db.exec('DROP TRIGGER reject_deferral');
+    }
+  });
+} finally {
+  Module._load = originalLoad;
+  if (productionDb) productionDb.closeDatabase();
+  if (cachedDb) require.cache[dbModulePath] = cachedDb;
+  else delete require.cache[dbModulePath];
+  fs.rmSync(testDir, { recursive: true, force: true });
+}
+console.log(`\n🎉 ${passed} 项真实业务回归测试全部通过！\n`);

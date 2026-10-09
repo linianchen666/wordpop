@@ -106,7 +106,7 @@
   transform: scale(0.92);
 }
 
-/* === 熟知按钮（右上角标题栏） === */
+/* === 轻松按钮（右上角标题栏） === */
 .btn-mastered-icon {
   color: var(--color-text-muted);
   font-size: 13px;
@@ -145,6 +145,8 @@
 }
 
 .word-main {
+  max-width: 100%;
+  overflow-wrap: anywhere;
   font-size: 28px;
   font-weight: 800;
   color: var(--color-text);
@@ -534,7 +536,7 @@ body.pill-mode {
 }
 
 body.pill-mode .popup-container {
-  height: 56px !important;
+  height: 100vh !important;
   border-radius: 28px !important;
   padding: 0 16px !important;
   display: flex !important;

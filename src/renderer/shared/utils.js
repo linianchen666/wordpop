@@ -32,8 +32,8 @@ function formatNumber(n) {
  */
 function getStageName(stage) {
   const names = [
-    '新学', '5分钟', '30分钟', '4小时',
-    '1天', '2天', '4天', '7天', '15天', '已掌握'
+    '新学', '短期巩固', '半小时起', '4小时起',
+    '1天起', '2天起', '4天起', '7天起', '15天起', '已掌握'
   ];
   return names[stage] || `阶段${stage}`;
 }

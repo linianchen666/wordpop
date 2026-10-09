@@ -1,8 +1,11 @@
-const { ipcMain, dialog, BrowserWindow, app, fs } = require('electron');
-const { getDb, importWordlist, getWordlistIndex, importCustomWordlist, getProgressSummary, smoothOverdueReviews, diagnoseDatabase, repairDatabase } = require('./db');
+const { ipcMain, dialog, BrowserWindow, app } = require('electron');
+const fs = require('fs');
+const { importWordlist, getWordlistIndex, importCustomWordlist, diagnoseDatabase, repairDatabase } = require('./db');
 const { handleExportBackup, handleImportBackup } = require('./backup');
 const { loadConfig, saveConfig } = require('./config');
 const scheduler = require('./scheduler');
+const { learningRepository } = require('./learning-repository');
+const { selectedWordlists } = require('./study-policy');
 const popupManager = require('./popup-manager');
 const { openFocusWindow, closeFocusWindow, getFocusWords, submitFocusWord } = require('./focus-manager');
 const { startAutoUpdateCheck } = require('./tray');
@@ -13,366 +16,311 @@ const { startAutoUpdateCheck } = require('./tray');
 
 const LOG_FILE = require('path').join(app.getPath('userData'), 'wordpop.log');
 
-ipcMain.handle('app:get-logs', () => {
-  try {
-    return { success: true, logs: fs.readFileSync(LOG_FILE, 'utf8') };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
+let registered = false;
 
-ipcMain.handle('app:open-log-folder', async () => {
-  try {
-    await require('electron').shell.openPath(require('path').dirname(LOG_FILE));
-    return { success: true };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
+function registerIpcHandlers() {
+  if (registered) return;
 
-// ═════════════════════════╗
-//  单词反馈
-// ═════════════════════════╝
-
-ipcMain.on('word:known',     () => scheduler.markKnown());
-ipcMain.on('word:unknown',   () => scheduler.markUnknown());
-ipcMain.on('word:fuzzy',     () => scheduler.markFuzzy());
-ipcMain.on('word:mastered',  () => scheduler.markMastered());
-ipcMain.on('word:undo',      () => scheduler.undo());
-ipcMain.on('popup:minimize', () => popupManager.hide());
-
-// ═════════════════════════╗
-//  配置
-// ═════════════════════════╝
-
-ipcMain.handle('config:get', () => loadConfig());
-
-ipcMain.handle('config:save', (_ev, config) => {
-  const result = saveConfig(config);
-  if (result.success) {
-    scheduler.applyConfig(result.config);
-    popupManager.updateConfig(result.config);
-    // 同步自动检查更新状态
-    if ('autoCheckUpdate' in config) {
-      startAutoUpdateCheck(config.autoCheckUpdate);
-    }
-    BrowserWindow.getAllWindows().forEach(w => {
-      if (!w.isDestroyed()) w.webContents.send('config:changed', result.config);
-    });
-  }
-  return result;
-});
-
-// ═════════════════════════╗
-//  词库管理
-// ═════════════════════════╝
-
-ipcMain.handle('wordlists:get', () => {
-  try {
-    const index = getWordlistIndex();
-    const db = getDb();
-    for (const e of index) {
-      try {
-        const r = db.prepare('SELECT COUNT(DISTINCT word_id) c FROM word_wordlists WHERE wordlist = ?').get(e.id);
-        e.importedCount = r ? r.c : 0;
-        e.isImported = e.importedCount > 0;
-      } catch (e2) {
-        e.importedCount = 0;
-        e.isImported = false;
-      }
-    }
-    // 自动合并用户自定义导入的词表 (custom_*)
+  ipcMain.handle('app:get-logs', () => {
     try {
-      const customLists = db.prepare(`
-        SELECT DISTINCT wordlist as id, COUNT(DISTINCT word_id) as importedCount
-        FROM word_wordlists
-        WHERE wordlist NOT IN ('cet4', 'cet6', 'kaoyan')
-        GROUP BY wordlist
-      `).all();
-      for (const cl of customLists) {
-        if (!index.some(x => x.id === cl.id)) {
-          index.push({
-            id: cl.id,
-            name: '自定义词表 (' + cl.id + ')',
-            file: '',
-            count: cl.importedCount,
-            importedCount: cl.importedCount,
-            isImported: true
-          });
-        }
-      }
-    } catch (e3) {}
-
-    return index;
-  } catch (err) {
-    console.error('[IPC] wordlists:get error:', err.message);
-    return [
-      { id: 'cet4', name: 'CET-4 四级', count: 4544, isImported: false },
-      { id: 'cet6', name: 'CET-6 六级', count: 3991, isImported: false },
-      { id: 'kaoyan', name: '考研词汇', count: 5047, isImported: false }
-    ];
-  }
-});
-
-ipcMain.handle('wordlist:import', (_ev, id) => {
-  try {
-    const r = importWordlist(id);
-    return { success: true, ...r };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
-
-ipcMain.handle('wordlist:import-custom', async () => {
-  const r = await dialog.showOpenDialog({
-    title: '导入自定义词表',
-    filters: [
-      { name: '词表文件', extensions: ['csv','txt'] },
-      { name: '所有文件', extensions: ['*'] }
-    ],
-    properties: ['openFile']
+      return { success: true, logs: fs.readFileSync(LOG_FILE, 'utf8') };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
   });
-  if (r.canceled || r.filePaths.length === 0) {
-    return { success: false, error: '用户取消' };
-  }
-  try {
-    const result = importCustomWordlist(r.filePaths[0], 'custom_' + Date.now());
-    return { success: true, ...result };
-  } catch (err) {
-    return { success: false, error: err.message };
-  }
-});
 
-// ═════════════════════════╗
-//  学习进度摘要（预测用）
-// ═════════════════════════╝
+  ipcMain.handle('app:open-log-folder', async () => {
+    try {
+      await require('electron').shell.openPath(require('path').dirname(LOG_FILE));
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
 
-ipcMain.handle('stats:progress-summary', (_ev, wordlistIds) => {
-  try {
-    return getProgressSummary(wordlistIds);
-  } catch (err) {
-    console.error('[IPC] stats:progress-summary error:', err.message);
-    return { totalWords: 0, learnedWords: 0, masteredWords: 0, remainingWords: 0 };
-  }
-});
+  // ═════════════════════════╗
+  //  单词反馈
+  // ═════════════════════════╝
 
-// ═════════════════════════╗
-//  数据库诊断与修复
-// ═════════════════════════╝
+  ipcMain.on('word:known',     () => scheduler.markKnown());
+  ipcMain.on('word:unknown',   () => scheduler.markUnknown());
+  ipcMain.on('word:fuzzy',     () => scheduler.markFuzzy());
+  ipcMain.on('word:easy',      () => scheduler.markEasy());
+  ipcMain.on('word:mastered',  () => scheduler.markMastered());
+  ipcMain.on('word:undo',      () => scheduler.undo());
+  ipcMain.on('popup:minimize', () => popupManager.hide());
 
-ipcMain.handle('db:diagnose', () => {
-  return diagnoseDatabase();
-});
+  // ═════════════════════════╗
+  //  配置
+  // ═════════════════════════╝
 
-ipcMain.handle('db:repair', () => {
-  return repairDatabase();
-});
+  ipcMain.handle('config:get', () => loadConfig());
 
-// ═════════════════════════╗
-//  数据备份与恢复
-// ═════════════════════════╝
-
-ipcMain.handle('backup:export', (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  return handleExportBackup(win);
-});
-
-ipcMain.handle('backup:import', (event) => {
-  const win = BrowserWindow.fromWebContents(event.sender);
-  return handleImportBackup(win);
-});
-
-// ═════════════════════════╗
-//  逾期复习平摊与动态配额
-// ═════════════════════════╝
-
-ipcMain.handle('reviews:smooth-overdue', (_event, days) => {
-  try {
-    const config = loadConfig();
-    const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
-      ? config.selectedWordlists
-      : ['cet4'];
-    const res = smoothOverdueReviews(days, wordlists);
-    if (res.success) {
-      scheduler.reloadQueue();
+  ipcMain.handle('config:save', (_ev, config) => {
+    const result = saveConfig(config);
+    if (result.success) {
+      scheduler.applyConfig(result.config);
+      popupManager.updateConfig(result.config);
+      // 同步自动检查更新状态
+      if ('autoCheckUpdate' in config) {
+        startAutoUpdateCheck(config.autoCheckUpdate);
+      }
       BrowserWindow.getAllWindows().forEach(w => {
-        if (!w.isDestroyed()) w.webContents.send('stats:updated');
+        if (!w.isDestroyed()) w.webContents.send('config:changed', result.config);
       });
     }
-    return res;
-  } catch (err) {
-    console.error('[IPC] reviews:smooth-overdue error:', err.message);
-    return { success: false, error: err.message };
-  }
-});
-
-ipcMain.handle('scheduler:quota-info', () => {
-  return scheduler.getDynamicQuotaInfo();
-});
-
-ipcMain.handle('scheduler:trigger-next-batch', () => {
-  scheduler.triggerNextBatchNow();
-  return { success: true };
-});
-
-// ═════════════════════════╗
-//  沉浸专注刷词模式 (Focus)
-// ═════════════════════════╝
-
-ipcMain.handle('focus:open', () => {
-  openFocusWindow();
-  return { success: true };
-});
-
-ipcMain.handle('focus:close', () => {
-  closeFocusWindow();
-  return { success: true };
-});
-
-ipcMain.handle('focus:get-words', (_event, count) => {
-  const config = loadConfig();
-  const wordlists = (config && config.selectedWordlists && config.selectedWordlists.length > 0)
-    ? config.selectedWordlists
-    : ['cet4'];
-  return getFocusWords(count, wordlists);
-});
-
-ipcMain.handle('focus:submit-word', (_event, wordId, action) => {
-  const res = submitFocusWord(wordId, action);
-  BrowserWindow.getAllWindows().forEach(w => {
-    if (!w.isDestroyed()) w.webContents.send('stats:updated');
+    return result;
   });
-  return res;
-});
 
-// ═════════════════════════╗
-//  统计
-// ═════════════════════════╝//
+  // ═════════════════════════╗
+  //  词库管理
+  // ═════════════════════════╝
 
-ipcMain.handle('stats:get', () => {
-  try {
-    const db = getDb();
-    const today = db.prepare(
-      "SELECT words_reviewed, words_learned FROM daily_stats WHERE date = date('now','localtime')"
-    ).get() || { words_reviewed:0, words_learned:0 };
+  ipcMain.handle('wordlists:get', () => {
+    try {
+      const index = getWordlistIndex();
+      for (const e of index) {
+        try {
+          e.importedCount = learningRepository.getImportedWordlistCount(e.id);
+          e.isImported = e.importedCount > 0;
+        } catch (e2) {
+          e.importedCount = 0;
+          e.isImported = false;
+        }
+      }
+      // 自动合并用户自定义导入的词表 (custom_*)
+      try {
+        const customLists = learningRepository.getCustomWordlists();
+        for (const cl of customLists) {
+          if (!index.some(x => x.id === cl.id)) {
+            index.push({
+              id: cl.id,
+              name: '自定义词表 (' + cl.id + ')',
+              file: '',
+              count: cl.importedCount,
+              importedCount: cl.importedCount,
+              isImported: true
+            });
+          }
+        }
+      } catch (e3) {}
 
-    const total = db.prepare(`
-      SELECT
-        COUNT(DISTINCT p.word_id) total_words,
-        SUM(p.correct_count) total_correct,
-        SUM(p.wrong_count)   total_wrong,
-        COUNT(DISTINCT CASE WHEN p.stage >= 9 THEN p.word_id END) mastered
-      FROM progress p
-    `).get();
+      return index;
+    } catch (err) {
+      console.error('[IPC] wordlists:get error:', err.message);
+      return [
+        { id: 'cet4', name: 'CET-4 四级', count: 4544, isImported: false },
+        { id: 'cet6', name: 'CET-6 六级', count: 3991, isImported: false },
+        { id: 'kaoyan', name: '考研词汇', count: 5047, isImported: false }
+      ];
+    }
+  });
 
-    // 连续打卡天数（从今天往前数，遇到无记录的日期即停止）
-    const streak = db.prepare(`
-      WITH RECURSIVE d(day) AS (
-        SELECT date('now','localtime')
-        UNION ALL
-        SELECT date(day,'-1 day') FROM d
-        WHERE day > date('now','-365 days')
-          AND EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = date(day,'-1 day'))
-      )
-      SELECT COUNT(*) streak FROM d
-      WHERE EXISTS (SELECT 1 FROM daily_stats ds WHERE ds.date = d.day)
-    `).get();
+  ipcMain.handle('wordlist:import', (_ev, id) => {
+    try {
+      const r = importWordlist(id);
+      return { success: true, ...r };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
 
-    const status = scheduler.getStatus();
+  ipcMain.handle('wordlist:import-custom', async () => {
+    const r = await dialog.showOpenDialog({
+      title: '导入自定义词表',
+      filters: [
+        { name: '词表文件', extensions: ['csv','txt'] },
+        { name: '所有文件', extensions: ['*'] }
+      ],
+      properties: ['openFile']
+    });
+    if (r.canceled || r.filePaths.length === 0) {
+      return { success: false, error: '用户取消' };
+    }
+    try {
+      const result = importCustomWordlist(r.filePaths[0], 'custom_' + Date.now());
+      return { success: true, ...result };
+    } catch (err) {
+      return { success: false, error: err.message };
+    }
+  });
 
-    return {
-      today: today,
-      total: {
-        words:    total.total_words   || 0,
-        correct:  total.total_correct  || 0,
-        wrong:    total.total_wrong    || 0,
-        mastered: total.mastered     || 0
-      },
-      streak: streak ? streak.streak : 0,
-      todayDueCount: status.todayDueCount,
-      todayNewRemaining: status.todayNewRemaining
-    };
-  } catch (err) {
-    console.error('[IPC] stats:get error:', err.message);
-    return {
-      today: { words_reviewed: 0, words_learned: 0 },
-      total: { words: 0, correct: 0, wrong: 0, mastered: 0 },
-      streak: 0,
-      todayDueCount: 0,
-      todayNewRemaining: 0
-    };
-  }
-});
+  // ═════════════════════════╗
+  //  学习进度摘要（预测用）
+  // ═════════════════════════╝
 
-ipcMain.handle('stats:daily', (_ev, days=7) => {
-  try {
-    return getDb().prepare(`
-      SELECT date, words_reviewed, words_learned
-      FROM daily_stats
-      WHERE date >= date('now','localtime','-' || ? || ' days')
-      ORDER BY date ASC
-    `).all(days);
-  } catch (err) {
-    console.error('[IPC] stats:daily error:', err.message);
-    return [];
-  }
-});
+  ipcMain.handle('stats:progress-summary', (_ev, wordlistIds) => {
+    try {
+      return learningRepository.getProgressSummary(wordlistIds);
+    } catch (err) {
+      console.error('[IPC] stats:progress-summary error:', err.message);
+      return { totalWords: 0, learnedWords: 0, masteredWords: 0, remainingWords: 0 };
+    }
+  });
 
-ipcMain.handle('stats:stubborn-words', (_ev, minWrong = 3) => {
-  try {
-    const db = getDb();
-    return db.prepare(`
-      SELECT w.id, w.word, w.phonetic, w.translation, w.example,
-             p.stage, p.wrong_count, p.correct_count, p.next_review_at
-      FROM words w
-      JOIN progress p ON w.id = p.word_id
-      WHERE p.wrong_count >= ? AND p.stage < 9
-      ORDER BY p.wrong_count DESC, p.stage ASC
-      LIMIT 50
-    `).all(minWrong);
-  } catch (err) {
-    console.error('[IPC] stats:stubborn-words error:', err.message);
-    return [];
-  }
-});
+  // ═════════════════════════╗
+  //  数据库诊断与修复
+  // ═════════════════════════╝
 
-ipcMain.handle('stats:stage-distribution', () => {
-  try {
-    return getDb().prepare(`
-      SELECT stage, COUNT(*) count
-      FROM progress
-      WHERE stage < 9
-      GROUP BY stage
-      ORDER BY stage ASC
-    `).all();
-  } catch (err) {
-    console.error('[IPC] stats:stage-distribution error:', err.message);
-    return [];
-  }
-});
+  ipcMain.handle('db:diagnose', () => {
+    return diagnoseDatabase();
+  });
 
-// ═════════════════════════╗
-//  调度器
-// ═════════════════════════╝//
+  ipcMain.handle('db:repair', () => {
+    return repairDatabase();
+  });
 
-ipcMain.handle('scheduler:status',       () => scheduler.getStatus());
-ipcMain.handle('scheduler:toggle-pause', () => {
-  if (scheduler.getStatus().isPaused) {
-    scheduler.resume();
-    return { isPaused: false };
-  } else {
-    scheduler.pause();
-    return { isPaused: true };
-  }
-});
+  // ═════════════════════════╗
+  //  数据备份与恢复
+  // ═════════════════════════╝
 
-// ═════════════════════════╗
-//  应用退出
-// ═════════════════════════╝//
+  ipcMain.handle('backup:export', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return handleExportBackup(win);
+  });
 
-ipcMain.on('app:quit', () => {
-  scheduler.stop();
-  app.quit();
-});
+  ipcMain.handle('backup:import', (event) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    return handleImportBackup(win);
+  });
 
-module.exports = { registerIpcHandlers: () => {} };
+  // ═════════════════════════╗
+  //  逾期复习平摊与动态配额
+  // ═════════════════════════╝
+
+  ipcMain.handle('reviews:smooth-overdue', (_event, days) => {
+    try {
+      const config = loadConfig();
+      const wordlists = selectedWordlists(config);
+      const res = learningRepository.smoothOverdueReviews(days, wordlists);
+      if (res.success) {
+        scheduler.reloadQueue();
+        BrowserWindow.getAllWindows().forEach(w => {
+          if (!w.isDestroyed()) w.webContents.send('stats:updated');
+        });
+      }
+      return res;
+    } catch (err) {
+      console.error('[IPC] reviews:smooth-overdue error:', err.message);
+      return { success: false, error: err.message };
+    }
+  });
+
+  ipcMain.handle('scheduler:quota-info', () => {
+    return scheduler.getDynamicQuotaInfo();
+  });
+
+  ipcMain.handle('scheduler:trigger-next-batch', () => {
+    scheduler.triggerNextBatchNow();
+    return { success: true };
+  });
+
+  // ═════════════════════════╗
+  //  沉浸专注刷词模式 (Focus)
+  // ═════════════════════════╝
+
+  ipcMain.handle('focus:open', () => {
+    openFocusWindow();
+    return { success: true };
+  });
+
+  ipcMain.handle('focus:close', () => {
+    closeFocusWindow();
+    return { success: true };
+  });
+
+  ipcMain.handle('focus:get-words', (_event, count) => {
+    const config = loadConfig();
+    const wordlists = selectedWordlists(config);
+    return getFocusWords(count, wordlists);
+  });
+
+  ipcMain.handle('focus:submit-word', (_event, wordId, action) => {
+    const res = submitFocusWord(wordId, action);
+    BrowserWindow.getAllWindows().forEach(w => {
+      if (!w.isDestroyed()) w.webContents.send('stats:updated');
+    });
+    return res;
+  });
+
+  // ═════════════════════════╗
+  //  统计
+  // ═════════════════════════╝//
+
+  ipcMain.handle('stats:get', () => {
+    try {
+      const statistics = learningRepository.getStats();
+      const status = scheduler.getStatus();
+
+      return {
+        ...statistics,
+        todayDueCount: status.todayDueCount,
+        todayNewRemaining: status.todayNewRemaining
+      };
+    } catch (err) {
+      console.error('[IPC] stats:get error:', err.message);
+      return {
+        today: { words_reviewed: 0, words_learned: 0 },
+        total: { words: 0, correct: 0, wrong: 0, mastered: 0 },
+        streak: 0,
+        todayDueCount: 0,
+        todayNewRemaining: 0
+      };
+    }
+  });
+
+  ipcMain.handle('stats:daily', (_ev, days=7) => {
+    try {
+      return learningRepository.getDailyStats(days);
+    } catch (err) {
+      console.error('[IPC] stats:daily error:', err.message);
+      return [];
+    }
+  });
+
+  ipcMain.handle('stats:stubborn-words', (_ev, minWrong = 3) => {
+    try {
+      return learningRepository.getStubbornWords(minWrong);
+    } catch (err) {
+      console.error('[IPC] stats:stubborn-words error:', err.message);
+      return [];
+    }
+  });
+
+  ipcMain.handle('stats:stage-distribution', () => {
+    try {
+      return learningRepository.getStageDistribution();
+    } catch (err) {
+      console.error('[IPC] stats:stage-distribution error:', err.message);
+      return [];
+    }
+  });
+
+  // ═════════════════════════╗
+  //  调度器
+  // ═════════════════════════╝//
+
+  ipcMain.handle('scheduler:status',       () => scheduler.getStatus());
+  ipcMain.handle('scheduler:toggle-pause', () => {
+    if (scheduler.getStatus().isPaused) {
+      scheduler.resume();
+      return { isPaused: false };
+    } else {
+      scheduler.pause();
+      return { isPaused: true };
+    }
+  });
+
+  // ═════════════════════════╗
+  //  应用退出
+  // ═════════════════════════╝//
+
+  ipcMain.on('app:quit', () => {
+    scheduler.stop();
+    app.quit();
+  });
+
+  registered = true;
+}
+
+module.exports = { registerIpcHandlers };

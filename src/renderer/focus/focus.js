@@ -49,6 +49,7 @@ let wrongCount = 0;
 let sessionStartTime = Date.now();
 let activeAudio = null;
 let currentConfig = {};
+let isSubmitting = false;
 
 // === 初始化 ===
 async function initSession(targetCount = 20) {
@@ -164,27 +165,36 @@ function revealDetail() {
 
 // === 提交当前单词结果 ===
 async function submitWord(action) {
-  if (currentIndex >= sessionWords.length) return;
+  if (isSubmitting || currentIndex >= sessionWords.length) return;
   const word = sessionWords[currentIndex];
+  const ratingButtons = [btnUnknown, btnFuzzy, btnKnown, btnMastered];
+  isSubmitting = true;
+  ratingButtons.forEach(button => { button.disabled = true; });
 
-  if (action === 'known' || action === 'mastered') {
-    correctCount++;
-    combo++;
-    if (combo > maxCombo) maxCombo = combo;
-  } else {
-    wrongCount++;
-    combo = 0;
-  }
-
-  // 提交数据库
+  // Only advance the session once the main process confirms persistence.
   try {
-    window.wordpopAPI.submitFocusWord(word.id, action);
+    const result = await window.wordpopAPI.submitFocusWord(word.id, action);
+    if (!result?.success) {
+      throw new Error(result?.error || '保存学习结果失败');
+    }
+
+    if (action === 'known' || action === 'easy') {
+      correctCount++;
+      combo++;
+      if (combo > maxCombo) maxCombo = combo;
+    } else {
+      wrongCount++;
+      combo = 0;
+    }
+
+    currentIndex++;
+    showCurrentWord();
   } catch (e) {
     console.error('submitFocusWord error:', e);
+  } finally {
+    isSubmitting = false;
+    ratingButtons.forEach(button => { button.disabled = false; });
   }
-
-  currentIndex++;
-  showCurrentWord();
 }
 
 // === 总结报告 ===
@@ -224,7 +234,7 @@ focusRevealPrompt.addEventListener('click', () => revealDetail());
 btnUnknown.addEventListener('click', () => submitWord('unknown'));
 btnFuzzy.addEventListener('click', () => submitWord('fuzzy'));
 btnKnown.addEventListener('click', () => submitWord('known'));
-btnMastered.addEventListener('click', () => submitWord('mastered'));
+btnMastered.addEventListener('click', () => submitWord('easy'));
 
 btnAgain20.addEventListener('click', () => initSession(20));
 btnFinish.addEventListener('click', () => window.wordpopAPI.closeFocusSession());
@@ -267,7 +277,7 @@ document.addEventListener('keydown', (e) => {
       else submitWord('known');
       break;
     case 'm':
-      submitWord('mastered');
+      submitWord('easy');
       break;
   }
 });
