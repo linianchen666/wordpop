@@ -2,7 +2,7 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { app, BrowserWindow, screen } = require('electron');
+const { app, BrowserWindow, screen, desktopCapturer } = require('electron');
 app.on('window-all-closed', () => {});
 const profile = fs.mkdtempSync(path.join(os.tmpdir(), 'wordpop-ambient-'));
 app.setPath('userData', profile);
@@ -44,7 +44,8 @@ app.whenReady().then(async () => {
   await settings.loadFile(path.join(root, 'src/renderer/settings/index.html'));
   await until(() => settings.webContents.executeJavaScript("document.querySelectorAll('.wordlist-item').length === 3"), 'Settings failed to initialize');
   assert.strictEqual(await settings.webContents.executeJavaScript("document.getElementById('ambientPillEnabled').checked"), false);
-  await settings.webContents.executeJavaScript("document.getElementById('ambientPillEnabled').click(); document.getElementById('btn-save').click()");
+  settings.show();
+  await settings.webContents.executeJavaScript("document.getElementById('ambientPillEnabled').click()");
   await until(() => !!pillWindow(), 'Settings failed to enable separate pill');
   const pill = pillWindow();
   const text = () => pill.webContents.executeJavaScript("document.getElementById('ambient-word').textContent");
@@ -53,6 +54,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(await popup.webContents.executeJavaScript("document.body.classList.contains('pill-mode')"), false);
   assert.strictEqual(pill.isFocusable(), false);
   assert.strictEqual(pill.isResizable(), false);
+  assert.strictEqual(config.loadConfig().ambientPillEnabled, true, 'Switch must persist without Save');
+  assert.ok(pill.isVisible());
+  assert.ok(pill.isAlwaysOnTop());
   const b = pill.getBounds(), display = screen.getPrimaryDisplay();
   assert.ok(Math.abs(b.x + b.width / 2 - display.bounds.x - display.bounds.width / 2) <= 1);
   assert.ok(b.y >= display.bounds.y && b.y + b.height <= display.bounds.y + display.bounds.height);
@@ -66,12 +70,43 @@ app.whenReady().then(async () => {
     await pill.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
     fs.mkdirSync(process.env.WORDPOP_TEST_SCREENSHOT_DIR, { recursive: true });
     fs.writeFileSync(path.join(process.env.WORDPOP_TEST_SCREENSHOT_DIR, 'ambient-pill.png'), (await pill.webContents.capturePage()).toPNG());
+    if (process.platform === 'win32') {
+      // Mimic Explorer raising a competing topmost surface in the taskbar band.
+      const cover = new BrowserWindow({ ...b, frame: false, show: false,
+        focusable: false, alwaysOnTop: true, skipTaskbar: true, backgroundColor: '#ff0000' });
+      await cover.loadURL('data:text/html,<body style="background:red"></body>');
+      cover.showInactive(); cover.moveTop();
+      await delay(1600);
+      const sources = await desktopCapturer.getSources({ types: ['screen'],
+        thumbnailSize: { width: display.size.width * display.scaleFactor,
+          height: display.size.height * display.scaleFactor } });
+      const source = sources.find(s => s.display_id === String(display.id)) || sources[0];
+      assert.ok(source && !source.thumbnail.isEmpty(), 'Capture actual Windows desktop');
+      fs.writeFileSync(path.join(process.env.WORDPOP_TEST_SCREENSHOT_DIR, 'ambient-taskbar-desktop.png'), source.thumbnail.toPNG());
+      const size = source.thumbnail.getSize(), bitmap = source.thumbnail.toBitmap();
+      const sx = size.width / display.bounds.width, sy = size.height / display.bounds.height;
+      const left = Math.ceil((b.x - display.bounds.x + 8) * sx);
+      const top = Math.ceil((b.y - display.bounds.y + 6) * sy);
+      const right = Math.floor((b.x - display.bounds.x + b.width - 8) * sx);
+      const bottom = Math.floor((b.y - display.bounds.y + b.height - 6) * sy);
+      let bright = 0, blue = 0, pixels = 0;
+      for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
+        const offset = (y * size.width + x) * 4;
+        const [bb, gg, rr] = bitmap.subarray(offset, offset + 3);
+        if (rr > 230 && gg > 230 && bb > 230) bright++;
+        if (bb > 150 && bb > rr * 1.2 && bb > gg * 1.05) blue++;
+        pixels++;
+      }
+      assert.ok(pixels > 0 && bright > pixels * 0.4 && blue > pixels * 0.001,
+        `Pill must be visible above taskbar/competing topmost window: ${bright} bright, ${blue} blue / ${pixels}`);
+      cover.destroy();
+    }
   }
   for (const word of words) recordReview(db, word.id, 'known');
   scheduler.emit('stats-updated');
   await until(async () => await text() === '暂无待巩固单词', 'Successful reviews did not refresh candidates');
-  const result = await popup.webContents.executeJavaScript("window.wordpopAPI.saveConfig({ ambientPillEnabled: false })");
-  assert.strictEqual(result.success, true);
+  await until(() => settings.webContents.executeJavaScript("!document.getElementById('ambientPillEnabled').disabled"), 'Switch is still saving');
+  await settings.webContents.executeJavaScript("document.getElementById('ambientPillEnabled').click()");
   await until(() => !pillWindow(), 'Disabling must close independent window');
   assert.strictEqual(config.loadConfig().ambientPillEnabled, false);
   assert.deepStrictEqual(popup.getBounds(), before);

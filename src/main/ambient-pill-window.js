@@ -2,9 +2,11 @@ const path = require('path');
 
 function createAmbientPill({ BrowserWindow, screen, getConfig, getWords,
   rootPath = path.join(__dirname, '..', '..'),
+  platform = process.platform,
   schedule = setInterval, cancel = clearInterval, logger = console }) {
   let window = null;
   let timer = null;
+  let visibilityTimer = null;
   let enabled = false;
   let ready = false;
   let currentId = null;
@@ -29,6 +31,16 @@ function createAmbientPill({ BrowserWindow, screen, getConfig, getWords,
     if (window && !window.isDestroyed()) window.setBounds(bounds());
   }
 
+  function present() {
+    if (!enabled || !ready || !window || window.isDestroyed()) return;
+    if (!window.isVisible()) window.showInactive();
+    reposition();
+    window.setAlwaysOnTop(true, platform === 'win32' ? 'screen-saver' : 'floating');
+    // Explorer can raise the taskbar above other topmost windows. Restore the
+    // overlay's z-order without activating it or intercepting taskbar clicks.
+    if (platform === 'win32') window.moveTop();
+  }
+
   function ensureWindow() {
     if (window && !window.isDestroyed()) return;
     ready = false;
@@ -43,13 +55,14 @@ function createAmbientPill({ BrowserWindow, screen, getConfig, getWords,
       if (window !== win || !enabled || win.isDestroyed()) return;
       ready = true;
       if (payload) win.webContents.send('ambient:word', payload);
-      win.showInactive();
-      win.setAlwaysOnTop(true, 'floating');
+      present();
+      logger.info?.('[AmbientPill] Visible', JSON.stringify(bounds()));
     });
     win.on('closed', () => {
       if (window === win) { window = null; ready = false; }
     });
-    win.loadFile(path.join(rootPath, 'src/renderer/ambient/index.html'));
+    Promise.resolve(win.loadFile(path.join(rootPath, 'src/renderer/ambient/index.html')))
+      .catch(error => logger.error('[AmbientPill] Failed to load:', error.message));
   }
 
   function refresh(advance = false) {
@@ -68,6 +81,7 @@ function createAmbientPill({ BrowserWindow, screen, getConfig, getWords,
     payload = { word, index: word ? index + 1 : 0, total: words.length,
       theme: config.theme || 'light', error };
     if (ready && window && !window.isDestroyed()) window.webContents.send('ambient:word', payload);
+    present();
   }
 
   function updateConfig(config = getConfig()) {
@@ -81,12 +95,15 @@ function createAmbientPill({ BrowserWindow, screen, getConfig, getWords,
     }
     refresh();
     if (!timer) timer = schedule(() => refresh(true), 8000);
+    if (platform === 'win32' && !visibilityTimer) visibilityTimer = schedule(present, 1000);
   }
 
   function destroy() {
     enabled = false;
     if (timer != null) cancel(timer);
     timer = null;
+    if (visibilityTimer != null) cancel(visibilityTimer);
+    visibilityTimer = null;
     if (watchingDisplays) {
       for (const event of ['display-metrics-changed', 'display-added', 'display-removed']) screen.removeListener(event, reposition);
       watchingDisplays = false;

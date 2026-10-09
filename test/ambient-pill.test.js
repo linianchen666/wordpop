@@ -44,6 +44,8 @@ class Window extends EventEmitter {
   loadFile(file) { this.file = file; }
   setBounds(bounds) { this.bounds = bounds; }
   showInactive() { this.visible = true; }
+  isVisible() { return !!this.visible; }
+  moveTop() { this.raises = (this.raises || 0) + 1; }
   setAlwaysOnTop() {}
   isDestroyed() { return this.destroyed; }
   destroy() { this.destroyed = true; this.emit('closed'); }
@@ -56,6 +58,7 @@ let config = { ambientPillEnabled: false, selectedWordlists: ['cet4'] };
 let words = [{ id: 1 }, { id: 2 }];
 let tick, cancelled = 0, schedules = 0;
 const pill = createAmbientPill({ BrowserWindow: Window, screen, getConfig: () => config,
+  platform: 'linux',
   getWords: () => words, schedule: (callback, ms) => { assert.strictEqual(ms, 8000); tick = callback; schedules++; return 1; },
   cancel: () => { cancelled++; }, logger: { error() {} } });
 pill.updateConfig();
@@ -82,4 +85,27 @@ config.ambientPillEnabled = false; pill.updateConfig();
 assert.strictEqual(win.destroyed, true); assert.strictEqual(cancelled, 1);
 assert.strictEqual(screen.listenerCount('display-metrics-changed'), 0);
 tick(); assert.strictEqual(windows.length, 1);
+// Windows independently restores Explorer z-order without advancing the word.
+const callbacks = new Map();
+const cleared = [];
+config.ambientPillEnabled = true;
+const windowsPill = createAmbientPill({ BrowserWindow: Window, screen, getConfig: () => config,
+  getWords: () => [{ id: 1 }, { id: 2 }], platform: 'win32',
+  schedule: (callback, ms) => { callbacks.set(ms, callback); return ms; },
+  cancel: id => cleared.push(id) });
+windowsPill.updateConfig();
+const windowsWin = windows.at(-1);
+windowsWin.webContents.emit('did-finish-load');
+assert.ok(windowsWin.raises > 0);
+const messageCount = windowsWin.messages.length;
+windowsWin.visible = false;
+callbacks.get(1000)();
+assert.strictEqual(windowsWin.isVisible(), true);
+assert.strictEqual(windowsWin.messages.length, messageCount);
+assert.ok(windowsWin.raises > 1);
+windowsPill.destroy();
+assert.deepStrictEqual(cleared.sort((a,b) => a-b), [1000, 8000]);
+const raises = windowsWin.raises;
+callbacks.get(1000)();
+assert.strictEqual(windowsWin.raises, raises);
 console.log('Ambient pill tests passed: selected words, passive reads, taskbar bounds, click-through, rotation and shutdown.');

@@ -32,6 +32,22 @@ const cooldownMinSelect   = document.getElementById('cooldownMinutes');
 
 const ambientPillEnabled = document.getElementById('ambientPillEnabled');
 
+// This independent window switch applies immediately; other settings remain
+// editable until the user saves the form.
+ambientPillEnabled.addEventListener('change', async () => {
+  const enabled = ambientPillEnabled.checked;
+  ambientPillEnabled.disabled = true;
+  try {
+    const result = await window.wordpopAPI.saveConfig({ ambientPillEnabled: enabled });
+    if (!result.success) throw new Error(result.error || '未知错误');
+  } catch (error) {
+    ambientPillEnabled.checked = !enabled;
+    alert('灵动胶囊设置失败：' + error.message);
+  } finally {
+    ambientPillEnabled.disabled = false;
+  }
+});
+
 // 音色选择与试听 DOM
 const pronounceVoiceSelect = document.getElementById('pronounceVoice');
 const btnPreviewVoice      = document.getElementById('btn-preview-voice');
