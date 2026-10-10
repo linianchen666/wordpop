@@ -1,0 +1,37 @@
+name: Keep latest releases
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+  workflow_call:
+  schedule:
+    - cron: '0 3 * * *'
+
+permissions:
+  contents: write
+
+concurrency:
+  group: wordpop-release-retention
+  cancel-in-progress: false
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Keep three stable and three prereleases
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const repo = context.repo;
+            const releases = await github.paginate(github.rest.repos.listReleases, { ...repo, per_page: 100 });
+            for (const prerelease of [false, true]) {
+              const published = releases.filter(r => !r.draft && r.prerelease === prerelease)
+                .sort((a, b) => Date.parse(b.published_at) - Date.parse(a.published_at) || b.id - a.id);
+              core.info(`Keep ${prerelease ? 'prereleases' : 'stable'}: ${published.slice(0, 3).map(r => r.tag_name).join(', ')}`);
+              for (const release of published.slice(3)) {
+                await github.rest.repos.deleteRelease({ ...repo, release_id: release.id });
+                core.info(`Deleted release and assets: ${release.tag_name}; source tag retained`);
+              }
+            }

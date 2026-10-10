@@ -107,3 +107,9 @@ jobs:
           name: transparent-popup-previews
           path: artifacts/transparent-popup-previews/*.png
           if-no-files-found: ignore
+
+  prune-releases:
+    needs: release
+    uses: ./.github/workflows/release-retention.yml
+    permissions:
+      contents: write
