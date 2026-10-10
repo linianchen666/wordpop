@@ -2,17 +2,17 @@ html, body { background: transparent; }
 body { height: 100vh; padding: 2px 4px; }
 .ambient-pill {
   height: 100%; display: flex; align-items: center; gap: 12px; padding: 3px 14px;
-  border: 1px solid var(--color-border); border-radius: 30px;
-  background: var(--color-bg-secondary); box-shadow: 0 2px 6px var(--color-shadow);
+  border: 1px solid #464646; border-radius: 30px;
+  background: #242424; box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
 }
 .ambient-icon {
   width: 28px; height: 28px; flex-shrink: 0; display: grid; place-items: center;
-  border-radius: 50%; background: var(--color-bg-tertiary); color: var(--color-primary); font-size: 19px;
+  border-radius: 50%; background: #303744; color: #99b8ff; font-size: 19px;
 }
 .ambient-content { flex: 1; min-width: 0; }
-.ambient-word { font-size: 15px; line-height: 19px; font-weight: 700; color: var(--color-primary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ambient-translation { font-size: 10px; line-height: 13px; color: var(--color-text-secondary); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.ambient-meta { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 10px; color: var(--color-text-secondary); }
-.ambient-reason { color: var(--color-primary); }
+.ambient-word { font-size: 15px; line-height: 19px; font-weight: 700; color: #f3f4f6; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ambient-translation { font-size: 10px; line-height: 13px; color: #c6cbd2; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ambient-meta { flex-shrink: 0; display: flex; flex-direction: column; align-items: flex-end; gap: 3px; font-size: 10px; color: #c6cbd2; }
+.ambient-reason { color: #b6becb; }
 .ambient-counter { font-variant-numeric: tabular-nums; }
 @media (max-width: 340px) { .ambient-pill { padding: 3px 12px; gap: 8px; } .ambient-icon { display: none; } }
