@@ -66,7 +66,8 @@ assert.strictEqual(windows.length, 0);
 config.ambientPillEnabled = true;
 pill.updateConfig();
 const win = windows[0];
-assert.strictEqual(win.options.x, 300);
+assert.strictEqual(win.options.width, 133);
+assert.strictEqual(win.options.x, 434);
 assert.strictEqual(win.options.y, 772); // taskbar starts at workArea bottom, not above it
 assert.strictEqual(win.options.height, 48);
 assert.deepStrictEqual(win.ignore, [true, { forward: true }]);

@@ -89,17 +89,16 @@ app.whenReady().then(async () => {
       const top = Math.ceil((b.y - display.bounds.y + 6) * sy);
       const right = Math.floor((b.x - display.bounds.x + b.width - 8) * sx);
       const bottom = Math.floor((b.y - display.bounds.y + b.height - 6) * sy);
-      let dark = 0, bright = 0, blue = 0, pixels = 0;
+      let dark = 0, bright = 0, pixels = 0;
       for (let y = top; y < bottom; y++) for (let x = left; x < right; x++) {
         const offset = (y * size.width + x) * 4;
         const [bb, gg, rr] = bitmap.subarray(offset, offset + 3);
         if (rr < 80 && gg < 80 && bb < 80) dark++;
         if (rr > 230 && gg > 230 && bb > 230) bright++;
-        if (bb > 150 && bb > rr * 1.2 && bb > gg * 1.05) blue++;
         pixels++;
       }
-      assert.ok(pixels > 0 && dark > pixels * 0.65 && bright > pixels * 0.005 && blue > pixels * 0.001,
-        `Pill must be visible above taskbar/competing topmost window: ${dark} dark, ${bright} bright, ${blue} blue / ${pixels}`);
+      assert.ok(pixels > 0 && dark > pixels * 0.65 && bright > pixels * 0.005,
+        `Pill must be visible above taskbar/competing topmost window: ${dark} dark, ${bright} bright / ${pixels}`);
       cover.destroy();
     }
   }

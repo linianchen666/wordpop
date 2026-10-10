@@ -21,7 +21,7 @@ function createAmbientPill({ BrowserWindow, screen, getConfig, getWords,
     const topSpace = work.y - full.y;
     const bandHeight = bottomSpace > 4 ? bottomSpace : (topSpace > 4 ? topSpace : 48);
     const bandY = bottomSpace > 4 ? work.y + work.height : (topSpace > 4 ? full.y : full.y + full.height - bandHeight);
-    const width = Math.min(400, full.width - 16);
+    const width = Math.min(133, full.width - 16);
     const height = Math.min(48, bandHeight);
     return { width, height, x: Math.round(full.x + (full.width - width) / 2),
       y: Math.round(bandY + (bandHeight - height) / 2) };

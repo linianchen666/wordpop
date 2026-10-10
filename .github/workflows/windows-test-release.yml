@@ -2,7 +2,7 @@ name: Windows test release
 
 on:
   push:
-    branches: [release/v1.8.0-beta.9]
+    branches: [release/v1.8.0-beta.10]
     paths: [.github/workflows/windows-test-release.yml]
   workflow_dispatch:
 
@@ -10,7 +10,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: wordpop-v1.8.0-beta.9-release
+  group: wordpop-v1.8.0-beta.10-release
   cancel-in-progress: false
 
 jobs:
@@ -18,12 +18,12 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      RELEASE_TAG: v1.8.0-beta.9
+      RELEASE_TAG: v1.8.0-beta.10
       WORDPOP_TEST_SCREENSHOT_DIR: artifacts/transparent-popup-previews
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: v1.8.0-beta.9
+          ref: v1.8.0-beta.10
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
