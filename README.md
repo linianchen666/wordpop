@@ -65,7 +65,7 @@
 
 ## 🚀 下载安装
 
-1. 前往 [Releases](https://github.com/linianchen666/wordpop/releases/latest) 下载最新版 `WordPop Setup X.X.X.exe`
+1. 前往 [Releases](https://github.com/linianchen666/wordpop/releases/latest) 下载最新版 `WordPop.Setup.X.X.X.exe`
 2. 双击运行安装程序
 3. 如果旧版 WordPop 正在运行，安装程序会自动提示关闭
 4. 安装完成后启动，首次运行会弹出设置向导
@@ -281,3 +281,7 @@ MIT
 升级后的首次启动会自动执行一次数据库版本 8 更新。有连续 FSRS 记录的词按新反馈含义重新计算状态，旧 Hard 按需要释义确认的回忆失败处理，并修复旧长期词跳过重学步骤的问题。只有旧进度、缺少连续记录的词保留记忆估计，安排在 24 小时内重新评估。已到期的词不会推迟，旧版已掌握词保持原状。
 
 初始化不增加学习次数，不改写原始评分日志或累计统计；更新前的进度保存在数据库 `memory_initialization_archive` 表中。整个更新在一个事务中完成，失败回滚，重新启动不会重复执行。
+
+### 正式版更新
+
+正式版 1.8.1 通过 GitHub Latest Release 提供。托盘菜单「检查更新」会提示新版本并打开下载页面；开启自动检查后，启动约 30 秒检查一次，随后每天检查。更新需要下载并运行安装包，保留已有学习记录。

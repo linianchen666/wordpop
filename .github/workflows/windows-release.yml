@@ -1,29 +1,38 @@
-name: Windows test release
+name: Windows release
 
 on:
   push:
-    branches: [release/v1.8.0-beta.10]
-    paths: [.github/workflows/windows-test-release.yml]
+    tags: ['v*']
   workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Stable release tag to build'
+        required: true
+        default: v1.8.1
 
 permissions:
   contents: write
 
 concurrency:
-  group: wordpop-v1.8.0-beta.10-release
+  group: wordpop-${{ github.event.inputs.tag || github.ref_name }}-release
   cancel-in-progress: false
 
 jobs:
   release:
+    if: github.event_name == 'workflow_dispatch' || !contains(github.ref_name, '-')
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      RELEASE_TAG: v1.8.0-beta.10
+      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
       WORDPOP_TEST_SCREENSHOT_DIR: artifacts/transparent-popup-previews
     steps:
+      - name: Verify stable release tag
+        shell: pwsh
+        run: |
+          if ($env:RELEASE_TAG -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'A stable version tag is required' }
       - uses: actions/checkout@v4
         with:
-          ref: v1.8.0-beta.10
+          ref: ${{ github.event.inputs.tag || github.ref_name }}
           persist-credentials: false
       - uses: actions/setup-node@v4
         with:
@@ -69,7 +78,7 @@ jobs:
           Copy-Item "build/WordPop Setup $version.exe" $asset
           $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
           "$hash  WordPop.Setup.$version.exe" | Set-Content build/SHA256SUMS.txt -Encoding ascii
-      - name: Upload and publish verified test release
+      - name: Upload and publish verified stable release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -89,7 +98,7 @@ jobs:
           if ($release.tag_name -ne $env:RELEASE_TAG -or $exe.state -ne 'uploaded' -or $checksum.state -ne 'uploaded' -or $exe.digest -ne "sha256:$hash") {
             throw 'Release asset verification failed'
           }
-          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --prerelease --latest=false
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --prerelease=false --latest=true
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
       - name: Save transparent popup screenshots
         if: always()
