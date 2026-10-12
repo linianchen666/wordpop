@@ -639,4 +639,7 @@ html, body { background: transparent; }
 }
 
 /* Real pending totals fit beneath the current review state. */
-.popup-progress { white-space: pre-line; line-height: 1.35; text-align: center; }
+.popup-progress {
+  white-space: pre-line; line-height: 1.35; text-align: center;
+  border-radius: 0; overflow: visible; text-overflow: clip; overflow-wrap: anywhere;
+}

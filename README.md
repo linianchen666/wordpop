@@ -5,7 +5,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/linianchen666/wordpop?label=latest)](https://github.com/linianchen666/wordpop/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/linianchen666/wordpop/releases/latest)
 
-当前正式版及源码版本：**1.8.2**。支持 Windows x64。
+当前正式版及源码版本：**1.8.3**。支持 Windows x64。
 
 ## 下载安装与更新
 

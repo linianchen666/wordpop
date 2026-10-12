@@ -54,6 +54,23 @@ app.whenReady().then(async () => {
   })`);
   assert.equal(state.word, words[0].word); assert.equal(state.hidden, false); assert.equal(state.disabled, false);
   assert.ok(state.contentWidth <= state.width, 'Counter must fit card');
+  // Match the reported 65 / 25 header at the smallest supported card size.
+  popup.setSize(320, 300);
+  manager.show({ ...words[0], isNew: false, pendingCounts: { review: 65, new: 25 } });
+  await until(async () => (await status()).includes('待新学 25'), 'Narrow counter did not render');
+  const counterLayout = await popup.webContents.executeJavaScript(`(() => {
+    const progress = document.getElementById('progress-text');
+    const style = getComputedStyle(progress);
+    const rect = progress.getBoundingClientRect();
+    const actions = document.querySelector('.popup-actions').getBoundingClientRect();
+    return { radius: style.borderRadius, overflow: style.overflow,
+      left: rect.left, right: rect.right, actionsLeft: actions.left, width: innerWidth,
+      textWidth: progress.scrollWidth, boxWidth: progress.clientWidth };
+  })()`);
+  assert.equal(counterLayout.radius, '0px', 'Round clipping must not cut the two-line counter');
+  assert.equal(counterLayout.overflow, 'visible');
+  assert.ok(counterLayout.right <= counterLayout.actionsLeft && counterLayout.left >= 0);
+  assert.ok(counterLayout.textWidth <= counterLayout.boxWidth);
   if (process.env.WORDPOP_TEST_SCREENSHOT_DIR) {
     await popup.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
     fs.mkdirSync(process.env.WORDPOP_TEST_SCREENSHOT_DIR, { recursive: true });

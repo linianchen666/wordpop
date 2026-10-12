@@ -35,7 +35,7 @@ Module._load = function(request) {
 (async () => {
   const tray = require('../src/main/tray');
   try {
-    for (const current of ['1.7.1', '1.8.0-beta.10', '1.8.1', latest]) {
+    for (const current of ['1.7.1', '1.8.0-beta.10', '1.8.1', '1.8.2', latest]) {
       version = current; dialogs.length = 0; links.length = 0; requests.length = 0;
       tray.createTray();
       menu.find(item => item.label?.includes('检查更新')).click();
