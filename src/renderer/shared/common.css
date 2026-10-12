@@ -304,3 +304,9 @@ html, body {
   0%, 100% { transform: scale(1); }
   50% { transform: scale(1.05); }
 }
+
+/* Full definitions remain accessible without filling the initial review card. */
+.translation-details { margin: 0 0 10px; font-size: 12px; line-height: 1.65; text-align: left; }
+.translation-details > summary { cursor: pointer; color: var(--focus-text-muted, var(--color-text-secondary)); }
+.translation-full { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere;
+  color: var(--focus-text, var(--color-text)); font-weight: 400; user-select: text; }

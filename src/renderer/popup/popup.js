@@ -122,7 +122,8 @@ window.wordpopAPI.onWordData((data) => {
   wordText.title = '点击发音';
   phoneticText.textContent = data.phonetic ? `/${data.phonetic}/ 🔊` : '🔊 发音';
   phoneticText.title = '点击发音';
-  translationText.textContent = data.translation || '';
+  window.wordpopTranslations.render(translationText,
+    document.getElementById('translation-details'), document.getElementById('translation-full'), data.translation);
 
   if (data.config && data.config.showExample && data.example) {
     // 拆分英文和中文：找第一个中文字符的位置
@@ -365,6 +366,9 @@ phoneticText.addEventListener('click', () => {
 
 // === 键盘快捷键 ===
 document.addEventListener('keydown', (e) => {
+  // 完整释义保留原生展开和文本操作，避免 Enter 意外评分。
+  if (e.target?.closest?.('.translation-details') &&
+      (e.key === 'Enter' || e.key === ' ' || e.ctrlKey || e.metaKey || e.altKey)) return;
   // Ctrl+Z / Cmd+Z 撤销
   if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
     e.preventDefault();

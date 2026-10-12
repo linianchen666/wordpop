@@ -127,7 +127,8 @@ function showCurrentWord() {
 
   reviewPreview.refresh(word.id);
 
-  focusTranslation.textContent = word.translation || '';
+  window.wordpopTranslations.render(focusTranslation,
+    document.getElementById('focus-translation-details'), document.getElementById('focus-translation-full'), word.translation);
 
   if (word.example) {
     const parts = word.example.split('\n');
@@ -251,6 +252,8 @@ btnClose.addEventListener('click', () => window.wordpopAPI.closeFocusSession());
 
 // === 全键盘快捷键 ===
 document.addEventListener('keydown', (e) => {
+  if (e.target?.closest?.('.translation-details') &&
+      (e.key === 'Enter' || e.key === ' ' || e.ctrlKey || e.metaKey || e.altKey)) return;
   if (e.key === 'Escape') {
     window.wordpopAPI.closeFocusSession();
     return;

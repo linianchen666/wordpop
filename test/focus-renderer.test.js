@@ -61,6 +61,7 @@ async function createHarness() {
     setTimeout,
     playWordAudio() {}
   });
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/renderer/shared/translations.js'), 'utf8'), context);
   vm.runInContext(fs.readFileSync(path.join(__dirname, '../src/renderer/shared/review-preview.js'), 'utf8'), context);
   vm.runInContext(source, context, { filename: 'focus.js' });
   // Allow the renderer's actual initSession() config and word-list IPCs to settle.

@@ -49,6 +49,13 @@ async function windowFor(mode, width, height) {
   await win.webContents.insertCSS('*, *::before, *::after { animation: none !important; transition: none !important; }');
   return win;
 }
+async function capture(win, name) {
+  if (!process.env.WORDPOP_TEST_SCREENSHOT_DIR) return;
+  win.showInactive();
+  await win.webContents.executeJavaScript('new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))');
+  fs.mkdirSync(process.env.WORDPOP_TEST_SCREENSHOT_DIR, { recursive: true });
+  fs.writeFileSync(path.join(process.env.WORDPOP_TEST_SCREENSHOT_DIR, name), (await win.webContents.capturePage()).toPNG());
+}
 app.whenReady().then(async () => {
   const database = require(path.join(root, 'src/main/db.js'));
   db = database.initDatabase();
@@ -137,6 +144,32 @@ app.whenReady().then(async () => {
   await until(() => popup.webContents.executeJavaScript("document.getElementById('progress-text').textContent.startsWith('复习中')"));
   const title = await popup.webContents.executeJavaScript("document.getElementById('btn-known').title");
   assert.ok(title.includes(new Date(preview.intervals.known.dueAt).toLocaleDateString('zh-CN')));
+  const longTranslation = 'vt. 投资, 花费, 笼罩, 授予；vi. 投资, 利用；[计] <img src=x>';
+  const beforeDefinitions = JSON.stringify(db.prepare('SELECT * FROM progress').all());
+  popup.webContents.send('popup:word', { ...word, translation: longTranslation, config: { autoPronounce: false } });
+  await until(() => popup.webContents.executeJavaScript("document.getElementById('translation-text').textContent === 'v. 投资、花费'"));
+  await popup.webContents.executeJavaScript("document.getElementById('btn-reveal').click()");
+  await capture(popup, 'popup-short-definition.png');
+  const popupWordId = await popup.webContents.executeJavaScript('currentWord.id');
+  await popup.webContents.executeJavaScript(`
+    const summary = document.querySelector('#translation-details > summary');
+    summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    summary.click();
+  `);
+  assert.equal(await popup.webContents.executeJavaScript('currentWord.id'), popupWordId);
+  assert.equal(await popup.webContents.executeJavaScript("document.getElementById('translation-details').open"), true);
+  assert.equal(await popup.webContents.executeJavaScript("document.getElementById('translation-full').textContent"), longTranslation);
+  assert.equal(await popup.webContents.executeJavaScript("document.querySelectorAll('#translation-full img').length"), 0);
+  const popupDefinitionLayout = await popup.webContents.executeJavaScript(`({
+    overflow: document.documentElement.scrollWidth > innerWidth,
+    bottom: document.getElementById('action-buttons').getBoundingClientRect().bottom, height: innerHeight
+  })`);
+  assert.ok(!popupDefinitionLayout.overflow && popupDefinitionLayout.bottom <= popupDefinitionLayout.height + 1);
+  assert.equal(JSON.stringify(db.prepare('SELECT * FROM progress').all()), beforeDefinitions);
+  await popup.webContents.executeJavaScript("document.getElementById('translation-full').scrollIntoView({ block: 'center' })");
+  await capture(popup, 'popup-full-definition.png');
+  popup.webContents.send('popup:word', { ...word, translation: 'vt. 放弃；抛弃', config: { autoPronounce: false } });
+  await until(() => popup.webContents.executeJavaScript("document.getElementById('translation-details').hidden && !document.getElementById('translation-details').open"));
   const manager = require(path.join(root, 'src/main/popup-manager'));
   manager.showBatchCompletion({ batchSize: 3, cooldownMinutes: 10 });
   manager.show({ ...word, isNew: false });
@@ -147,12 +180,29 @@ app.whenReady().then(async () => {
   await until(() => focus.webContents.executeJavaScript("document.getElementById('interval-easy').textContent.endsWith('后')"));
   await focus.webContents.executeJavaScript("document.getElementById('focus-reveal-prompt').click()");
   await until(() => focus.webContents.executeJavaScript("document.getElementById('interval-easy').textContent.endsWith('后')"));
+  await focus.webContents.executeJavaScript(`
+    sessionWords[currentIndex].translation = ${JSON.stringify('vt. 投资, 花费, 笼罩, 授予；vi. 投资, 利用')};
+    showCurrentWord(); revealDetail();
+  `);
+  assert.equal(await focus.webContents.executeJavaScript("document.getElementById('focus-translation').textContent"), 'v. 投资、花费');
+  assert.equal(await focus.webContents.executeJavaScript("document.getElementById('focus-translation-details').hidden"), false);
   const focusWordId = await focus.webContents.executeJavaScript('sessionWords[currentIndex].id');
+  const beforeFocusDefinitions = JSON.stringify(db.prepare('SELECT * FROM progress').all());
+  await focus.webContents.executeJavaScript(`
+    const summary = document.querySelector('#focus-translation-details > summary');
+    summary.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    summary.click();
+  `);
+  assert.equal(await focus.webContents.executeJavaScript('sessionWords[currentIndex].id'), focusWordId);
+  assert.equal(await focus.webContents.executeJavaScript("document.getElementById('focus-translation-details').open"), true);
+  assert.equal(JSON.stringify(db.prepare('SELECT * FROM progress').all()), beforeFocusDefinitions);
+  await focus.webContents.executeJavaScript("document.getElementById('focus-translation-full').scrollIntoView({ block: 'center' })");
+  await capture(focus, 'focus-full-definition.png');
   await focus.webContents.executeJavaScript("document.getElementById('btn-mastered').click()");
   await until(() => db.prepare('SELECT rating FROM review_history WHERE word_id=? ORDER BY id DESC').get(focusWordId)?.rating === 4);
   assert.deepStrictEqual(errors, []);
-  console.log('Review preview Chromium checks passed: real IPC, four ratings, star shortcut, saved FSRS state, small windows and native transparency in both themes.');
-}).then(() => finish(0), error => { console.error(error); finish(1); });
+  console.log('Review preview Chromium checks passed: real IPC, four ratings, star shortcut, saved FSRS state, small windows, native transparency and expandable definitions without accidental grading.');
+}).then(() => finish(0), error => { console.error(error); console.error(errors); finish(1); });
 function finish(code) {
   scheduler?.stop();
   for (const win of BrowserWindow.getAllWindows()) win.destroy();

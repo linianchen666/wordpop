@@ -31,6 +31,10 @@
       </div>
       <div class="word-detail hidden" id="word-detail">
         <div class="word-translation" id="translation-text"></div>
+        <details class="translation-details" id="translation-details" hidden>
+          <summary>完整释义</summary>
+          <div class="translation-full" id="translation-full"></div>
+        </details>
         <div class="word-example" id="example-text">
           <div class="example-en" id="example-en"></div>
           <div class="example-cn" id="example-cn"></div>
@@ -71,6 +75,7 @@
   </div>
 
   <script src="../shared/utils.js"></script>
+  <script src="../shared/translations.js"></script>
   <script src="../shared/review-preview.js"></script>
   <script src="popup.js"></script>
 </body>
