@@ -5,7 +5,7 @@ function attachSchedulerPresenter(scheduler, { popupManager, analyzeWord, getCon
   const safely = callback => payload => {
     try { callback(payload); } catch (error) { logger.error('[SchedulerPresenter]', error.message); }
   };
-  const presentWord = safely(({ word, queueRemaining, batchCount }) => {
+  const presentWord = safely(({ word, queueRemaining, batchCount, pendingCounts }) => {
     let etymology = null;
     try { etymology = analyzeWord(word.word); } catch (error) { logger.error('[SchedulerPresenter] etymology:', error.message); }
     const { batchSize, cooldownMinutes } = batchSettings(getConfig());
@@ -15,6 +15,7 @@ function attachSchedulerPresenter(scheduler, { popupManager, analyzeWord, getCon
       isNew: word.stage === undefined || word.stage === 0,
       progress: word.stage !== undefined && word.stage !== null
         ? { stage: word.stage, total: 9, correct: word.correct_count || 0, wrong: word.wrong_count || 0 } : null,
+      ...(pendingCounts ? { pendingCounts } : {}),
       queueRemaining, etymology, batchIndex: (batchCount % (batchSize || 1)) + 1,
       batchSize, cooldownMinutes
     });

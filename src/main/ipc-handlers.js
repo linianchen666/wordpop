@@ -21,7 +21,12 @@ let registered = false;
 
 function registerIpcHandlers() {
   if (registered) return;
-  scheduler.on('stats-updated', () => ambientPill.refresh());
+  scheduler.on('stats-updated', () => {
+    ambientPill.refresh();
+    for (const win of BrowserWindow.getAllWindows()) {
+      if (!win.isDestroyed()) win.webContents.send('stats:updated');
+    }
+  });
 
   ipcMain.handle('review:preview', (_event, wordId) => {
     try {
@@ -205,7 +210,7 @@ function registerIpcHandlers() {
     try {
       const config = loadConfig();
       const wordlists = selectedWordlists(config);
-      const res = learningRepository.smoothOverdueReviews(days, wordlists);
+      const res = learningRepository.smoothOverdueReviews(days, wordlists, Date.now(), scheduler.currentWord?.id ?? null);
       if (res.success) {
         scheduler.reloadQueue();
         BrowserWindow.getAllWindows().forEach(w => {

@@ -1,3 +1,4 @@
+const { reviewPriority } = require('./review-algorithm');
 const MASTERED_STAGE = 9;
 
 /** Parameterized membership avoids duplicate words shared by several lists. */
@@ -36,7 +37,7 @@ function createLearningRepository(getDb) {
       FROM words w
       JOIN progress p ON w.id = p.word_id
       WHERE p.next_review_at <= ? AND p.stage < ? AND ${filter.sql}
-      ORDER BY p.next_review_at ASC, p.stage ASC
+      ORDER BY p.next_review_at ASC, p.stage ASC, w.id ASC
       ${cap.sql}
     `).all(now, MASTERED_STAGE, ...filter.params, ...cap.params);
   }
@@ -188,22 +189,37 @@ function createLearningRepository(getDb) {
   }
 
   /** Defer an overdue queue without fabricating FSRS reviews or memory updates. */
-  function smoothOverdueReviews(days = 3, wordlists = null, now = Date.now()) {
+  function smoothOverdueReviews(days = 3, wordlists = null, now = Date.now(), currentWordId = null) {
     const db = getDb();
     const targetDays = Math.max(1, Math.min(30, parseInt(days) || 3));
     const filter = Array.isArray(wordlists) && wordlists.length > 0
       ? wordlistFilter('p.word_id', wordlists) : { sql: '1', params: [] };
     return db.transaction(() => {
       const overdue = db.prepare(`
-        SELECT p.word_id FROM progress p JOIN words w ON p.word_id = w.id
+        SELECT p.* FROM progress p JOIN words w ON p.word_id = w.id
         WHERE p.next_review_at <= ? AND p.stage < ? AND ${filter.sql}
-        ORDER BY p.next_review_at ASC, p.stage ASC
-      `).all(now, MASTERED_STAGE, ...filter.params);
+          AND (? IS NULL OR p.word_id != ?)
+      `).all(now, MASTERED_STAGE, ...filter.params, currentWordId, currentWordId)
+        .map(row => ({ row, priority: reviewPriority(row, now) }))
+        .sort((a, b) => a.priority.learning - b.priority.learning ||
+          a.priority.recall - b.priority.recall || a.priority.stability - b.priority.stability ||
+          a.row.next_review_at - b.row.next_review_at || a.row.word_id - b.row.word_id);
       const update = db.prepare('UPDATE progress SET next_review_at = ? WHERE word_id = ?');
-      overdue.forEach((row, index) => {
-        const dayOffset = index % targetDays;
-        const jitter = dayOffset ? (Math.random() - 0.5) * 2 * 3600 * 1000 : 0;
-        update.run(Math.round(now + dayOffset * 86400000 + jitter), row.word_id);
+      const slots = Math.min(targetDays, overdue.length);
+      overdue.forEach(({ row }, index) => {
+        // Assign contiguous priority groups, rather than scattering weak words
+        // round-robin across all days. Use local calendar days and clamp jitter.
+        const dayOffset = Math.floor(index * slots / overdue.length);
+        const date = new Date(now);
+        date.setDate(date.getDate() + dayOffset);
+        let next = now;
+        if (dayOffset) {
+          const start = new Date(date); start.setHours(0, 0, 0, 0);
+          const end = new Date(date); end.setHours(23, 59, 59, 999);
+          next = Math.max(start.getTime(), Math.min(end.getTime(),
+            date.getTime() + (Math.random() - 0.5) * 2 * 3600 * 1000));
+        }
+        update.run(Math.round(next), row.word_id);
       });
       return { success: true, count: overdue.length, days: targetDays };
     })();

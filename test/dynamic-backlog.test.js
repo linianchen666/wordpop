@@ -7,6 +7,9 @@ const path = require('path');
 const { calculateDailyQuota } = require('../src/main/study-policy');
 const { createLearningRepository } = require('../src/main/learning-repository');
 const { recordReview } = require('../src/main/review-progress');
+const { createScheduler } = require('../src/main/study-scheduler');
+const { cardForProgress } = require('../src/main/review-algorithm');
+const { State } = require('ts-fsrs');
 
 const DAY = 86400000;
 const HOUR = 3600000;
@@ -130,6 +133,76 @@ try {
     } finally {
       db.exec('DROP TRIGGER reject_deferral');
     }
+  });
+
+  test('按学习状态与FSRS遗忘风险分组，稳固词后移且不改记忆状态', () => {
+    db.prepare('UPDATE progress SET next_review_at=? WHERE word_id<=150').run(now + DAY);
+    const cases = [[1, State.Review, 90, 7], [2, State.Review, 1, 7],
+      [3, State.Relearning, 90, 0], [4, State.Review, 10, 14],
+      [5, State.Review, 30, 2], [6, State.Review, 5, 7]];
+    for (const [id, state, stability, elapsed] of cases) {
+      const card = cardForProgress(null, now);
+      card.state = state; card.stability = stability;
+      card.last_review = new Date(now - elapsed * DAY);
+      db.prepare('UPDATE progress SET fsrs_card=?,next_review_at=? WHERE word_id=?')
+        .run(JSON.stringify(card), now - HOUR, id);
+    }
+    const before = allProgress();
+    const oldHistory = history(), oldStats = dailyStats();
+    repository.smoothOverdueReviews(3, ['cet4'], now);
+    const rows = allProgress();
+    for (const [ids, offset] of [[[3,2], 0], [[6,4], 1], [[1,5], 2]]) {
+      for (const id of ids) {
+        const row = rows.find(p => p.word_id === id);
+        assert.equal(Math.round((row.next_review_at - now) / DAY), offset);
+        assert.equal(row.fsrs_card, before.find(p => p.word_id === id).fsrs_card);
+      }
+    }
+    assert.deepEqual(history(), oldHistory); assert.deepEqual(dailyStats(), oldStats);
+  });
+
+  test('实际待复习总数超过30也正确，平摊保护当前词并随评分减少', () => {
+    db.prepare('UPDATE progress SET next_review_at=? WHERE word_id<=150').run(now - HOUR);
+    for (const id of [200,201]) {
+      insert.run(id, 'new_'+id, '新词', 'cet4', id); relate.run(id, 'cet4');
+    }
+    const callbacks = [];
+    const scheduler = createScheduler({ repository,
+      getConfig: () => ({ selectedWordlists: ['cet4'], dailyNewWords: 20, autoBalanceLoad: false, batchSize: 0 }),
+      recordReview: (id, action, time) => recordReview(db, id, action, time), now: () => now,
+      setTimeout: callback => { callbacks.push(callback); return callbacks.length; }, clearTimeout() {} });
+    const events = []; scheduler.on('word', event => events.push(event));
+    scheduler.start();
+    assert.equal(events[0].pendingCounts.review, 150);
+    assert.equal(events[0].pendingCounts.new, 2, '只剩两个未学词时不能显示配额余量');
+    const current = scheduler.currentWord.id;
+    const currentBefore = db.prepare('SELECT * FROM progress WHERE word_id=?').get(current);
+    assert.equal(repository.smoothOverdueReviews(3, ['cet4'], now, current).count, 149);
+    assert.deepEqual(db.prepare('SELECT * FROM progress WHERE word_id=?').get(current), currentBefore);
+    scheduler.reloadQueue();
+    assert.equal(scheduler.getStatus().pendingReviewCount, 51);
+    assert.equal(scheduler.currentWord.id, current);
+    scheduler.markKnown(); callbacks.at(-1)();
+    assert.equal(events.at(-1).pendingCounts.review, 50);
+    assert.ok(events.at(-1).queueRemaining !== events.at(-1).pendingCounts.review);
+    scheduler.stop();
+  });
+
+  test('深夜平摊的随机时间不跨越分配的本地日期', () => {
+    const late = new Date(now); late.setHours(23, 59, 59, 900);
+    db.prepare('UPDATE progress SET next_review_at=? WHERE word_id<=150').run(late.getTime() - HOUR);
+    const random = Math.random;
+    try {
+      Math.random = () => 1;
+      repository.smoothOverdueReviews(3, ['cet4'], late.getTime());
+      const days = [0,0,0];
+      for (const row of db.prepare('SELECT next_review_at FROM progress WHERE word_id<=150').all()) {
+        const date = new Date(row.next_review_at);
+        const offset = date.getDate() - late.getDate();
+        assert.ok(offset >= 0 && offset <= 2); days[offset]++;
+      }
+      assert.deepEqual(days, [50,50,50]);
+    } finally { Math.random = random; }
   });
 } finally {
   Module._load = originalLoad;

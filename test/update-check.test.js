@@ -2,6 +2,7 @@ const assert = require('assert');
 const Module = require('module');
 const { EventEmitter } = require('events');
 const originalLoad = Module._load;
+const latest = require('../package.json').version;
 let version, menu;
 const dialogs = [], links = [], requests = [];
 const image = { isEmpty: () => false };
@@ -24,7 +25,7 @@ Module._load = function(request) {
     req.setTimeout = () => {}; req.destroy = () => {};
     setImmediate(() => {
       const res = new EventEmitter(); callback(res);
-      res.emit('data', JSON.stringify({ tag_name: 'v1.8.1', body: '正式版' }));
+      res.emit('data', JSON.stringify({ tag_name: 'v'+latest, body: '正式版' }));
       res.emit('end');
     });
     return req;
@@ -34,7 +35,7 @@ Module._load = function(request) {
 (async () => {
   const tray = require('../src/main/tray');
   try {
-    for (const current of ['1.7.1', '1.8.0-beta.10', '1.8.1']) {
+    for (const current of ['1.7.1', '1.8.0-beta.10', '1.8.1', latest]) {
       version = current; dialogs.length = 0; links.length = 0; requests.length = 0;
       tray.createTray();
       menu.find(item => item.label?.includes('检查更新')).click();
@@ -43,9 +44,9 @@ Module._load = function(request) {
       assert.equal(requests[0].hostname, 'api.github.com');
       assert.equal(requests[0].path, '/repos/linianchen666/wordpop/releases/latest');
       assert.equal(dialogs.length, 1);
-      if (current !== '1.8.1') {
+      if (current !== latest) {
         assert.equal(dialogs[0].title, '发现新版本');
-        assert.ok(dialogs[0].message.includes('v1.8.1'));
+        assert.ok(dialogs[0].message.includes('v'+latest));
         assert.deepEqual(links, ['https://github.com/linianchen666/wordpop/releases/latest']);
       } else {
         assert.ok(dialogs[0].message.includes('当前已是最新版本'));

@@ -100,7 +100,9 @@ class StudyScheduler extends EventEmitter {
   }
 
   _showWord(word) {
-    this.emit('word', { word, queueRemaining: this.queue.length, batchCount: this.currentBatchCount });
+    const status = this.getStatus();
+    this.emit('word', { word, queueRemaining: this.queue.length, batchCount: this.currentBatchCount,
+      pendingCounts: { review: status.pendingReviewCount, new: status.todayNewRemaining } });
     if (this._onWordPop) {
       try { this._onWordPop(); } catch (error) { this.logger.error('[Scheduler] word callback:', error.message); }
     }
@@ -143,7 +145,9 @@ class StudyScheduler extends EventEmitter {
     } catch (error) {
       // Keep the word available for retry; a failed write is not a review.
       this.logger.error('[Scheduler] review:', error.message);
+      const status = this.getStatus();
       this.emit('review-failed', { word: this.currentWord, action, error,
+        pendingCounts: { review: status.pendingReviewCount, new: status.todayNewRemaining },
         queueRemaining: this.queue.length, batchCount: this.currentBatchCount });
     }
   }
@@ -246,12 +250,16 @@ class StudyScheduler extends EventEmitter {
     let todayDueCount = 0;
     try { todayDueCount = this.repository.countDue(selectedWordlists(this.getConfig()), endOfDay(this.now())); }
     catch (error) { this.logger.error('[Scheduler] today due:', error.message); }
+    let unlearned = 0;
+    try { unlearned = this.repository.countUnlearned(selectedWordlists(this.getConfig())); }
+    catch (error) { this.logger.error('[Scheduler] unlearned count:', error.message); }
     return { isPaused: this.isPaused, queueSize: this.queue.length,
       currentWord: this.currentWord ? this.currentWord.word : null,
       dailyNewWordsCount: this.dailyNewWordsCount, dailyNewWordsLimit: this.dailyNewWordsLimit,
       nextReviewAt: this.currentWord ? this.now() : this.getNextReviewTime(),
       hasNewWordsQuota: this.hasNewWordsQuotaToday(), hasUnmasteredWords: this.hasUnmasteredWords(),
-      todayDueCount, todayNewRemaining: Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount), quotaInfo };
+      todayDueCount, pendingReviewCount: quotaInfo.dueCount,
+      todayNewRemaining: Math.min(unlearned, Math.max(0, this.dailyNewWordsLimit - this.dailyNewWordsCount)), quotaInfo };
   }
 
   onStatsUpdate(callback) { this._onStatsUpdate = callback; }

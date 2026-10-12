@@ -71,6 +71,18 @@ function cardForProgress(existing, now) {
   return seed;
 }
 
+/** Read-only priority for voluntary backlog deferral; lower values go first. */
+function reviewPriority(progress, now) {
+  try {
+    const card = cardForProgress(progress, now);
+    return { learning: card.state === State.Review ? 1 : 0,
+      recall: engine.get_retrievability(card, new Date(now), false), stability: card.stability };
+  } catch (_) {
+    // An unreadable estimate must not make a word look safe to defer.
+    return { learning: 0, recall: 0, stability: 0 };
+  }
+}
+
 function calculateReview(existing, action, now = Date.now()) {
   const rating = Object.hasOwn(RATINGS, action) ? RATINGS[action] : undefined;
   if (!rating) throw new Error(`Unsupported review action: ${action}`);
@@ -107,4 +119,4 @@ function calculateReview(existing, action, now = Date.now()) {
 }
 
 module.exports = { calculateReview, cardForProgress, deserializeCard, stageForInterval,
-  FSRS_OPTIONS, RATINGS, MINUTE, HOUR, DAY, MAX_INTERVAL };
+  FSRS_OPTIONS, RATINGS, reviewPriority, MINUTE, HOUR, DAY, MAX_INTERVAL };

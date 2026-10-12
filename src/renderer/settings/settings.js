@@ -267,16 +267,16 @@ async function handleSmooth(days) {
     }
 
     const confirmed = confirm(
-      `确定将当前的 ${count} 个逾期积压单词智能平摊到未来 ${days} 天吗？\n\n` +
-      `• 系统将把复习时间均匀分散在未来 ${days} 天\n` +
-      `• 今天的待复习量将大幅压降至舒适水平\n` +
-      `• 记忆较稳固的词适当后移，生疏词保持在近处`
+      `确定将当前的 ${count} 个逾期积压单词平摊到今天及后续共 ${days} 天吗？\n\n` +
+      `• 正在显示的词继续复习，其余分配到今天及后续几天\n` +
+      `• 学习／重学中的词优先，其次优先处理遗忘风险较高的词\n` +
+      `• 较稳固的词后移；短期重学再次到期仍会加入今天的队列`
     );
     if (!confirmed) return;
 
     const res = await window.wordpopAPI.smoothOverdueReviews(days);
     if (res.success) {
-      alert(`✅ 成功将 ${res.count} 个积压单词智能平摊至未来 ${res.days} 天！\n今日复习压力已成功减负。`);
+      alert(`✅ 已将 ${res.count} 个积压词分配到今天及后续共 ${res.days} 天！\n今日复习压力已成功减负。`);
       await init();
     } else {
       alert('平摊失败: ' + (res.error || '未知错误'));

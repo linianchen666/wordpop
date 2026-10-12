@@ -637,3 +637,6 @@ html, body { background: transparent; }
   .word-main { font-size: 28px; }
   .popup-title { font-size: 10px; }
 }
+
+/* Real pending totals fit beneath the current review state. */
+.popup-progress { white-space: pre-line; line-height: 1.35; text-align: center; }

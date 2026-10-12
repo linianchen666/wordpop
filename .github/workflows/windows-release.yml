@@ -8,7 +8,7 @@ on:
       tag:
         description: 'Stable release tag to build'
         required: true
-        default: v1.8.1
+        default: v1.8.2
 
 permissions:
   contents: write
@@ -55,6 +55,12 @@ jobs:
           $env:WORDPOP_TEST_APP_ROOT = (Resolve-Path 'build/win-unpacked/resources/app.asar').Path
           & .\node_modules\.bin\electron.cmd test/fixtures/review-window.cjs
           if ($LASTEXITCODE -ne 0) { throw 'Packaged review preview validation failed' }
+      - name: Verify packaged pending counts and backlog smoothing
+        shell: pwsh
+        run: |
+          $env:WORDPOP_TEST_APP_ROOT = (Resolve-Path 'build/win-unpacked/resources/app.asar').Path
+          & .\node_modules\.bin\electron.cmd test/fixtures/backlog-window.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged backlog counter validation failed' }
       - name: Verify packaged independent taskbar pill
         shell: pwsh
         run: |

@@ -30,7 +30,8 @@ const etymologyContent = document.getElementById('etymology-content');
 let currentWord = null;
 const reviewPreview = window.createReviewPreview({
   status: progressText,
-  suffix: () => currentWord?.queueRemaining > 0 ? ` | 剩余 ${currentWord.queueRemaining}` : '',
+  suffix: () => currentWord?.pendingCounts
+    ? `\n待复习 ${currentWord.pendingCounts.review} · 待新学 ${currentWord.pendingCounts.new}` : '',
   buttons: {
     unknown: { button: btnUnknown, hint: document.getElementById('interval-unknown') },
     fuzzy: { button: btnFuzzy, hint: document.getElementById('interval-fuzzy') },
@@ -38,6 +39,21 @@ const reviewPreview = window.createReviewPreview({
     easy: { button: btnMastered, hint: document.getElementById('interval-easy') }
   }
 });
+
+let countsRequest = 0;
+async function refreshPendingCounts() {
+  if (!currentWord) return;
+  const wordId = currentWord.id;
+  const request = ++countsRequest;
+  try {
+    const status = await window.wordpopAPI.getSchedulerStatus();
+    if (request !== countsRequest || currentWord?.id !== wordId) return;
+    currentWord.pendingCounts = { review: status.pendingReviewCount, new: status.todayNewRemaining };
+    reviewPreview.updateSuffix();
+  } catch (error) { console.error('Pending counts:', error.message); }
+}
+window.wordpopAPI.onStatsUpdated(refreshPendingCounts);
+setInterval(refreshPendingCounts, 30000);
 
 // === 切换到回忆阶段（新单词出现时） ===
 function enterRecallPhase() {
@@ -76,6 +92,7 @@ function enterRevealPhase() {
 // === 接收单词数据 ===
 window.wordpopAPI.onWordData((data) => {
   currentWord = data;
+  countsRequest++;
 
   // 隐藏批次结算卡片（如果有）
   const batchCompleteCard = document.getElementById('batch-complete-card');
@@ -207,6 +224,7 @@ window.wordpopAPI.onWordData((data) => {
 
   // 进入回忆阶段：只显示单词，隐藏释义和按钮
   enterRecallPhase();
+  if (!data.pendingCounts) refreshPendingCounts();
 });
 
 // === 接收隐藏信号 ===
@@ -243,6 +261,8 @@ window.wordpopAPI.onConfigChanged((newConfig) => {
     }
   }
 });
+
+window.wordpopAPI.onConfigChanged(refreshPendingCounts);
 
 // === 点击「显示释义」按钮 ===
 btnReveal.addEventListener('click', () => {
