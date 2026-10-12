@@ -11,10 +11,11 @@ const root = process.env.WORDPOP_TEST_APP_ROOT || path.join(__dirname, '..', '..
 if (process.env.WORDPOP_TEST_APP_ROOT) process.resourcesPath = path.dirname(root);
 let db, scheduler;
 const errors = [];
+const realNow = Date.now;
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function until(check) {
-  const end = Date.now() + 10000;
-  while (Date.now() < end) {
+  const end = realNow() + 10000;
+  while (realNow() < end) {
     if (await check()) return;
     await delay(30);
   }
@@ -137,6 +138,22 @@ app.whenReady().then(async () => {
     scheduler._clearTimer();
     if (index === 0) popup.setContentSize(320, 300);
   }
+  // Advance only the main-process clock to exercise 1m -> 10m -> Review
+  // through the real buttons and IPC without waiting eleven wall-clock minutes.
+  const learningRow = () => db.prepare('SELECT * FROM progress WHERE word_id=?').get(words[0].id);
+  const firstLearning = learningRow();
+  Date.now = () => firstLearning.next_review_at;
+  scheduler.currentWord = words[0];
+  popup.webContents.send('popup:word', { ...words[0], config: { autoPronounce: false } });
+  await until(() => popup.webContents.executeJavaScript("currentWord.id === " + words[0].id));
+  await popup.webContents.executeJavaScript("document.getElementById('btn-reveal').click()");
+  await until(() => popup.webContents.executeJavaScript("document.getElementById('interval-known').textContent === '10分钟后'"));
+  await popup.webContents.executeJavaScript("document.getElementById('btn-known').click()");
+  await until(() => JSON.parse(learningRow().fsrs_card).learning_steps === 1);
+  const confirmation = learningRow();
+  assert.equal(confirmation.interval, 10 * 60000);
+  assert.equal(JSON.parse(confirmation.fsrs_card).state, 1);
+  scheduler._clearTimer();
   // Existing FSRS state must replace the previous word's new-card preview.
   const word = words[3];
   const preview = require(path.join(root, 'src/main/review-preview.js')).getReviewPreview(db, word.id);
@@ -176,8 +193,21 @@ app.whenReady().then(async () => {
   await delay(3000);
   assert.ok(popup.isVisible(), 'Previous settlement timer must not hide a new short-term card');
   popup.destroy();
+  Date.now = () => confirmation.next_review_at;
   const focus = await windowFor('focus', 440, 360);
   await until(() => focus.webContents.executeJavaScript("document.getElementById('interval-easy').textContent.endsWith('后')"));
+  await focus.webContents.executeJavaScript(`
+    sessionWords = [${JSON.stringify(words[0])}, ...sessionWords.filter(word => word.id !== ${words[0].id})];
+    showCurrentWord(); revealDetail();
+  `);
+  await until(() => focus.webContents.executeJavaScript("document.getElementById('interval-known').textContent.endsWith('天后')"));
+  await focus.webContents.executeJavaScript("document.getElementById('btn-known').click()");
+  await until(() => JSON.parse(learningRow().fsrs_card).state === 2);
+  assert.ok(learningRow().interval >= 86400000);
+  const learningHistory = db.prepare('SELECT rating, card_before, card_after FROM review_history WHERE word_id=? ORDER BY id').all(words[0].id);
+  assert.deepEqual(learningHistory.map(row => row.rating), [1, 3, 3]);
+  assert.equal(learningHistory[1].card_after, learningHistory[2].card_before);
+  Date.now = realNow;
   await focus.webContents.executeJavaScript("document.getElementById('focus-reveal-prompt').click()");
   await until(() => focus.webContents.executeJavaScript("document.getElementById('interval-easy').textContent.endsWith('后')"));
   await focus.webContents.executeJavaScript(`
@@ -201,9 +231,10 @@ app.whenReady().then(async () => {
   await focus.webContents.executeJavaScript("document.getElementById('btn-mastered').click()");
   await until(() => db.prepare('SELECT rating FROM review_history WHERE word_id=? ORDER BY id DESC').get(focusWordId)?.rating === 4);
   assert.deepStrictEqual(errors, []);
-  console.log('Review preview Chromium checks passed: real IPC, four ratings, star shortcut, saved FSRS state, small windows, native transparency and expandable definitions without accidental grading.');
+  console.log('Review preview Chromium checks passed: real IPC, four ratings, star shortcut, 1m/10m learning confirmation across both modes, saved FSRS state, small windows, native transparency and expandable definitions without accidental grading.');
 }).then(() => finish(0), error => { console.error(error); console.error(errors); finish(1); });
 function finish(code) {
+  Date.now = realNow;
   scheduler?.stop();
   for (const win of BrowserWindow.getAllWindows()) win.destroy();
   try { db?.close(); } catch (_) {}

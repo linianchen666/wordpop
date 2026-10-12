@@ -36,6 +36,63 @@ test('新词不认识/模糊1分钟、认识10分钟、轻松8天', () => {
     assert.equal(calculateReview(null, action, now).interval, delay);
   }
 });
+test('新词失败后答对仍需10分钟确认，再次答对才进入跨日复习', () => {
+  for (const failedAction of ['unknown', 'fuzzy']) {
+    const first = calculateReview(null, failedAction, now);
+    const confirmed = calculateReview(first, 'known', now + MINUTE);
+    const card = deserializeCard(confirmed.fsrs_card);
+    assert.equal(confirmed.interval, 10 * MINUTE);
+    assert.equal(card.state, State.Learning);
+    assert.equal(card.learning_steps, 1);
+    assert.equal(card.reps, 2);
+    // The learning strategy changes scheduling, not FSRS memory estimates.
+    const unmodified = upstream.next(deserializeCard(first.fsrs_card), new Date(now + MINUTE), Rating.Good).card;
+    for (const key of ['difficulty', 'stability', 'reps', 'lapses']) assert.equal(card[key], unmodified[key]);
+    const graduated = calculateReview(confirmed, 'known', confirmed.next_review_at);
+    assert.equal(deserializeCard(graduated.fsrs_card).state, State.Review);
+    assert.ok(graduated.interval >= DAY);
+    assert.equal(graduated.fsrs_card,
+      JSON.stringify(upstream.next(card, new Date(confirmed.next_review_at), Rating.Good).card));
+  }
+});
+test('10分钟确认失败回到1分钟，重复失败不跳过确认', () => {
+  let previous = calculateReview(null, 'unknown', now);
+  previous = calculateReview(previous, 'known', previous.next_review_at);
+  for (const action of ['fuzzy', 'unknown']) {
+    previous = calculateReview(previous, action, previous.next_review_at);
+    assert.equal(previous.interval, MINUTE);
+    assert.equal(deserializeCard(previous.fsrs_card).learning_steps, 0);
+  }
+  previous = calculateReview(previous, 'known', previous.next_review_at);
+  assert.equal(previous.interval, 10 * MINUTE);
+  previous = calculateReview(previous, 'known', previous.next_review_at);
+  assert.equal(deserializeCard(previous.fsrs_card).state, State.Review);
+});
+test('首次认识、学习中轻松以及长期重学沿用上游调度', () => {
+  const initialGood = calculateReview(null, 'known', now);
+  assert.equal(calculateReview(initialGood, 'known', initialGood.next_review_at).fsrs_card,
+    JSON.stringify(upstream.next(deserializeCard(initialGood.fsrs_card), new Date(initialGood.next_review_at), Rating.Good).card));
+  const failed = calculateReview(null, 'unknown', now);
+  assert.equal(calculateReview(failed, 'easy', failed.next_review_at).fsrs_card,
+    JSON.stringify(upstream.next(deserializeCard(failed.fsrs_card), new Date(failed.next_review_at), Rating.Easy).card));
+  const reviewed = calculateReview(null, 'easy', now);
+  const relearning = calculateReview(reviewed, 'unknown', reviewed.next_review_at);
+  assert.equal(relearning.interval, 10 * MINUTE);
+  assert.equal(calculateReview(relearning, 'known', relearning.next_review_at).fsrs_card,
+    JSON.stringify(upstream.next(deserializeCard(relearning.fsrs_card), new Date(relearning.next_review_at), Rating.Good).card));
+});
+test('1.8.4学习记录按原有步骤衔接，不重置历史或修改输入', () => {
+  for (const rating of [Rating.Again, Rating.Good]) {
+    const old = upstream.next(createEmptyCard(new Date(now)), new Date(now), rating).card;
+    const previous = { fsrs_card: JSON.stringify(old) };
+    const snapshot = JSON.stringify(previous);
+    const next = calculateReview(previous, 'known', old.due.getTime());
+    if (rating === Rating.Again) assert.equal(next.interval, 10 * MINUTE);
+    else assert.equal(next.fsrs_card, JSON.stringify(upstream.next(old, old.due, Rating.Good).card));
+    assert.equal(deserializeCard(next.fsrs_card).reps, old.reps + 1);
+    assert.equal(JSON.stringify(previous), snapshot);
+  }
+});
 test('Easy/旧接口mastered 都继续安排复习，不直接标记已掌握', () => {
   const easy = calculateReview(null, 'easy', now);
   assert.ok(easy.stage < 9 && easy.next_review_at > now);
@@ -222,6 +279,44 @@ try {
   assert.equal(JSON.parse(history[1].log).rating, Rating.Again);
   const stats = db.prepare('SELECT * FROM daily_stats').get();
   assert.equal(stats.words_learned, 1); assert.equal(stats.words_reviewed, 2);
+ });
+ test('两种模式共享10分钟确认，预览只读且撤销精确恢复学习步骤', () => {
+  const { getReviewPreview } = require('../src/main/review-preview');
+  clear(); seed(1);
+  try {
+   scheduler.currentWord = { id: 1, word: 'word1' };
+   scheduler._updateProgress('unknown');
+   const first = row(1);
+   const firstHistory = db.prepare('SELECT * FROM review_history').all();
+   Date.now = () => first.next_review_at;
+   const preview = getReviewPreview(db, 1);
+   assert.equal(preview.intervals.known.interval, 10 * MINUTE);
+   assert.deepEqual(row(1), first);
+   assert.deepEqual(db.prepare('SELECT * FROM review_history').all(), firstHistory);
+   assert.equal(focus.submitFocusWord(1, 'known').success, true);
+   const confirmation = row(1);
+   assert.equal(confirmation.interval, preview.intervals.known.interval);
+   assert.equal(confirmation.next_review_at, preview.intervals.known.dueAt);
+   assert.equal(deserializeCard(confirmation.fsrs_card).learning_steps, 1);
+   const repository = require('../src/main/learning-repository').createLearningRepository(() => db);
+   assert.equal(repository.getNextShortTermTime(['cet4'], Date.now()), confirmation.next_review_at);
+   assert.equal(repository.getDueWords(['cet4'], confirmation.next_review_at)[0].is_short_term, 1);
+   Date.now = () => confirmation.next_review_at;
+   const graduationPreview = getReviewPreview(db, 1);
+   assert.ok(graduationPreview.intervals.known.interval >= DAY);
+   scheduler.currentWord = { id: 1, word: 'word1' };
+   scheduler._updateProgress('known');
+   assert.equal(row(1).next_review_at, graduationPreview.intervals.known.dueAt);
+   assert.equal(deserializeCard(row(1).fsrs_card).state, State.Review);
+   assert.equal(scheduler.undo(), true);
+   assert.deepEqual(row(1), confirmation);
+   const history = db.prepare('SELECT * FROM review_history ORDER BY id').all();
+   assert.equal(history.length, 2);
+   assert.equal(history[1].card_before, history[0].card_after);
+   assert.equal(history[1].card_after, confirmation.fsrs_card);
+   const stats = db.prepare('SELECT * FROM daily_stats').get();
+   assert.equal(stats.words_learned, 1); assert.equal(stats.words_reviewed, 2);
+  } finally { Date.now = () => now; }
  });
  test('统计失败时同时回滚FSRS进度和复习历史', () => {
   clear(); seed(1);

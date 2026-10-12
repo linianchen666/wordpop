@@ -1,4 +1,5 @@
-const { fsrs, generatorParameters, createEmptyCard, Rating, State } = require('ts-fsrs');
+const { fsrs, generatorParameters, createEmptyCard, Rating, State,
+  BasicLearningStepsStrategy, StrategyMode } = require('ts-fsrs');
 
 const MINUTE = 60 * 1000;
 const HOUR = 60 * MINUTE;
@@ -8,9 +9,24 @@ const FSRS_OPTIONS = Object.freeze({
   request_retention: 0.9,
   maximum_interval: 90,
   enable_fuzz: false,
-  enable_short_term: true
+  enable_short_term: true,
+  learning_steps: Object.freeze(['1m', '10m']),
+  relearning_steps: Object.freeze(['10m'])
 });
-const engine = fsrs(generatorParameters(FSRS_OPTIONS));
+
+function confirmedLearningSteps(parameters, state, step) {
+  const intervals = BasicLearningStepsStrategy(parameters, state, step);
+  if (state === State.Learning) {
+    // ts-fsrs 5.2.3 advances the index before asking for Good, and its default
+    // strategy advances again. Use only one advance so step 0 -> 10m -> Review.
+    const good = BasicLearningStepsStrategy(parameters, state, Math.max(0, step - 1))[Rating.Good];
+    if (good) intervals[Rating.Good] = good;
+  }
+  return intervals;
+}
+
+const engine = fsrs(generatorParameters(FSRS_OPTIONS))
+  .useStrategy(StrategyMode.LEARNING_STEPS, confirmedLearningSteps);
 // “模糊” means needing the definition to confirm: failed independent recall.
 const RATINGS = Object.freeze({ unknown: Rating.Again, fuzzy: Rating.Again,
   known: Rating.Good, easy: Rating.Easy, mastered: Rating.Easy });
