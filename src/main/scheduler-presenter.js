@@ -25,7 +25,7 @@ function attachSchedulerPresenter(scheduler, { popupManager, analyzeWord, getCon
     // The renderer clears its submitted word; send it again to allow retry.
     'review-failed': presentWord,
     paused: safely(() => popupManager.hide()),
-    resumed: safely(() => popupManager.restore()),
+    resumed: safely(data => { if (data?.restore !== false) popupManager.restore(); }),
     idle: safely(() => { if (popupManager.isVisible()) popupManager.hide(); }),
     'batch-complete': safely(summary => popupManager.showBatchCompletion(summary))
   };

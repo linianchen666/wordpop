@@ -137,6 +137,11 @@ app.whenReady().then(async () => {
   await until(() => popup.webContents.executeJavaScript("document.getElementById('progress-text').textContent.startsWith('复习中')"));
   const title = await popup.webContents.executeJavaScript("document.getElementById('btn-known').title");
   assert.ok(title.includes(new Date(preview.intervals.known.dueAt).toLocaleDateString('zh-CN')));
+  const manager = require(path.join(root, 'src/main/popup-manager'));
+  manager.showBatchCompletion({ batchSize: 3, cooldownMinutes: 10 });
+  manager.show({ ...word, isNew: false });
+  await delay(3000);
+  assert.ok(popup.isVisible(), 'Previous settlement timer must not hide a new short-term card');
   popup.destroy();
   const focus = await windowFor('focus', 440, 360);
   await until(() => focus.webContents.executeJavaScript("document.getElementById('interval-easy').textContent.endsWith('后')"));

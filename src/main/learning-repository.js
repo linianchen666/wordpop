@@ -1,5 +1,13 @@
 const { reviewPriority } = require('./review-algorithm');
 const MASTERED_STAGE = 9;
+const DAY = 86400000;
+// Fresh FSRS learning steps outrank ordinary/stale backlog. Manual deferral
+// must not turn an old learning row into an urgent short-term step.
+const SHORT_TERM_SQL = `COALESCE((p.last_review_at >= ? AND p.interval > 0 AND p.interval < ${DAY}
+  AND p.next_review_at <= p.last_review_at + p.interval + 1000
+  AND CASE WHEN p.fsrs_card IS NULL THEN p.stage BETWEEN 1 AND 3
+    WHEN json_valid(p.fsrs_card) THEN json_extract(p.fsrs_card, '$.state') IN (1, 3)
+    ELSE 0 END), 0)`;
 
 /** Parameterized membership avoids duplicate words shared by several lists. */
 function wordlistFilter(column, wordlists) {
@@ -33,13 +41,14 @@ function createLearningRepository(getDb) {
     return getDb().prepare(`
       SELECT w.id, w.word, w.phonetic, w.translation, w.example,
              p.stage, p.next_review_at, p.correct_count, p.wrong_count,
-             p.efactor, p.interval, p.repetitions
+             p.efactor, p.interval, p.repetitions,
+             ${SHORT_TERM_SQL} AS is_short_term
       FROM words w
       JOIN progress p ON w.id = p.word_id
       WHERE p.next_review_at <= ? AND p.stage < ? AND ${filter.sql}
-      ORDER BY p.next_review_at ASC, p.stage ASC, w.id ASC
+      ORDER BY is_short_term DESC, p.next_review_at ASC, p.stage ASC, w.id ASC
       ${cap.sql}
-    `).all(now, MASTERED_STAGE, ...filter.params, ...cap.params);
+    `).all(now - DAY, now, MASTERED_STAGE, ...filter.params, ...cap.params);
   }
 
   function getNewWords(wordlists = ['cet4'], limit = null) {
@@ -89,6 +98,14 @@ function createLearningRepository(getDb) {
       SELECT MIN(p.next_review_at) AS next_at FROM progress p
       WHERE p.stage < ? AND p.next_review_at > 0 AND ${filter.sql}
     `).get(MASTERED_STAGE, ...filter.params).next_at ?? null;
+  }
+
+  function getNextShortTermTime(wordlists = ['cet4'], now = Date.now()) {
+    const filter = wordlistFilter('p.word_id', wordlists);
+    return getDb().prepare(`
+      SELECT MIN(p.next_review_at) AS next_at FROM progress p
+      WHERE p.stage < ? AND ${filter.sql} AND ${SHORT_TERM_SQL}
+    `).get(MASTERED_STAGE, ...filter.params, now - DAY).next_at ?? null;
   }
 
   function hasNewWords(wordlists = ['cet4']) {
@@ -264,7 +281,7 @@ function createLearningRepository(getDb) {
   }
 
   return { getDueWords, getNewWords, countUnlearned, countDue, getDailyLearned,
-    getNextReviewTime, hasNewWords, hasUnmasteredWords, getStats, getDailyStats,
+    getNextReviewTime, getNextShortTermTime, hasNewWords, hasUnmasteredWords, getStats, getDailyStats,
     getStageDistribution, getStubbornWords, getImportedWordlistCount, getCustomWordlists,
     getProgressSummary, smoothOverdueReviews, undoReview };
 }

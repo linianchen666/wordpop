@@ -20,6 +20,8 @@ class StudyScheduler extends EventEmitter {
     this.dailyNewWordsLimit = 20;
     this.dailyNewWordsCount = 0;
     this.currentBatchCount = 0;
+    this._cooldownUntil = 0;
+    this._duringCooldown = false;
     this._lastDate = null;
     this._undoInfo = null;
     this._onStatsUpdate = null;
@@ -37,6 +39,19 @@ class StudyScheduler extends EventEmitter {
       this.nextPopupTimer = null;
       callback();
     }, delay);
+  }
+
+  _nextShortTermTime() {
+    try { return this.repository.getNextShortTermTime?.(selectedWordlists(this.getConfig()), this.now()) ?? null; }
+    catch (error) { this.logger.error('[Scheduler] short-term time:', error.message); return null; }
+  }
+
+  _scheduleCooldown() {
+    if (this.isPaused) return;
+    const until = this._cooldownUntil;
+    const short = this._nextShortTermTime();
+    const next = Math.min(until, short ?? Infinity);
+    this._scheduleNext(Math.max(300, next - this.now()));
   }
 
   _notifyStats() {
@@ -57,6 +72,8 @@ class StudyScheduler extends EventEmitter {
     this._clearTimer();
     this.queue = [];
     this.currentWord = null;
+    this._cooldownUntil = 0;
+    this._duringCooldown = false;
   }
 
   pause() {
@@ -67,35 +84,30 @@ class StudyScheduler extends EventEmitter {
 
   resume() {
     this.isPaused = false;
-    this.reloadQueue();
-    if (this.currentWord || this.queue.length) {
-      this.emit('resumed');
-      this._popNext();
-    } else {
-      this._scheduleNext(10000, () => {
-        this.reloadQueue();
-        if (this.queue.length) {
-          this.emit('resumed');
-          this._popNext();
-        } else {
-          this._scheduleNext(30000);
-        }
-      });
-    }
+    this.emit('resumed', { restore: Boolean(this.currentWord) || this.now() >= this._cooldownUntil });
+    this._popNext();
   }
 
   _popNext() {
     if (this.isPaused || this.currentWord) return;
     this._checkDateChange();
     this.reloadQueue();
+    const cooling = this.now() < this._cooldownUntil;
+    if (cooling && this.queue[0]?.is_short_term !== 1) {
+      this._scheduleCooldown();
+      return;
+    }
+    if (!cooling) this._cooldownUntil = 0;
     const word = this.queue.shift();
     if (word) {
       this.currentWord = word;
+      this._duringCooldown = cooling;
       this._showWord(word);
     } else {
       this.emit('idle');
       this._notifyStats();
-      this._scheduleNext(30000);
+      const short = this._nextShortTermTime();
+      this._scheduleNext(short == null ? 30000 : Math.max(300, Math.min(30000, short - this.now())));
     }
   }
 
@@ -163,19 +175,32 @@ class StudyScheduler extends EventEmitter {
     if (!word) return;
     const result = this.recordReview(word.id, action, this.now());
     this._undoInfo = { word: { ...word }, oldProgress: result.previous ? { ...result.previous } : null,
-      action, reviewLogId: result.reviewLogId, wasNewWord: result.wasNewWord };
+      action, duringCooldown: this._duringCooldown, reviewLogId: result.reviewLogId, wasNewWord: result.wasNewWord };
     if (result.wasNewWord) this.dailyNewWordsCount++;
   }
 
   _advanceToNext() {
+    const duringCooldown = this._duringCooldown;
     this.currentWord = null;
+    this._duringCooldown = false;
     this._notifyStats();
+    if (duringCooldown) {
+      if (this.now() < this._cooldownUntil) {
+        this.emit('idle');
+        this._scheduleCooldown();
+      } else {
+        this._cooldownUntil = 0;
+        this._scheduleNext(300);
+      }
+      return;
+    }
     this.currentBatchCount++;
     const { batchSize, cooldownMinutes } = batchSettings(this.getConfig());
     if (batchSize > 0 && this.currentBatchCount >= batchSize) {
       this.currentBatchCount = 0;
       this.emit('batch-complete', { batchSize, cooldownMinutes, queueRemaining: this.queue.length });
-      this._scheduleNext(Math.max(1000, cooldownMinutes * 60 * 1000));
+      this._cooldownUntil = this.now() + Math.max(1000, cooldownMinutes * 60 * 1000);
+      this._scheduleCooldown();
     } else {
       this._scheduleNext(300);
     }
@@ -183,6 +208,7 @@ class StudyScheduler extends EventEmitter {
 
   triggerNextBatchNow() {
     this._clearTimer();
+    this._cooldownUntil = 0;
     this.currentBatchCount = 0;
     this._popNext();
   }
@@ -203,6 +229,7 @@ class StudyScheduler extends EventEmitter {
     this._resetDailyCountIfNeeded();
     this._undoInfo = null;
     this.currentWord = info.word;
+    this._duringCooldown = info.duringCooldown || false;
     this._showWord(info.word);
     return true;
   }
@@ -230,6 +257,9 @@ class StudyScheduler extends EventEmitter {
   getNextReviewTime() {
     try {
       const wordlists = selectedWordlists(this.getConfig());
+      if (this.now() < this._cooldownUntil) {
+        return Math.max(this.now(), Math.min(this._cooldownUntil, this._nextShortTermTime() ?? Infinity));
+      }
       return this.repository.getNextReviewTime(wordlists) ||
         (this.hasNewWordsQuotaToday() && this.repository.hasNewWords(wordlists) ? this.now() : null);
     } catch (error) {

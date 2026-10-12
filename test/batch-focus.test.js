@@ -108,7 +108,7 @@ try {
     assert.strictEqual(scheduler.currentWord, null);
     clock.advance(1);
     assert.strictEqual(scheduler.currentWord.id, 2);
-    scheduler.markFuzzy();
+    scheduler.markKnown();
     clock.advance(300);
     assert.strictEqual(scheduler.currentWord.id, 3);
     scheduler.markEasy();
@@ -120,11 +120,93 @@ try {
     clock.advance(3 * 60000 - 1);
     assert.strictEqual(scheduler.currentWord, null);
     clock.advance(1);
-    assert.strictEqual(scheduler.currentWord.id, 2, '冷却后优先复习模糊词的一分钟重学');
-    assert.deepStrictEqual(words.map(event => event.word.id), [1, 2, 3, 2]);
+    assert.strictEqual(scheduler.currentWord.id, 4, '没有短期词到期时完整休息');
+    assert.deepStrictEqual(words.map(event => event.word.id), [1, 2, 3, 4]);
     assert.deepStrictEqual(words.map(event => event.batchCount), [0, 1, 2, 0]);
     assert.strictEqual(history().length, 3);
     assert.strictEqual(scheduler.getStatus().dailyNewWordsCount, 3);
+  });
+
+  test('一分钟学习词到期后越过30词缓存和旧积压，且不打断当前卡片', () => {
+    seed(60);
+    const clock = createClock();
+    recordReview(db, 90, 'unknown', clock.now());
+    assert.equal(repository.getNextShortTermTime(['cet4'], clock.now()), clock.now() + 60000);
+    const scheduler = makeScheduler(clock, { batchSize: 0 });
+    scheduler.start();
+    assert.equal(scheduler.currentWord.id, 1);
+    clock.advance(60000);
+    assert.equal(scheduler.currentWord.id, 1, '正在看的词不会被替换');
+    assert.equal(repository.getDueWords(['cet4'], clock.now(), 1)[0].id, 90, '排序必须先于LIMIT');
+    scheduler.markKnown(); clock.advance(300);
+    assert.equal(scheduler.currentWord.id, 90);
+    assert.equal(scheduler.currentWord.is_short_term, 1);
+    scheduler.markEasy(); clock.advance(300);
+    assert.equal(scheduler.currentWord.id, 2, '短期词评分后继续普通积压');
+  });
+
+  test('短期词在一分钟时唤醒十分钟休息，完成后保留原休息截止时间', () => {
+    seed();
+    const clock = createClock();
+    const scheduler = makeScheduler(clock, { batchSize: 1, cooldownMinutes: 10 });
+    scheduler.start(); scheduler.markUnknown();
+    assert.equal(scheduler.getStatus().nextReviewAt, initialNow + 60000);
+    clock.advance(59999); assert.equal(scheduler.currentWord, null);
+    clock.advance(1); assert.equal(scheduler.currentWord.id, 1);
+    scheduler.markEasy();
+    assert.equal(scheduler.currentWord, null);
+    assert.equal(scheduler.currentBatchCount, 0, '休息期间的短期复习不重启普通批次');
+    assert.equal(scheduler.getStatus().nextReviewAt, initialNow + 10 * 60000);
+    clock.advance(9 * 60000 - 1); assert.equal(scheduler.currentWord, null);
+    clock.advance(1); assert.equal(scheduler.currentWord.id, 2);
+  });
+
+  test('长期词遗忘后的十分钟重学也优先于普通积压', () => {
+    seed(60);
+    const clock = createClock();
+    recordReview(db, 90, 'easy', initialNow - 8 * 86400000);
+    const forgotten = recordReview(db, 90, 'unknown', initialNow);
+    assert.equal(forgotten.progress.interval, 10 * 60000);
+    assert.equal(JSON.parse(forgotten.progress.fsrs_card).state, 3);
+    const scheduler = makeScheduler(clock, { batchSize: 0 });
+    scheduler.start(); clock.advance(10 * 60000);
+    assert.equal(scheduler.currentWord.id, 1);
+    scheduler.markKnown(); clock.advance(300);
+    assert.equal(scheduler.currentWord.id, 90);
+  });
+
+  test('暂停会阻止短期词自动出现，恢复后先处理已到期短期词', () => {
+    seed();
+    const clock = createClock();
+    const scheduler = makeScheduler(clock, { batchSize: 1, cooldownMinutes: 10 });
+    scheduler.start(); scheduler.markFuzzy();
+    scheduler.pause(); clock.advance(2 * 60000);
+    assert.equal(scheduler.currentWord, null); assert.equal(clock.pending(), 0);
+    scheduler.resume(); assert.equal(scheduler.currentWord.id, 1);
+  });
+
+  test('空队列按短期到期时间唤醒，不被30秒轮询延迟', () => {
+    seed();
+    db.exec('DELETE FROM word_wordlists WHERE word_id > 1');
+    const clock = createClock();
+    recordReview(db, 1, 'unknown', clock.now() - 15100);
+    const scheduler = makeScheduler(clock, { batchSize: 0 });
+    scheduler.start();
+    clock.advance(44899); assert.equal(scheduler.currentWord, null);
+    clock.advance(1); assert.equal(scheduler.currentWord.id, 1);
+  });
+
+  test('短期词查询遵守词库和手动平摊，读取不改写评分记录', () => {
+    seed(60);
+    recordReview(db, 90, 'unknown', initialNow);
+    db.prepare('DELETE FROM word_wordlists WHERE word_id=90').run(); relate.run(90, 'cet6');
+    assert.equal(repository.getNextShortTermTime(['cet4'], initialNow), null);
+    assert.equal(repository.getNextShortTermTime(['cet6'], initialNow), initialNow + 60000);
+    const before = JSON.stringify({ progress: db.prepare('SELECT * FROM progress').all(), history: history() });
+    assert.equal(repository.getDueWords(['cet6'], initialNow + 60000, 1)[0].id, 90);
+    assert.equal(JSON.stringify({ progress: db.prepare('SELECT * FROM progress').all(), history: history() }), before);
+    db.prepare('UPDATE progress SET next_review_at=? WHERE word_id=90').run(initialNow + 86400000);
+    assert.equal(repository.getNextShortTermTime(['cet6'], initialNow), null, '手动延期不成为短期唤醒');
   });
 
   test('立即下一批取消旧冷却计时器，不重复弹出正在显示的词', () => {

@@ -81,6 +81,12 @@ test('词源分析失败仍能展示单词，窗口错误不会中断调度事�
   assert.strictEqual(broken.errors.length, 1);
 });
 
+test('恢复暂停时仍在休息且没有当前词，不重新显示旧结算卡片', () => {
+  const h = harness();
+  h.scheduler.emit('resumed', { restore: false });
+  assert.deepStrictEqual(h.calls, []);
+});
+
 test('移除展示适配器释放监听，不影响其他订阅者', () => {
   const h = harness();
   let otherCalls = 0;

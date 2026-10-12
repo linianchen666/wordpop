@@ -8,6 +8,11 @@ let popupReady = false;
 let pendingWordData = null;
 let popupSizes = {};
 let sizeSaveTimer = null;
+let completionHideTimer = null;
+function cancelCompletionHide() {
+  if (completionHideTimer !== null) clearTimeout(completionHideTimer);
+  completionHideTimer = null;
+}
 
 function minimumSize() {
   return { minWidth: 320, minHeight: 300 };
@@ -165,6 +170,7 @@ function show(wordData) {
  * 向渲染进程发送数据并显示窗口
  */
 function _displayWord(wordData) {
+  cancelCompletionHide();
   if (!popupWindow || popupWindow.isDestroyed()) {
     createPopupWindow();
     pendingWordData = wordData;
@@ -205,10 +211,13 @@ function showBatchCompletion(data) {
   if (!popupWindow || popupWindow.isDestroyed()) return;
   try {
     popupWindow.webContents.send('popup:batch-completed', data);
-    // 2.8 秒后优雅隐退
-    setTimeout(() => {
+    // A new short-term word can arrive before the settlement finishes hiding.
+    cancelCompletionHide();
+    const completingWindow = popupWindow;
+    completionHideTimer = setTimeout(() => {
+      completionHideTimer = null;
       try {
-        if (popupWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
+        if (popupWindow === completingWindow && !popupWindow.isDestroyed() && popupWindow.isVisible()) {
           popupWindow.hide();
         }
       } catch (e) {}
@@ -219,6 +228,7 @@ function showBatchCompletion(data) {
 }
 
 function hide() {
+  cancelCompletionHide();
   try {
     if (popupWindow && !popupWindow.isDestroyed()) popupWindow.hide();
   } catch (e) {}
@@ -239,6 +249,7 @@ function restore() {
 }
 
 function closeImmediately() {
+  cancelCompletionHide();
   try { if (popupWindow && !popupWindow.isDestroyed()) popupWindow.close(); } catch (e) {}
   popupWindow = null;
   popupReady = false;
