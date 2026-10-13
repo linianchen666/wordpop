@@ -1,12 +1,7 @@
-const DAY = 24 * 60 * 60 * 1000;
+const { localDateKey, daysUntilInclusive } = require('../shared/plan-date');
 
 function selectedWordlists(config) {
   return config?.selectedWordlists?.length ? config.selectedWordlists : ['cet4'];
-}
-
-function localDateKey(now) {
-  const date = new Date(now);
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
 }
 
 function endOfDay(now) {
@@ -23,19 +18,18 @@ function batchSettings(config = {}) {
 }
 
 /** Pure quota policy; persistence and the clock are supplied by its caller. */
-function calculateDailyQuota(config = {}, { unlearnedCount = 0, dueCount = 0 } = {}, now = Date.now()) {
+function calculateDailyQuota(config = {}, { unlearnedCount = 0, dueCount = 0, todayLearned = 0 } = {}, now = Date.now()) {
   let baseLimit = parseInt(config.dailyNewWords) || 20;
   const mode = config.dailyNewWordsMode || 'fixed';
-  if (mode === 'target' && config.targetDate) {
-    const targetTime = new Date(config.targetDate);
-    targetTime.setHours(23, 59, 59, 999);
-    const today = new Date(now);
-    today.setHours(0, 0, 0, 0);
-    const daysLeft = Math.ceil((targetTime.getTime() - today.getTime()) / DAY);
+  const daysLeft = daysUntilInclusive(config.targetDate, now);
+  let requiredDaily = null, planState = 'fixed';
+  if (mode === 'target') {
+    planState = daysLeft === null ? 'invalid' : daysLeft <= 0 ? 'expired' : 'active';
     if (daysLeft > 0) {
-      baseLimit = unlearnedCount > 0
-        ? Math.min(parseInt(config.maxDynamicNewWords) || 50, Math.max(1, Math.ceil(unlearnedCount / daysLeft)))
-        : 0;
+      requiredDaily = unlearnedCount > 0 ? Math.ceil((unlearnedCount + todayLearned) / daysLeft) : 0;
+      const cap = Math.min(200, Math.max(1, parseInt(config.maxDynamicNewWords) || 50));
+      baseLimit = Math.min(cap, requiredDaily);
+      if (requiredDaily > cap) planState = 'capped';
     }
   }
   let effectiveLimit = baseLimit;
@@ -52,7 +46,12 @@ function calculateDailyQuota(config = {}, { unlearnedCount = 0, dueCount = 0 } =
       reason = `检测到 ${dueCount} 个待复习单词，新词配额自动减半（${baseLimit} → ${effectiveLimit}）`;
     }
   }
-  return { effectiveLimit, baseLimit, mode, dueCount, loadState, reason };
+  if (mode === 'target') {
+    if (planState === 'invalid' || planState === 'expired') reason = '目标日期未设置、无效或已过期，暂按固定词量推新，请重新设置日期。' + reason;
+    else if (planState === 'capped') reason = `按期完成需每天 ${requiredDaily} 词，已受每日上限 ${baseLimit} 词限制，目标可能延期。` + reason;
+    else if (effectiveLimit < baseLimit) reason += '；目标完成日期可能延期';
+  }
+  return { effectiveLimit, baseLimit, mode, dueCount, loadState, reason, daysLeft, requiredDaily, planState, todayLearned };
 }
 
 module.exports = { selectedWordlists, localDateKey, endOfDay, batchSettings, calculateDailyQuota };

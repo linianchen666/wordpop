@@ -55,6 +55,46 @@ test('目标模式遵守每日上限，词库学完时配额归零', () => {
   assert.strictEqual(quota({ ...targetConfig, targetDate: '2026-10-01', dailyNewWords: 13 }, 500, 0).baseLimit, 13);
 });
 
+test('目标日期含今天与截止当天，同一天已学新词不降低当天总配额', () => {
+  const config = { ...targetConfig, targetDate: '2026-10-10', autoBalanceLoad: false };
+  const start = calculateDailyQuota(config, { unlearnedCount: 4 }, now);
+  const afterOne = calculateDailyQuota(config, { unlearnedCount: 3, todayLearned: 1 }, now);
+  const afterTwo = calculateDailyQuota(config, { unlearnedCount: 2, todayLearned: 2 }, now);
+  assert.equal(start.daysLeft, 2);
+  assert.equal(start.baseLimit, 2);
+  assert.equal(afterOne.baseLimit, 2);
+  assert.equal(afterTwo.baseLimit, 2);
+  assert.equal(calculateDailyQuota({ ...config, targetDate: '2026-10-09' }, { unlearnedCount: 4 }, now).baseLimit, 4);
+});
+
+test('无效或过期目标明确回退，超过50词上限及减负会提示延期', () => {
+  for (const targetDate of [null, '2026-02-30', 'not-a-date', '2026-10-08']) {
+    const result = quota({ ...targetConfig, targetDate, dailyNewWords: 13 }, 100, 0);
+    assert.equal(result.baseLimit, 13);
+    assert.match(result.reason, /重新设置日期/);
+  }
+  const capped = quota({ ...targetConfig, targetDate: '2026-10-10' }, 200, 0);
+  assert.equal(capped.requiredDaily, 100);
+  assert.equal(capped.baseLimit, 50);
+  assert.equal(capped.planState, 'capped');
+  assert.match(capped.reason, /延期/);
+  assert.match(quota(targetConfig, 500, 80).reason, /延期/);
+});
+
+test('中美时区与夏令时切换使用当地日历日期，不按UTC日期解释目标', () => {
+  const { spawnSync } = require('child_process');
+  for (const TZ of ['Asia/Shanghai', 'America/Los_Angeles']) {
+    const script = `const assert=require('assert'); const {daysUntilInclusive,localDateKey}=require('./src/shared/plan-date');
+      const time=new Date(2026,10,1,0,30).getTime();
+      assert.equal(localDateKey(time),'2026-11-01');
+      assert.equal(daysUntilInclusive('2026-11-01',time),1);
+      assert.equal(daysUntilInclusive('2026-11-02',time),2);
+      assert.equal(daysUntilInclusive('2026-02-30',time),null);`;
+    const result = spawnSync(process.execPath, ['-e', script], { cwd: path.join(__dirname,'..'), env: { ...process.env, TZ, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8' });
+    assert.equal(result.status, 0, result.stderr);
+  }
+});
+
 const testDir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordpop-backlog-'));
 const originalLoad = Module._load;
 const dbModulePath = require.resolve('../src/main/db');

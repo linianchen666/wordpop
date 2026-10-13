@@ -164,12 +164,8 @@ async function init() {
   });
 
   // 目标日期
-  const tomorrow = new Date();
-  tomorrow.setDate(tomorrow.getDate() + 1);
-  targetDateInput.min = tomorrow.toISOString().split('T')[0];
-  if (currentConfig.targetDate && new Date(currentConfig.targetDate) > new Date()) {
-    targetDateInput.value = currentConfig.targetDate;
-  }
+  targetDateInput.min = window.wordpopPlanDate.localDateKey();
+  targetDateInput.value = currentConfig.targetDate || '';
 
   // 如果这是首次设置，显示提示
   if (!currentConfig.setupComplete) {
@@ -228,14 +224,25 @@ if (modeOptFixed) {
 }
 
 // === 刷新动态配额与积压状态 ===
+let quotaRequest = 0;
+let previewQuota = null;
 async function refreshQuotaAndBacklogInfo() {
+  const request = ++quotaRequest;
   try {
-    const quotaInfo = await window.wordpopAPI.getDynamicQuotaInfo();
+    const quotaInfo = await window.wordpopAPI.getDynamicQuotaInfo({
+      dailyNewWordsMode: selectedDailyMode, targetDate: targetDateInput.value || null,
+      dailyNewWords: getDailyNewWordsValue(), selectedWordlists,
+      autoBalanceLoad: autoBalanceLoad.checked
+    });
+    if (request !== quotaRequest) return;
+    previewQuota = quotaInfo;
+    renderPrediction();
     if (quotaInfo && targetDynamicBadge && targetDynamicDesc) {
       if (selectedDailyMode === 'target') {
         if (!targetDateInput.value) {
           targetDynamicBadge.textContent = `🎯 智能目标规划模式`;
           targetDynamicDesc.textContent = `请在下方「预测卡片」设定目标完成日期，系统将每天自适应计算新词量。`;
+
         } else {
           targetDynamicBadge.textContent = `今日推荐新词：${quotaInfo.effectiveLimit} 词`;
           targetDynamicDesc.textContent = quotaInfo.reason;
@@ -367,7 +374,7 @@ async function loadPrediction() {
   }
   try {
     progressData = await window.wordpopAPI.getProgressSummary(selectedWordlists);
-    renderPrediction();
+    await refreshQuotaAndBacklogInfo();
   } catch (err) {
     console.error('loadPrediction failed:', err);
     renderEmptyPrediction();
@@ -409,7 +416,7 @@ function renderPrediction() {
   statRemaining.textContent = '剩余 ' + remainingWords + ' 个';
 
   // 预测天数
-  const dailyNew = getDailyNewWordsValue();
+  const dailyNew = selectedDailyMode === 'target' && previewQuota ? previewQuota.effectiveLimit : getDailyNewWordsValue();
 
   if (remainingWords <= 0) {
     predictedDays.textContent = '已完成!';
@@ -420,11 +427,12 @@ function renderPrediction() {
     predictedDays.classList.remove('completed');
     predictedDate.textContent = '';
   } else {
-    const days = Math.ceil(remainingWords / dailyNew);
+    const todayAvailable = Math.max(0, dailyNew - (previewQuota?.todayLearned || 0));
+    const days = remainingWords <= todayAvailable ? 1 : 1 + Math.ceil((remainingWords - todayAvailable) / dailyNew);
     predictedDays.textContent = days + ' 天';
     predictedDays.classList.remove('completed');
     const est = new Date();
-    est.setDate(est.getDate() + days);
+    est.setDate(est.getDate() + days - 1);
     predictedDate.textContent = '（约 ' + (est.getMonth()+1) + '月' + est.getDate() + '日）';
   }
 
@@ -447,12 +455,7 @@ function updateTargetResult() {
     return;
   }
 
-  const targetDate = new Date(targetDateStr);
-  const today = new Date();
-  today.setHours(0,0,0,0);
-  targetDate.setHours(0,0,0,0);
-
-  const remainingDays = Math.ceil((targetDate - today) / 86400000);
+  const remainingDays = window.wordpopPlanDate.daysUntilInclusive(targetDateStr);
   const remaining = progressData.remainingWords;
 
   if (remaining <= 0) {
@@ -461,19 +464,20 @@ function updateTargetResult() {
     return;
   }
 
-  if (remainingDays <= 0) {
+  if (remainingDays === null || remainingDays <= 0) {
     targetResult.textContent = '目标日期已过，请选择未来的日期';
     targetResult.className = 'target-result warning';
     return;
   }
 
-  const requiredDaily = Math.ceil(remaining / remainingDays);
+  const requiredDaily = Math.ceil((remaining + (previewQuota?.todayLearned || 0)) / remainingDays);
+  const cap = Math.min(200, Math.max(1, parseInt(currentConfig.maxDynamicNewWords) || 50));
 
-  if (requiredDaily > 200) {
-    targetResult.textContent = '需每天学 ' + requiredDaily + ' 个（超出合理范围）';
+  if (requiredDaily > cap) {
+    targetResult.textContent = '需每天学 ' + requiredDaily + ' 个（超过智能模式每日上限 ' + cap + '，目标可能延期）';
     targetResult.className = 'target-result impossible';
   } else {
-    targetResult.textContent = '需每天学 ' + requiredDaily + ' 个新词即可完成';
+    targetResult.textContent = '按目标需每天学 ' + requiredDaily + ' 个新词';
     targetResult.className = 'target-result';
   }
 }
@@ -490,18 +494,21 @@ dailyNewWords.addEventListener('change', () => {
 });
 
 customDailyInput.addEventListener('input', () => {
-  renderPrediction();
+  refreshQuotaAndBacklogInfo();
 });
+
+autoBalanceLoad.addEventListener('change', refreshQuotaAndBacklogInfo);
 
 // === 目标日期联动 ===
 targetDateInput.addEventListener('change', () => {
-  updateTargetResult();
+  refreshQuotaAndBacklogInfo();
 });
 
 btnClearTarget.addEventListener('click', () => {
   targetDateInput.value = '';
   targetResult.textContent = '';
   targetResult.className = 'target-result';
+  refreshQuotaAndBacklogInfo();
 });
 
 // === 保存设置 ===
@@ -512,6 +519,10 @@ btnSave.addEventListener('click', async () => {
     return;
   }
 
+  if (selectedDailyMode === 'target' && !(window.wordpopPlanDate.daysUntilInclusive(targetDateInput.value) > 0)) {
+    alert('请为智能目标规划选择今天或未来的完成日期！');
+    return;
+  }
   btnSave.disabled = true;
   btnSave.textContent = '保存中...';
 

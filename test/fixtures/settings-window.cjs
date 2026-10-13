@@ -81,8 +81,46 @@ app.whenReady().then(async () => {
     "document.getElementById('prediction-content').style.display !== 'none'"
   ), 'Saved wordlists and progress did not load');
   assert.strictEqual(await saved.webContents.executeJavaScript("document.getElementById('showExample').checked"), false);
+  const { localDateKey } = require(path.join(root, 'src/shared/plan-date'));
+  const target = new Date(); target.setDate(target.getDate() + 200);
+  const targetDate = localDateKey(target.getTime());
+  const snapshot = JSON.stringify(config.loadConfig());
+  const remaining = require(path.join(root, 'src/main/learning-repository')).createLearningRepository(() => database).countUnlearned(['cet4','cet6']);
+  const required = Math.ceil(remaining / 201);
+  await saved.webContents.executeJavaScript(`
+    document.getElementById('mode-opt-target').click();
+    document.getElementById('targetDate').value = ${JSON.stringify(targetDate)};
+    document.getElementById('targetDate').dispatchEvent(new Event('change'));
+  `);
+  await until(() => saved.webContents.executeJavaScript(`document.getElementById('target-dynamic-badge').textContent.includes('${required} 词')`), 'Draft target quota did not update').catch(async error => {
+    console.error({ required, remaining, targetDate, renderer: await saved.webContents.executeJavaScript(`({ badge: targetDynamicBadge.textContent, quota: previewQuota, selectedWordlists, progressData, selectedDailyMode })`) });
+    throw error;
+  });
+  assert.equal(JSON.stringify(config.loadConfig()), snapshot, 'Preview must not save draft settings');
+  assert.ok((await saved.webContents.executeJavaScript("document.getElementById('target-result').textContent")).includes(String(required)));
+  const tomorrow = new Date(); tomorrow.setDate(tomorrow.getDate() + 1);
+  await saved.webContents.executeJavaScript(`
+    document.getElementById('targetDate').value = ${JSON.stringify(localDateKey(tomorrow.getTime()))};
+    document.getElementById('targetDate').dispatchEvent(new Event('change'));
+  `);
+  await until(() => saved.webContents.executeJavaScript("document.getElementById('target-dynamic-desc').textContent.includes('延期') && document.getElementById('target-dynamic-badge').textContent.includes('50 词')"), 'Unreachable target cap not displayed');
+  await saved.webContents.executeJavaScript(`
+    document.getElementById('targetDate').value = ${JSON.stringify(targetDate)};
+    document.getElementById('targetDate').dispatchEvent(new Event('change'));
+    document.getElementById('btn-save').click();
+  `);
+  await until(() => config.loadConfig().targetDate === targetDate, 'Target settings not saved');
+  assert.equal(config.loadConfig().dailyNewWordsMode, 'target');
+  const scheduler = require(path.join(root, 'src/main/scheduler'));
+  assert.equal(scheduler.getDynamicQuotaInfo().baseLimit, required);
+  assert.equal(scheduler.getStatus().todayNewRemaining, required);
+  const { recordReview } = require(path.join(root, 'src/main/review-progress'));
+  const repository = require(path.join(root, 'src/main/learning-repository')).createLearningRepository(() => database);
+  for (const word of repository.getNewWords(['cet4','cet6'], required - 1)) recordReview(database, word.id, 'known');
+  assert.equal(scheduler.getDynamicQuotaInfo().baseLimit, required, 'Learning today must not shrink today\'s total target quota');
+  assert.equal(scheduler.getStatus().todayNewRemaining, 1);
   assert.deepStrictEqual(errors, []);
-  console.log('Settings Chromium test passed: first-run lists, imports, save and reload.');
+  console.log('Settings Chromium test passed: first-run lists, imports, save and reload, target draft preview, cap warning and actual scheduler quota.');
   saved.destroy();
 }).then(() => finish(0), error => {
   console.error(error);

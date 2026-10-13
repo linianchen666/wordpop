@@ -224,8 +224,11 @@ function registerIpcHandlers() {
     }
   });
 
-  ipcMain.handle('scheduler:quota-info', () => {
-    return scheduler.getDynamicQuotaInfo();
+  ipcMain.handle('scheduler:quota-info', (_event, draft) => {
+    const preview = draft ? { ...loadConfig(), dailyNewWordsMode: draft.dailyNewWordsMode,
+      targetDate: draft.targetDate, dailyNewWords: draft.dailyNewWords,
+      selectedWordlists: draft.selectedWordlists, autoBalanceLoad: draft.autoBalanceLoad } : undefined;
+    return scheduler.getDynamicQuotaInfo(preview);
   });
 
   ipcMain.handle('scheduler:trigger-next-batch', () => {

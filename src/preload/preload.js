@@ -42,7 +42,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
 
   // === 调度器操作、批次与积压平摊 ===
   getSchedulerStatus:  ()  => ipcRenderer.invoke('scheduler:status'),
-  getDynamicQuotaInfo: ()  => ipcRenderer.invoke('scheduler:quota-info'),
+  getDynamicQuotaInfo: (draft) => ipcRenderer.invoke('scheduler:quota-info', draft),
   smoothOverdueReviews:(d) => ipcRenderer.invoke('reviews:smooth-overdue', d),
   triggerNextBatch:    ()  => ipcRenderer.invoke('scheduler:trigger-next-batch'),
   togglePause:        ()  => ipcRenderer.invoke('scheduler:toggle-pause'),

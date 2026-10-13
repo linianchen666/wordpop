@@ -120,13 +120,14 @@ class StudyScheduler extends EventEmitter {
     }
   }
 
-  getDynamicQuotaInfo() {
+  getDynamicQuotaInfo(previewConfig) {
     try {
-      const config = this.getConfig();
+      const config = previewConfig || this.getConfig();
       const wordlists = selectedWordlists(config);
       return calculateDailyQuota(config, {
         unlearnedCount: this.repository.countUnlearned(wordlists),
-        dueCount: this.repository.countDue(wordlists, this.now())
+        dueCount: this.repository.countDue(wordlists, this.now()),
+        todayLearned: this.repository.getDailyLearned(this.now())
       }, this.now());
     } catch (error) {
       this.logger.error('[Scheduler] quota:', error.message);
