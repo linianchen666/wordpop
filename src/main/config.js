@@ -8,7 +8,6 @@ const DEFAULT_CONFIG = {
   dailyNewWords: 20,
   dailyNewWordsMode: 'fixed',      // fixed (固定词量) | target (智能目标模式)
   autoBalanceLoad: true,           // 智能负荷动态平衡：复习过多时自动削减/暂停新词
-  maxDynamicNewWords: 50,          // 智能模式每日新词上限
   batchSize: 3,                    // 单次弹窗批次词数：1, 3, 5, 0 (0为连续不间断)
   cooldownMinutes: 10,             // 批次完成后的静默冷却时间（分钟）：1, 3, 5, 10, 15, 30
   displayMode: 'card',             // 普通复习始终使用卡片

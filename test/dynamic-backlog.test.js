@@ -49,8 +49,8 @@ test('关闭负荷调整保留配额，小配额减半至少保留一个新词',
   assert.strictEqual(quota({ dailyNewWords: 1 }, 500, 40).effectiveLimit, 1);
 });
 
-test('目标模式遵守每日上限，词库学完时配额归零', () => {
-  assert.strictEqual(quota(targetConfig, 5000, 0).baseLimit, 50);
+test('目标模式不受旧每日上限限制，词库学完时配额归零', () => {
+  assert.strictEqual(quota(targetConfig, 5000, 0).baseLimit, 193);
   assert.strictEqual(quota(targetConfig, 0, 0).effectiveLimit, 0);
   assert.strictEqual(quota({ ...targetConfig, targetDate: '2026-10-01', dailyNewWords: 13 }, 500, 0).baseLimit, 13);
 });
@@ -67,7 +67,7 @@ test('目标日期含今天与截止当天，同一天已学新词不降低当�
   assert.equal(calculateDailyQuota({ ...config, targetDate: '2026-10-09' }, { unlearnedCount: 4 }, now).baseLimit, 4);
 });
 
-test('无效或过期目标明确回退，超过50词上限及减负会提示延期', () => {
+test('无效或过期目标明确回退，智能规划不限量，减负提示延期', () => {
   for (const targetDate of [null, '2026-02-30', 'not-a-date', '2026-10-08']) {
     const result = quota({ ...targetConfig, targetDate, dailyNewWords: 13 }, 100, 0);
     assert.equal(result.baseLimit, 13);
@@ -75,9 +75,9 @@ test('无效或过期目标明确回退，超过50词上限及减负会提示延
   }
   const capped = quota({ ...targetConfig, targetDate: '2026-10-10' }, 200, 0);
   assert.equal(capped.requiredDaily, 100);
-  assert.equal(capped.baseLimit, 50);
-  assert.equal(capped.planState, 'capped');
-  assert.match(capped.reason, /延期/);
+  assert.equal(capped.baseLimit, 100);
+  assert.equal(capped.planState, 'active');
+  assert.ok(!capped.reason.includes('上限'));
   assert.match(quota(targetConfig, 500, 80).reason, /延期/);
 });
 
@@ -243,6 +243,30 @@ try {
       }
       assert.deepEqual(days, [50,50,50]);
     } finally { Math.random = random; }
+  });
+  test('真实每日计数驱动目标刷新，跨天及重启重新计算，漏学会提高次日计划', () => {
+    db.exec('DELETE FROM review_history; DELETE FROM progress; DELETE FROM daily_stats; DELETE FROM word_wordlists; DELETE FROM words;');
+    for (let id = 1000; id < 1040; id++) {
+      insert.run(id, `target_${id}`, '释义', 'cet4', id);
+      relate.run(id, 'cet4');
+    }
+    let clock = now;
+    const config = { dailyNewWordsMode: 'target', targetDate: '2026-10-12', autoBalanceLoad: false, maxDynamicNewWords: 1 };
+    const create = () => createScheduler({ repository, getConfig: () => config, now: () => clock, recordReview: (id, action, time) => recordReview(db, id, action, time) });
+    const scheduler = create();
+    assert.equal(scheduler.getStatus().dailyNewWordsLimit, 10);
+    for (let id = 1000; id < 1004; id++) recordReview(db, id, 'known', clock);
+    assert.equal(scheduler.getStatus().todayNewRemaining, 6);
+    assert.equal(scheduler.dailyNewWordsLimit, 10);
+    clock += DAY;
+    assert.equal(scheduler.getStatus().dailyNewWordsLimit, 12);
+    assert.equal(scheduler.dailyNewWordsCount, 0);
+    assert.equal(create().getStatus().todayNewRemaining, 12);
+    clock += DAY;
+    scheduler.reloadQueue();
+    assert.equal(scheduler.dailyNewWordsLimit, 18);
+    assert.equal(scheduler.queue.filter(word => word.stage === 0).length, 18);
+    scheduler.stop();
   });
 } finally {
   Module._load = originalLoad;

@@ -366,6 +366,18 @@ positionSelector.addEventListener('click', (e) => {
 // ════════════════════════════════════════════╝
 
 const debouncedLoadPrediction = debounce(loadPrediction, 500);
+window.wordpopAPI.onStatsUpdated(debouncedLoadPrediction);
+let planningDate = window.wordpopPlanDate.localDateKey();
+function refreshPlanForNewDay() {
+  const today = window.wordpopPlanDate.localDateKey();
+  if (today === planningDate) return;
+  planningDate = today;
+  targetDateInput.min = today;
+  debouncedLoadPrediction();
+}
+setInterval(refreshPlanForNewDay, 30000);
+window.addEventListener('focus', refreshPlanForNewDay);
+
 
 async function loadPrediction() {
   if (selectedWordlists.length === 0) {
@@ -471,15 +483,8 @@ function updateTargetResult() {
   }
 
   const requiredDaily = Math.ceil((remaining + (previewQuota?.todayLearned || 0)) / remainingDays);
-  const cap = Math.min(200, Math.max(1, parseInt(currentConfig.maxDynamicNewWords) || 50));
-
-  if (requiredDaily > cap) {
-    targetResult.textContent = '需每天学 ' + requiredDaily + ' 个（超过智能模式每日上限 ' + cap + '，目标可能延期）';
-    targetResult.className = 'target-result impossible';
-  } else {
-    targetResult.textContent = '按目标需每天学 ' + requiredDaily + ' 个新词';
-    targetResult.className = 'target-result';
-  }
+  targetResult.textContent = '按目标需每天学 ' + requiredDaily + ' 个新词（每日重新计算）';
+  targetResult.className = 'target-result';
 }
 
 // === 自定义每日词量 ===

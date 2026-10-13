@@ -27,9 +27,7 @@ function calculateDailyQuota(config = {}, { unlearnedCount = 0, dueCount = 0, to
     planState = daysLeft === null ? 'invalid' : daysLeft <= 0 ? 'expired' : 'active';
     if (daysLeft > 0) {
       requiredDaily = unlearnedCount > 0 ? Math.ceil((unlearnedCount + todayLearned) / daysLeft) : 0;
-      const cap = Math.min(200, Math.max(1, parseInt(config.maxDynamicNewWords) || 50));
-      baseLimit = Math.min(cap, requiredDaily);
-      if (requiredDaily > cap) planState = 'capped';
+      baseLimit = requiredDaily;
     }
   }
   let effectiveLimit = baseLimit;
@@ -48,7 +46,6 @@ function calculateDailyQuota(config = {}, { unlearnedCount = 0, dueCount = 0, to
   }
   if (mode === 'target') {
     if (planState === 'invalid' || planState === 'expired') reason = '目标日期未设置、无效或已过期，暂按固定词量推新，请重新设置日期。' + reason;
-    else if (planState === 'capped') reason = `按期完成需每天 ${requiredDaily} 词，已受每日上限 ${baseLimit} 词限制，目标可能延期。` + reason;
     else if (effectiveLimit < baseLimit) reason += '；目标完成日期可能延期';
   }
   return { effectiveLimit, baseLimit, mode, dueCount, loadState, reason, daysLeft, requiredDaily, planState, todayLearned };

@@ -103,7 +103,7 @@ app.whenReady().then(async () => {
     document.getElementById('targetDate').value = ${JSON.stringify(localDateKey(tomorrow.getTime()))};
     document.getElementById('targetDate').dispatchEvent(new Event('change'));
   `);
-  await until(() => saved.webContents.executeJavaScript("document.getElementById('target-dynamic-desc').textContent.includes('延期') && document.getElementById('target-dynamic-badge').textContent.includes('50 词')"), 'Unreachable target cap not displayed');
+  await until(() => saved.webContents.executeJavaScript(`document.getElementById('target-dynamic-badge').textContent.includes('${Math.ceil(remaining / 2)} 词')`), 'Target must allow more than 200 new words');
   await saved.webContents.executeJavaScript(`
     document.getElementById('targetDate').value = ${JSON.stringify(targetDate)};
     document.getElementById('targetDate').dispatchEvent(new Event('change'));
@@ -120,7 +120,7 @@ app.whenReady().then(async () => {
   assert.equal(scheduler.getDynamicQuotaInfo().baseLimit, required, 'Learning today must not shrink today\'s total target quota');
   assert.equal(scheduler.getStatus().todayNewRemaining, 1);
   assert.deepStrictEqual(errors, []);
-  console.log('Settings Chromium test passed: first-run lists, imports, save and reload, target draft preview, cap warning and actual scheduler quota.');
+  console.log('Settings Chromium test passed: first-run lists, imports, save and reload, target draft preview, unlimited quota and actual scheduler quota.');
   saved.destroy();
 }).then(() => finish(0), error => {
   console.error(error);
