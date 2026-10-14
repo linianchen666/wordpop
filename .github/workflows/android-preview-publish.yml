@@ -1,0 +1,46 @@
+name: Publish Android pairing preview
+on:
+  workflow_dispatch:
+    inputs:
+      android_run:
+        description: 'Successful Android APK workflow run ID'
+        required: true
+      windows_run:
+        description: 'Successful Windows sync preview run ID'
+        required: true
+permissions:
+  contents: write
+  actions: read
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      ANDROID_RUN: ${{ inputs.android_run }}
+      WINDOWS_RUN: ${{ inputs.windows_run }}
+      REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify tested builds and download packages
+        run: |
+          test "$(gh run view "$ANDROID_RUN" --repo "$REPO" --json conclusion --jq .conclusion)" = success
+          test "$(gh run view "$WINDOWS_RUN" --repo "$REPO" --json conclusion --jq .conclusion)" = success
+          gh run download "$ANDROID_RUN" --repo "$REPO" --name wordpop-android-test-apk --dir artifacts/android
+          gh run download "$WINDOWS_RUN" --repo "$REPO" --name wordpop-windows-sync-preview --dir artifacts/windows
+          mkdir packages
+          apk_path=$(rg --files artifacts/android | rg '/app-debug.apk$')
+          cp "$apk_path" packages/WordPop.Android.0.1.0-beta.1.apk
+          cp artifacts/windows/*.exe packages/WordPop.Setup.1.9.0-beta.1.exe
+          cd packages
+          sha256sum *.apk *.exe > SHA256SUMS.txt
+      - name: Upload and publish tested preview
+        run: |
+          gh release view android-v0.1.0-beta.1 --repo "$REPO" >/dev/null || gh release create android-v0.1.0-beta.1 --repo "$REPO" --target "$GITHUB_SHA" --draft --prerelease --title 'WordPop Android 0.1.0 测试版与 Windows 云同步预览' --notes-file android/RELEASE-NOTES.md
+          gh release upload android-v0.1.0-beta.1 packages/* --repo "$REPO" --clobber
+          gh release edit android-v0.1.0-beta.1 --repo "$REPO" --draft=false --prerelease=true --latest=false --notes-file android/RELEASE-NOTES.md
+  prune-releases:
+    needs: publish
+    uses: ./.github/workflows/release-retention.yml
+    permissions:
+      contents: write
