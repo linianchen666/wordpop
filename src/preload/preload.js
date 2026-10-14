@@ -16,6 +16,11 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   // === 设置操作 ===
   getConfig:           ()  => ipcRenderer.invoke('config:get'),
   getReviewPreview:    (id) => ipcRenderer.invoke('review:preview', id),
+  cloudStatus: () => ipcRenderer.invoke('cloud:status'),
+  cloudLogin: input => ipcRenderer.invoke('cloud:login', input),
+  cloudSync: () => ipcRenderer.invoke('cloud:sync'),
+  cloudLogout: () => ipcRenderer.invoke('cloud:logout'),
+  openCloud: () => ipcRenderer.invoke('cloud:open'),
   saveConfig:          (c) => ipcRenderer.invoke('config:save', c),
   getWordlists:        ()  => ipcRenderer.invoke('wordlists:get'),
   importWordlist:      (id) => ipcRenderer.invoke('wordlist:import', id),

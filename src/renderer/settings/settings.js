@@ -690,3 +690,5 @@ if (btnLogs) {
     }
   });
 }
+
+document.getElementById('btn-cloud').addEventListener('click', () => window.wordpopAPI.openCloud());

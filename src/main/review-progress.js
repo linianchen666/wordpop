@@ -27,6 +27,7 @@ function recordReview(db, wordId, action, now = Date.now()) {
       INSERT INTO review_history (word_id, reviewed_at, rating, card_before, card_after, log)
       VALUES (?, ?, ?, ?, ?, ?)
     `).run(wordId, now, progress.rating, progress.fsrs_before, progress.fsrs_card, progress.fsrs_log);
+    require('./cloud-sync').captureReview(db, wordId, action, now, history.lastInsertRowid);
     db.prepare(`
       INSERT INTO daily_stats (date, words_reviewed, words_learned)
       VALUES (date(?, 'unixepoch', 'localtime'), 1, ?)

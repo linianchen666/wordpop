@@ -270,6 +270,7 @@ function createLearningRepository(getDb) {
           oldProgress.efactor, oldProgress.interval, oldProgress.repetitions,
           oldProgress.fsrs_card ?? null, word.id);
       }
+      require('./cloud-sync').captureUndo(db, reviewLogId);
       db.prepare('DELETE FROM review_history WHERE id = ?').run(reviewLogId);
       db.prepare(`
         UPDATE daily_stats SET words_reviewed = MAX(words_reviewed - 1, 0),

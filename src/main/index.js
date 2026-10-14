@@ -109,6 +109,8 @@ app.whenReady().then(async () => {
     config = { setupComplete: false, selectedWordlists: ['cet4'], dailyNewWords: 20 };
   }
 
+  safeStep('cloudSync', () => require('./cloud-sync').start(require('./db').getDb()));
+
   // 3. IPC
   safeStep('registerIpc', registerIpcHandlers);
 

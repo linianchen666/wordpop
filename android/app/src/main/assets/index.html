@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1,viewport-fit=cover"
+  /><title>WordPop</title>
+  <style>
+    [hidden] {
+      display: none !important;
+    }
+    * {
+      box-sizing: border-box;
+    }
+    body {
+      margin: 0;
+      background: #111827;
+      color: #e8edf7;
+      font:
+        16px system-ui,
+        sans-serif;
+      padding: 16px;
+    }
+    header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      color: #aab8ce;
+      font-size: 13px;
+    }
+    h1 {
+      font-size: 18px;
+      margin: 0;
+      color: #eef2ff;
+    }
+    #card {
+      background: #182235;
+      border-radius: 22px;
+      padding: 24px 18px;
+      margin: 16px 0;
+      text-align: center;
+    }
+    #word {
+      font-size: clamp(28px, 8vw, 48px);
+      font-weight: 750;
+      color: #85bdff;
+      overflow-wrap: anywhere;
+      margin: 10px 0;
+    }
+    #phonetic {
+      color: #aebfd6;
+      margin: 10px;
+    }
+    #meaning {
+      font-size: 19px;
+      line-height: 1.6;
+      padding: 18px 0;
+    }
+    button {
+      border: 0;
+      border-radius: 12px;
+      background: #29486a;
+      color: #f3f6ff;
+      padding: 14px 12px;
+      font: inherit;
+      cursor: pointer;
+    }
+    #ratings {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 6px;
+    }
+    #ratings button {
+      font-size: 13px;
+      padding: 14px 3px;
+    }
+    #unknown {
+      background: #7a353e;
+    }
+    #fuzzy {
+      background: #73542d;
+    }
+    #known {
+      background: #23604e;
+    }
+    #easy {
+      background: #544071;
+    }
+    .interval {
+      display: block;
+      font-size: 11px;
+      margin-top: 6px;
+      opacity: 0.8;
+    }
+    details {
+      text-align: left;
+      background: #182235;
+      border-radius: 14px;
+      padding: 14px;
+      margin: 12px 0;
+    }
+    summary {
+      cursor: pointer;
+      color: #adbed7;
+    }
+    label {
+      display: block;
+      font-size: 14px;
+      color: #becae0;
+      margin-top: 12px;
+    }
+    input,
+    select {
+      display: block;
+      width: 100%;
+      background: #101b2c;
+      border: 1px solid #425069;
+      border-radius: 10px;
+      color: #f0f4fc;
+      padding: 12px;
+      font: inherit;
+      margin: 6px 0;
+    }
+    p {
+      font-size: 13px;
+      line-height: 1.6;
+      color: #aebdd2;
+    }
+    #cloudStatus {
+      font-size: 12px;
+      line-height: 1.5;
+      color: #a9c1dd;
+      margin: 12px 0;
+    }
+    #full {
+      white-space: pre-wrap;
+      overflow-wrap: anywhere;
+    }
+    .actions {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    @media (max-height: 500px) {
+      body {
+        padding: 10px;
+      }
+      #card {
+        padding: 10px 14px;
+        margin: 10px 0;
+      }
+      #meaning {
+        padding: 8px 0;
+        font-size: 16px;
+      }
+      #word {
+        margin: 4px 0;
+      }
+      #ratings button {
+        padding: 10px 2px;
+      }
+    }
+  </style>
+  <header>
+    <h1>WordPop</h1>
+    <span id="counts">准备词库…</span>
+  </header>
+  <section id="card">
+    <div id="word">WordPop</div>
+    <div id="phonetic"></div>
+    <div id="meaning"></div>
+    <button id="reveal" onclick="send('reveal')">回忆后，显示释义</button>
+    <div id="ratings" hidden>
+      <button id="unknown" onclick="rate('unknown')">
+        不认识<span class="interval"></span></button
+      ><button id="fuzzy" onclick="rate('fuzzy')">
+        模糊<span class="interval"></span></button
+      ><button id="known" onclick="rate('known')">
+        认识<span class="interval"></span></button
+      ><button id="easy" onclick="rate('easy')">
+        轻松<span class="interval"></span>
+      </button>
+    </div>
+    <details id="fullPanel" hidden>
+      <summary>完整释义与例句</summary>
+      <p id="full"></p>
+    </details>
+  </section>
+  <div class="actions">
+    <button onclick="send('view')">刷新</button
+    ><button onclick="WordPopAndroid.addWidget()">添加桌面小组件</button
+    ><button onclick="if(current.word)WordPopAndroid.speak(current.word.word)">
+      发音
+    </button>
+  </div>
+  <p id="planReason"></p>
+  <div id="cloudStatus"></div>
+  <details>
+    <summary>学习设置</summary>
+    <label
+      >词库<select id="list">
+        <option value="cet4">四级</option>
+        <option value="cet6">六级</option>
+        <option value="kaoyan">考研</option>
+      </select></label
+    ><label
+      >每日模式<select id="mode">
+        <option value="fixed">固定每日新词</option>
+        <option value="target">智能目标规划</option>
+      </select></label
+    ><label
+      >固定新词量<input
+        id="daily"
+        type="number"
+        min="1"
+        max="200"
+        value="20" /></label
+    ><label>目标完成日期<input id="target" type="date" /></label
+    ><label
+      ><input
+        id="balance"
+        type="checkbox"
+        style="display: inline; width: auto"
+        checked
+      />复习积压时减半或暂停推新</label
+    ><button onclick="saveConfig()">保存学习设置</button>
+  </details>
+  <details>
+    <summary>电脑与手机云同步</summary>
+    <p>
+      先在电脑端连接并初始化云记录，再用同一账户登录手机。应用打开时每 5
+      秒同步，操作小组件后也会同步；后台更新受系统休眠限制，可能延迟。
+    </p>
+    <label
+      >Supabase 项目网址<input
+        id="url"
+        type="url"
+        placeholder="https://项目编号.supabase.co"
+        autocomplete="off" /></label
+    ><label>项目公开 API 密钥<input id="key" autocomplete="off" /></label
+    ><label>邮箱<input id="email" type="email" autocomplete="username" /></label
+    ><label
+      >密码<input id="password" type="password" autocomplete="current-password"
+    /></label>
+    <div class="actions">
+      <button onclick="login(false)">登录</button
+      ><button onclick="login(true)">注册</button
+      ><button onclick="WordPopAndroid.sync()">立即同步</button>
+    </div>
+  </details>
+  <details>
+    <summary>三星折叠外屏</summary>
+    <p>
+      普通桌面支持标准 Android 小组件。三星外屏是否允许添加第三方小组件取决于
+      One UI 和外屏启动器，未做机型实测。若系统无法直接添加，可在三星 Good Lock
+      的 MultiStar 外屏应用启动器中允许
+      WordPop，再打开这个可缩放的背词界面；这与直接添加外屏小组件不同。
+    </p>
+  </details>
+  <script>
+    let current = {};
+    const el = (id) => document.getElementById(id);
+    function notice(text) {
+      el("cloudStatus").textContent = text || "";
+    }
+    function interval(ms) {
+      return ms < 3600000
+        ? Math.ceil(ms / 60000) + "分钟后"
+        : ms < 86400000
+          ? Math.round(ms / 3600000) + "小时后"
+          : Math.round(ms / 86400000) + "天后";
+    }
+    function render(view) {
+      if (current.nonce !== view.nonce) el("fullPanel").open = false;
+      current = view;
+      el("planReason").textContent = view.quota.reason;
+      el("counts").textContent =
+        "待复习 " + view.dueCount + " · 待新学 " + view.newRemaining;
+      el("word").textContent = view.word?.word || "暂时完成";
+      el("phonetic").textContent = view.word?.phonetic || "";
+      el("meaning").textContent = view.revealed
+        ? view.word.translationPreview
+        : view.word
+          ? "先独立回忆它的含义"
+          : "暂无到期单词，可稍后刷新";
+      el("reveal").hidden = !view.word || view.revealed;
+      el("ratings").hidden = !view.word || !view.revealed;
+      el("fullPanel").hidden = !view.word || !view.revealed;
+      el("full").textContent = view.word
+        ? view.word.translation + "\n\n" + (view.word.example || "")
+        : "";
+      for (const action of ["unknown", "fuzzy", "known", "easy"])
+        el(action).querySelector(".interval").textContent = view.word
+          ? interval(view.intervals[action])
+          : "";
+      const c = view.state.config;
+      if (!document.activeElement.closest("details")) {
+        el("list").value = c.selectedWordlists[0];
+        el("mode").value = c.dailyNewWordsMode;
+        el("daily").value = c.dailyNewWords;
+        el("target").value = c.targetDate || "";
+        el("balance").checked = c.autoBalanceLoad !== false;
+      }
+    }
+    function send(type, extra = {}) {
+      WordPopAndroid.command(
+        JSON.stringify({ type, nonce: current.nonce, ...extra }),
+      );
+    }
+    function rate(action) {
+      send("review", { action });
+    }
+    function saveConfig() {
+      if (el("mode").value === "target" && !el("target").value) {
+        notice("请先选择目标日期");
+        return;
+      }
+      send("config", {
+        config: {
+          selectedWordlists: [el("list").value],
+          dailyNewWordsMode: el("mode").value,
+          dailyNewWords: Math.max(
+            1,
+            Math.min(200, Number(el("daily").value) || 20),
+          ),
+          targetDate: el("target").value || null,
+          autoBalanceLoad: el("balance").checked,
+        },
+      });
+      notice("学习设置已保存");
+    }
+    function login(signup) {
+      WordPopAndroid.login(
+        JSON.stringify({
+          url: el("url").value,
+          key: el("key").value,
+          email: el("email").value,
+          password: el("password").value,
+        }),
+        signup,
+      );
+      el("password").value = "";
+      notice("正在连接…");
+    }
+  </script>
+</html>

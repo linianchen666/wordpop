@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="zh-CN">
+  <meta charset="utf-8" /><meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+  /><title>WordPop 云同步</title
+  ><link rel="stylesheet" href="../shared/common.css" /><style>
+    body {
+      padding: 24px;
+      background: var(--color-bg);
+      overflow: auto;
+    }
+    label {
+      display: block;
+      margin: 12px 0;
+    }
+    input {
+      display: block;
+      width: 100%;
+      padding: 10px;
+      margin-top: 5px;
+    }
+    button {
+      margin: 6px 6px 6px 0;
+    }
+    p {
+      line-height: 1.6;
+      font-size: 13px;
+    }
+    #status {
+      white-space: pre-wrap;
+    }
+    h1 {
+      font-size: 23px;
+    }
+  </style>
+  <h1>电脑与手机云同步</h1>
+  <p>
+    先在 Supabase
+    项目执行建表脚本。电脑端第一次连接会上传当前记录作为初始进度，然后在手机上登录同一账户。两端使用期间定期同步；手机待机时更新可能延迟。
+  </p>
+  <label
+    >Supabase 项目网址<input
+      id="url"
+      type="url"
+      placeholder="https://项目编号.supabase.co" /></label
+  ><label>项目公开 API 密钥<input id="key" autocomplete="off" /></label
+  ><label>邮箱<input id="email" type="email" autocomplete="username" /></label
+  ><label
+    >密码<input
+      id="password"
+      type="password"
+      autocomplete="current-password" /></label
+  ><button id="login" class="btn btn-primary">登录并同步</button
+  ><button id="signup" class="btn">注册</button
+  ><button id="sync" class="btn">立即同步</button
+  ><button id="logout" class="btn">退出云账户</button>
+  <p id="status"></p>
+  <script src="cloud.js"></script>
+</html>

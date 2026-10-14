@@ -21,6 +21,15 @@ let registered = false;
 
 function registerIpcHandlers() {
   if (registered) return;
+  ipcMain.handle('cloud:status', () => require('./cloud-sync').getStatus());
+  ipcMain.handle('cloud:login', (_event, input) => require('./cloud-sync').login(input));
+  ipcMain.handle('cloud:sync', () => require('./cloud-sync').sync());
+  ipcMain.handle('cloud:logout', () => require('./cloud-sync').logout());
+  ipcMain.handle('cloud:open', () => {
+    const window = new BrowserWindow({ width: 560, height: 680, title: 'WordPop 云同步',
+      webPreferences: { preload: require('path').join(__dirname, '../preload/preload.js'), contextIsolation: true, nodeIntegration: false } });
+    return window.loadFile(require('path').join(__dirname, '../renderer/cloud/index.html'));
+  });
   scheduler.on('stats-updated', () => {
     ambientPill.refresh();
     for (const win of BrowserWindow.getAllWindows()) {
