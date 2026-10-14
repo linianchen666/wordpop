@@ -15,6 +15,7 @@ import org.json.JSONObject;
 final class CloudClient {
   private static final ExecutorService network = Executors.newSingleThreadExecutor();
   private static final AtomicBoolean queued = new AtomicBoolean();
+  private static final AtomicBoolean authenticating = new AtomicBoolean();
   static volatile String status = "尚未连接云服务";
 
   private static String request(JSONObject session, String route, String method, String body)
@@ -63,6 +64,13 @@ final class CloudClient {
   }
 
   static void login(Context context, JSONObject input, boolean signup) {
+    String requestId = input.optString("requestId");
+    if (!authenticating.compareAndSet(false, true)) {
+      MainActivity.notifyAuth(requestId, "error", "正在处理登录，请稍候");
+      return;
+    }
+    status = signup ? "正在注册，请稍候…" : "正在验证账号和密码…";
+    MainActivity.notifyStatus();
     network.execute(
         () -> {
           try {
@@ -89,6 +97,7 @@ final class CloudClient {
                         credentials.toString()));
             if (!result.has("access_token")) {
               status = "注册请求已提交，请查收确认邮件，点击后回软件登录。若跳到 localhost 并打不开，可先尝试登录；已有账户请直接登录。";
+              MainActivity.notifyAuth(requestId, "confirmation", status);
               return;
             }
             session
@@ -99,11 +108,20 @@ final class CloudClient {
                     "expires_at",
                     System.currentTimeMillis() / 1000 + result.optLong("expires_in", 3600));
             SecretPrefs.save(context, session.toString());
-            status = "已登录，正在同步";
-            syncBlocking(context);
+            status = "登录成功，密码验证通过；正在同步学习记录…";
+            MainActivity.notifyAuth(requestId, "authenticated", status);
+            MainActivity.notifyStatus();
+            try {
+              syncBlocking(context);
+            } catch (Exception syncError) {
+              status = "已登录，但同步失败：" + syncError.getMessage();
+            }
+            MainActivity.notifyAuth(requestId, "complete", status);
           } catch (Exception error) {
             status = error.getMessage();
+            MainActivity.notifyAuth(requestId, "error", status);
           } finally {
+            authenticating.set(false);
             MainActivity.notifyStatus();
           }
         });
@@ -161,6 +179,7 @@ final class CloudClient {
   }
 
   static void requestSync(Context context) {
+    if (authenticating.get()) return;
     if (!queued.compareAndSet(false, true)) return;
     network.execute(
         () -> {

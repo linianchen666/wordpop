@@ -25,6 +25,8 @@ final class StudyEngine {
   private JavaScriptSandbox sandbox;
   private JavaScriptIsolate isolate;
   private long revision;
+  private JSONObject cachedState;
+  private boolean sessionReady;
   private final Handler main = new Handler(Looper.getMainLooper());
 
   interface Callback {
@@ -62,20 +64,58 @@ final class StudyEngine {
 
   JSONObject run(JSONObject command) throws Exception {
     init();
-    JSONObject state = store.load();
+    if (!sessionReady) {
+      cachedState = store.load();
+      isolate
+          .evaluateJavaScriptAsync(
+              "globalThis.learningSession=WordPopCore.createSession("
+                  + (cachedState == null ? "null" : cachedState.toString())
+                  + ",vocabulary);'ready'")
+          .get(6, TimeUnit.SECONDS);
+      sessionReady = true;
+    }
     String code =
-        "JSON.stringify(WordPopCore.dispatch("
-            + (state == null ? "null" : state.toString())
-            + ",vocabulary,"
+        "JSON.stringify(learningSession.render("
             + command.toString()
             + ","
             + System.currentTimeMillis()
+            + ","
+            + (cachedState == null)
             + "))";
-    JSONObject view =
-        new JSONObject(isolate.evaluateJavaScriptAsync(code).get(6, TimeUnit.SECONDS));
-    store.save(view.getJSONObject("state"));
-    view.put("revision", ++revision);
-    return view;
+    try {
+      JSONObject view =
+          new JSONObject(isolate.evaluateJavaScriptAsync(code).get(6, TimeUnit.SECONDS));
+      JSONObject full = view.optJSONObject("state");
+      String previous = cachedState == null ? "" : String.valueOf(cachedState.opt("current"));
+      JSONObject patch = view.optJSONObject("reviewPatch");
+      if (full != null) cachedState = full;
+      else {
+        if (patch != null) {
+          cachedState.getJSONArray("events").put(patch.getJSONObject("event"));
+          cachedState
+              .getJSONObject("progress")
+              .put(patch.getString("word"), patch.getJSONObject("progress"));
+        }
+        cachedState.put("current", view.opt("current"));
+      }
+      if (full != null
+          || patch != null
+          || !previous.equals(String.valueOf(cachedState.opt("current")))) store.save(cachedState);
+      view.put("state", cachedState);
+      view.remove("current");
+      view.remove("reviewPatch");
+      view.put("revision", ++revision);
+      return view;
+    } catch (Exception e) {
+      invalidate();
+      throw e;
+    }
+  }
+
+  // Call on the executor after an explicit database reset; normal writes belong to this engine.
+  void invalidate() {
+    sessionReady = false;
+    cachedState = null;
   }
 
   void submit(JSONObject command, Callback callback) {

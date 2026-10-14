@@ -45,7 +45,7 @@ function fold(seeds, events) {
   }
   return { progress, logs };
 }
-function view(state, vocab, now = Date.now()) {
+function view(state, vocab, now = Date.now(), logs) {
   const selected = state.config.selectedWordlists || ["cet4"];
   const words = vocab.filter((w) =>
     w.wordlists.some((l) => selected.includes(l)),
@@ -70,7 +70,7 @@ function view(state, vocab, now = Date.now()) {
   });
   const newWords = words.filter((w) => !state.progress[w.word]);
   const today = localDateKey(now);
-  const logs = fold(state.seeds, state.events).logs;
+  logs = logs || fold(state.seeds, state.events).logs;
   const learned =
     (state.dailySeeds.find((d) => d.date === today)?.words_learned || 0) +
     logs.filter((e) => e.wasNew && localDateKey(e.reviewed_at) === today)
@@ -123,8 +123,9 @@ function view(state, vocab, now = Date.now()) {
     intervals,
   };
 }
-function dispatch(state, vocab, command, now = Date.now()) {
+function dispatch(state, vocab, command, now = Date.now(), runtime) {
   state = state || empty();
+  let logs = runtime?.logs;
   if (command.type === "config") {
     state.config = { ...state.config, ...command.config };
     state.current = null;
@@ -136,13 +137,38 @@ function dispatch(state, vocab, command, now = Date.now()) {
     state.current?.nonce === command.nonce &&
     state.current.revealed
   ) {
-    state.events.push({
+    const event = {
       id: command.id,
       word: state.current.word,
       action: command.action,
       reviewed_at: now,
-    });
-    state.progress = fold(state.seeds, state.events).progress;
+    };
+    const last = runtime?.last;
+    const ordered =
+      !last ||
+      now > last.reviewed_at ||
+      (now === last.reviewed_at &&
+        String(event.id).localeCompare(String(last.id)) > 0);
+    const incremental = runtime && ordered && !runtime.ids.has(event.id);
+    const before = state.progress[event.word];
+    state.events.push(event);
+    if (incremental) {
+      const next = calculateReview(
+        before,
+        event.action,
+        Math.max(now, before?.last_review_at || 0),
+      );
+      state.progress[event.word] = {
+        ...next,
+        correct_count: (before?.correct_count || 0) + next.correct_count,
+        wrong_count: (before?.wrong_count || 0) + next.wrong_count,
+      };
+      logs.push({ ...event, ...next, wasNew: !before });
+    } else {
+      const folded = fold(state.seeds, state.events);
+      state.progress = folded.progress;
+      logs = folded.logs;
+    }
     state.current = null;
   }
   if (command.type === "sync") {
@@ -157,6 +183,15 @@ function dispatch(state, vocab, command, now = Date.now()) {
     state.cloudSyncedIds = Object.fromEntries(
       command.events.map((event) => [event.id, true]),
     );
+    const identicalEvent = (a, b) =>
+      a &&
+      ["id", "word", "action", "reviewed_at"].every((k) => a[k] === b[k]) &&
+      (a.target_id || null) === (b.target_id || null);
+    const priorEvents = runtime && new Map(state.events.map((e) => [e.id, e]));
+    const unchanged =
+      runtime &&
+      JSON.stringify(state.seeds) === JSON.stringify(command.seeds) &&
+      command.events.every((e) => identicalEvent(priorEvents.get(e.id), e));
     state.seeds = command.seeds;
     state.dailySeeds = command.dailySeeds || [];
     state.events = [
@@ -164,8 +199,80 @@ function dispatch(state, vocab, command, now = Date.now()) {
         [...state.events, ...command.events].map((e) => [e.id, e]),
       ).values(),
     ];
-    state.progress = fold(state.seeds, state.events).progress;
+    if (!unchanged) {
+      const folded = fold(state.seeds, state.events);
+      state.progress = folded.progress;
+      logs = folded.logs;
+    }
   }
-  return view(state, vocab, now);
+  if (runtime) {
+    runtime.logs = logs;
+    runtime.ids = new Set(state.events.map((e) => e.id));
+    runtime.last = state.events.reduce(
+      (last, e) =>
+        !last ||
+        e.reviewed_at > last.reviewed_at ||
+        (e.reviewed_at === last.reviewed_at &&
+          String(e.id).localeCompare(String(last.id)) > 0)
+          ? e
+          : last,
+      null,
+    );
+  }
+  return view(state, vocab, now, logs);
 }
-module.exports = { empty, fold, dispatch, calculateReview };
+function createSession(initialState, vocab) {
+  let state = initialState || empty();
+  const runtime = {
+    logs: fold(state.seeds, state.events).logs,
+    ids: new Set(state.events.map((e) => e.id)),
+    last: null,
+  };
+  runtime.last = state.events.reduce(
+    (last, e) =>
+      !last ||
+      e.reviewed_at > last.reviewed_at ||
+      (e.reviewed_at === last.reviewed_at &&
+        String(e.id).localeCompare(String(last.id)) > 0)
+        ? e
+        : last,
+    null,
+  );
+  return {
+    dispatch(command, now = Date.now()) {
+      const result = dispatch(state, vocab, command, now, runtime);
+      state = result.state;
+      return result;
+    },
+    render(command, now, fullState) {
+      const prior = state.current;
+      const last = runtime.last;
+      const canPatch =
+        command.type === "review" &&
+        prior?.nonce === command.nonce &&
+        prior.revealed &&
+        !runtime.ids.has(command.id) &&
+        (!last ||
+          now > last.reviewed_at ||
+          (now === last.reviewed_at &&
+            String(command.id).localeCompare(String(last.id)) > 0));
+      const result = this.dispatch(command, now);
+      const { state: memory, ...display } = result;
+      display.current = memory.current;
+      if (
+        fullState ||
+        ["sync", "config"].includes(command.type) ||
+        (command.type === "review" && !canPatch)
+      )
+        display.state = memory;
+      else if (canPatch)
+        display.reviewPatch = {
+          word: prior.word,
+          progress: memory.progress[prior.word],
+          event: memory.events[memory.events.length - 1],
+        };
+      return display;
+    },
+  };
+}
+module.exports = { empty, fold, dispatch, calculateReview, createSession };

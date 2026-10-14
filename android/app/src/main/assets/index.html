@@ -318,6 +318,9 @@
         max-height: 15px;
       }
     }
+    #advancedCloud:not([open]) > label {
+      display: none;
+    }
   </style>
   <header>
     <h1>WordPop</h1>
@@ -418,19 +421,23 @@
         先在电脑端连接并初始化云记录，再用同一账户登录手机。应用打开时每 5
         秒同步，操作小组件后也会同步；后台更新受系统休眠限制，可能延迟。
       </p>
+      <details id="advancedCloud">
+        <summary>高级连接设置</summary>
+        <label
+          >Supabase 项目网址<input
+            id="url"
+            type="url"
+            value="https://iuledvriatwnbyavqjsw.supabase.co"
+            placeholder="https://项目编号.supabase.co"
+            autocomplete="off" /></label
+        ><label
+          >项目公开 API 密钥<input
+            id="key"
+            autocomplete="off"
+            value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ"
+        /></label>
+      </details>
       <label
-        >Supabase 项目网址<input
-          id="url"
-          type="url"
-          value="https://iuledvriatwnbyavqjsw.supabase.co"
-          placeholder="https://项目编号.supabase.co"
-          autocomplete="off" /></label
-      ><label
-        >项目公开 API 密钥<input
-          id="key"
-          autocomplete="off"
-          value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ" /></label
-      ><label
         >邮箱<input id="email" type="email" autocomplete="username" /></label
       ><label
         >密码<input
@@ -438,9 +445,11 @@
           type="password"
           autocomplete="current-password"
       /></label>
+      <button id="showPassword" onclick="togglePassword()">显示密码</button>
+      <p id="authStatus" role="status" aria-live="polite"></p>
       <div class="actions">
-        <button onclick="login(false)">登录</button
-        ><button onclick="login(true)">注册</button
+        <button id="loginButton" onclick="login(false)">登录</button
+        ><button id="signupButton" onclick="login(true)">注册</button
         ><button onclick="resendConfirmation()">重发确认邮件</button
         ><button onclick="WordPopAndroid.sync()">立即同步</button>
       </div>
@@ -454,15 +463,6 @@
           https://github.com/linianchen666/wordpop），保存后重发确认邮件，点击最新链接，再回软件登录。
         </p>
       </details>
-    </details>
-    <details>
-      <summary>三星折叠外屏</summary>
-      <p>
-        普通桌面支持标准 Android 小组件。三星外屏是否允许添加第三方小组件取决于
-        One UI 和外屏启动器，未做机型实测。若系统无法直接添加，可在三星 Good
-        Lock 的 MultiStar 外屏应用启动器中允许
-        WordPop，再打开这个可缩放的背词界面；这与直接添加外屏小组件不同。
-      </p>
     </details>
   </dialog>
   <script>
@@ -568,6 +568,8 @@
       if (type === "reveal") {
         pendingReveal = { id, nonce: current.nonce, before: current };
         render({ ...current, revealed: true });
+        if (WordPopAndroid.speakOnReveal)
+          WordPopAndroid.speakOnReveal(current.word.word);
       }
       try {
         WordPopAndroid.command(JSON.stringify(command));
@@ -602,18 +604,59 @@
       });
       notice("学习设置已保存");
     }
+    let authPending = null;
+    function togglePassword() {
+      const show = el("password").type === "password";
+      el("password").type = show ? "text" : "password";
+      el("showPassword").textContent = show ? "隐藏密码" : "显示密码";
+    }
+    function authResult(result) {
+      if (!authPending || result.id !== authPending) return;
+      el("authStatus").textContent =
+        result.phase === "complete"
+          ? "登录成功 · " + result.message
+          : result.message;
+      notice(result.message);
+      if (result.phase === "authenticated") {
+        el("password").value = "";
+        el("password").type = "password";
+        el("showPassword").textContent = "显示密码";
+        el("loginButton").textContent = "已登录，正在同步…";
+        return;
+      }
+      authPending = null;
+      el("loginButton").disabled = el("signupButton").disabled = false;
+      el("email").readOnly = el("password").readOnly = false;
+      el("loginButton").textContent = "登录";
+    }
     function login(signup) {
-      WordPopAndroid.login(
-        JSON.stringify({
-          url: el("url").value,
-          key: el("key").value,
-          email: el("email").value,
-          password: el("password").value,
-        }),
-        signup,
-      );
-      el("password").value = "";
-      notice("正在连接…");
+      if (authPending) return;
+      if (!el("email").value.trim() || !el("password").value) {
+        el("authStatus").textContent = "请填写邮箱和密码";
+        return;
+      }
+      const id = "auth-" + Date.now() + "-" + ++requestSequence;
+      authPending = id;
+      el("loginButton").disabled = el("signupButton").disabled = true;
+      el("email").readOnly = el("password").readOnly = true;
+      el("loginButton").textContent = signup ? "正在注册…" : "正在登录…";
+      el("authStatus").textContent = signup
+        ? "正在注册，请稍候…"
+        : "正在验证账号和密码，请稍候…";
+      try {
+        WordPopAndroid.login(
+          JSON.stringify({
+            requestId: id,
+            url: el("url").value,
+            key: el("key").value,
+            email: el("email").value,
+            password: el("password").value,
+          }),
+          signup,
+        );
+      } catch (_) {
+        authResult({ id, phase: "error", message: "连接失败，请重试" });
+      }
     }
     function resendConfirmation() {
       WordPopAndroid.resendConfirmation(

@@ -12,6 +12,61 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 public class LearningTest {
   @Test
+  public void sessionChangesPersistAndSurviveReload() throws Exception {
+    StudyEngine engine =
+        StudyEngine.get(InstrumentationRegistry.getInstrumentation().getTargetContext());
+    engine
+        .executor
+        .submit(
+            () -> {
+              engine.store.getWritableDatabase().execSQL("DELETE FROM state");
+              engine.invalidate();
+              return null;
+            })
+        .get();
+    JSONObject initial =
+        engine
+            .executor
+            .submit(() -> engine.run(new JSONObject().put("type", "view")))
+            .get(25, TimeUnit.SECONDS);
+    String nonce = initial.getString("nonce");
+    engine
+        .executor
+        .submit(() -> engine.run(new JSONObject().put("type", "reveal").put("nonce", nonce)))
+        .get(10, TimeUnit.SECONDS);
+    assertTrue(engine.store.load().getJSONObject("current").getBoolean("revealed"));
+    JSONObject graded =
+        engine
+            .executor
+            .submit(
+                () ->
+                    engine.run(
+                        new JSONObject()
+                            .put("type", "review")
+                            .put("nonce", nonce)
+                            .put("id", "persisted-review")
+                            .put("action", "known")))
+            .get(10, TimeUnit.SECONDS);
+    String progress = graded.getJSONObject("state").getJSONObject("progress").toString();
+    engine
+        .executor
+        .submit(
+            () -> {
+              engine.invalidate();
+              return null;
+            })
+        .get();
+    JSONObject reloaded =
+        engine
+            .executor
+            .submit(() -> engine.run(new JSONObject().put("type", "view")))
+            .get(10, TimeUnit.SECONDS);
+    assertEquals(progress, reloaded.getJSONObject("state").getJSONObject("progress").toString());
+    assertEquals(1, reloaded.getJSONObject("state").getJSONArray("events").length());
+    assertEquals(graded.getString("nonce"), reloaded.getString("nonce"));
+  }
+
+  @Test
   public void appReceivesDisplayDataWithoutFullLearningHistory() throws Exception {
     JSONObject state =
         new JSONObject()
@@ -47,6 +102,7 @@ public class LearningTest {
         .submit(
             () -> {
               engine.store.getWritableDatabase().execSQL("DELETE FROM state");
+              engine.invalidate();
               return null;
             })
         .get();

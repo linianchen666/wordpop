@@ -27,7 +27,7 @@ public class WidgetTest {
         "state",
         new JSONObject()
             .put("events", new org.json.JSONArray().put(new JSONObject().put("id", "review-id"))));
-    assertTrue(WordWidget.shouldAutoSpeak("review", "old-card", "review-id", view));
+    assertFalse(WordWidget.shouldAutoSpeak("review", "old-card", "review-id", view));
     assertFalse(WordWidget.shouldAutoSpeak("review", "stale-card", "missing-event", view));
     assertFalse(WordWidget.shouldAutoSpeak("review", null, "review-id", view));
     assertTrue(WordWidget.shouldAutoSpeak("reveal", "next-card", "review-id", view));
@@ -164,6 +164,7 @@ public class WidgetTest {
         .submit(
             () -> {
               engine.store.getWritableDatabase().execSQL("DELETE FROM state");
+              engine.invalidate();
               return null;
             })
         .get();

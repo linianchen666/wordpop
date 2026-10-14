@@ -150,6 +150,24 @@ public class MainActivity extends Activity {
                   "notice(" + JSONObject.quote(CloudClient.status) + ")", null));
   }
 
+  static void notifyAuth(String id, String phase, String message) {
+    MainActivity activity = active.get();
+    if (activity != null)
+      activity.runOnUiThread(
+          () -> {
+            if (activity.web != null)
+              activity.web.evaluateJavascript(
+                  "authResult({id:"
+                      + JSONObject.quote(id)
+                      + ",phase:"
+                      + JSONObject.quote(phase)
+                      + ",message:"
+                      + JSONObject.quote(message)
+                      + "})",
+                  null);
+          });
+  }
+
   final class Bridge {
     @JavascriptInterface
     public void command(String json) {
@@ -190,6 +208,11 @@ public class MainActivity extends Activity {
             if (voiceReady) tts.speak(word, TextToSpeech.QUEUE_FLUSH, null, "wordpop");
             else notice("发音尚未就绪，请在手机文字转语音设置中检查英语语音");
           });
+    }
+
+    @JavascriptInterface
+    public void speakOnReveal(String word) {
+      if (WidgetAppearance.autoSpeak(MainActivity.this, -1)) speak(word);
     }
 
     @JavascriptInterface

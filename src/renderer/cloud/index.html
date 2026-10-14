@@ -33,29 +33,37 @@
     h1 {
       font-size: 23px;
     }
+    #advancedCloud:not([open]) > label {
+      display: none;
+    }
   </style>
   <h1>电脑与手机云同步</h1>
   <p>
     先在 Supabase
     项目执行建表脚本。电脑端第一次连接会上传当前记录作为初始进度，然后在手机上登录同一账户。两端使用期间定期同步；手机待机时更新可能延迟。
   </p>
-  <label
-    >Supabase 项目网址<input
-      id="url"
-      type="url"
-      value="https://iuledvriatwnbyavqjsw.supabase.co"
-      placeholder="https://项目编号.supabase.co" /></label
-  ><label
-    >项目公开 API 密钥<input
-      id="key"
-      autocomplete="off"
-      value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ" /></label
-  ><label>邮箱<input id="email" type="email" autocomplete="username" /></label
+  <details id="advancedCloud">
+    <summary>高级连接设置</summary>
+    <label
+      >Supabase 项目网址<input
+        id="url"
+        type="url"
+        value="https://iuledvriatwnbyavqjsw.supabase.co"
+        placeholder="https://项目编号.supabase.co" /></label
+    ><label
+      >项目公开 API 密钥<input
+        id="key"
+        autocomplete="off"
+        value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ"
+    /></label>
+  </details>
+  <label>邮箱<input id="email" type="email" autocomplete="username" /></label
   ><label
     >密码<input
       id="password"
       type="password"
       autocomplete="current-password" /></label
+  ><button id="showPassword" class="btn">显示密码</button
   ><button id="login" class="btn btn-primary">登录并同步</button
   ><button id="signup" class="btn">注册</button
   ><button id="resend" class="btn">重发确认邮件</button

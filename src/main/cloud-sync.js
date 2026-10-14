@@ -295,6 +295,7 @@ async function login(input) {
   if (busy || authenticating) return { message: "正在连接，请稍后再登录" };
   const previous = session;
   authenticating = true;
+  status = "正在验证账号和密码，请稍候…";
   try {
     const credentials = authCredentials(input);
     const email = authEmail(input);
@@ -310,10 +311,9 @@ async function login(input) {
     );
     if (!response.access_token) {
       session = previous;
-      return {
-        message:
-          "注册请求已提交，请查收确认邮件（包括垃圾邮件），点击链接后回到软件登录。若最后跳到 localhost 并打不开，可先尝试登录；已有账户请直接登录。",
-      };
+      status =
+        "注册请求已提交，请查收确认邮件（包括垃圾邮件），点击链接后回到软件登录。若最后跳到 localhost 并打不开，可先尝试登录；已有账户请直接登录。";
+      return { message: status, authenticated: false };
     }
     if (previous?.user?.id && previous.user.id !== response.user.id)
       throw new Error("请先导出当前记录并使用独立本地配置，再切换学习账户");
@@ -326,9 +326,18 @@ async function login(input) {
     };
     persist();
     authenticating = false;
-    return await sync();
+    status = "登录成功，密码验证通过；正在同步学习记录…";
+    const result = await sync();
+    return {
+      ...result,
+      authenticated: true,
+      message: result.error
+        ? "已登录，但同步失败：" + result.message
+        : result.message,
+    };
   } catch (error) {
     session = previous;
+    status = error.message;
     return { message: error.message, error: true };
   } finally {
     authenticating = false;

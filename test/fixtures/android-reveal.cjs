@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require("electron");
+const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 const os = require("os");
@@ -13,7 +13,11 @@ async function checkFlow() {
   const el = (id) => document.getElementById(id);
   const visible = (id) => el(id).getBoundingClientRect().height > 0;
   window.commands = [];
-  window.WordPopAndroid = { command: (raw) => commands.push(JSON.parse(raw)) };
+  window.speeches = [];
+  window.WordPopAndroid = {
+    command: (raw) => commands.push(JSON.parse(raw)),
+    speakOnReveal: (word) => speeches.push(word),
+  };
   const v = {
     revision: 1,
     nonce: "first",
@@ -37,7 +41,12 @@ async function checkFlow() {
     },
   };
   render(v);
+  check(speeches.length === 0, "word appearance must stay silent");
   el("reveal").click();
+  check(
+    speeches.length === 1 && speeches[0] === "test",
+    "reveal must speak current word",
+  );
   check(visible("ratings"), "buttons wait for native reply");
   check(
     el("meaning").textContent === "n. 测试",
@@ -69,6 +78,7 @@ async function checkFlow() {
     word: { ...v.word, word: "next" },
   };
   receive(next, null, commands[1].clientRequestId);
+  check(speeches.length === 1, "review switching words must not auto speak");
   check(
     el("word").textContent === "next" && !visible("ratings"),
     "review did not show next recall card",
@@ -82,12 +92,140 @@ async function checkFlow() {
     el("cloudStatus").textContent === "写入失败",
     "native error was hidden",
   );
+  el("settings").showModal();
+  const cloud = [...document.querySelectorAll("#settings > details")].find(
+    (d) => d.querySelector("summary")?.textContent.includes("云同步"),
+  );
+  cloud.open = true;
+  check(
+    !visible("url") && !visible("key"),
+    "project configuration should start hidden",
+  );
+  check(
+    !document.body.textContent.includes("三星折叠外屏"),
+    "outer-screen help should not be a setting",
+  );
+  const logins = [];
+  WordPopAndroid.login = (raw, signup) =>
+    logins.push({ ...JSON.parse(raw), signup });
+  el("email").value = "user@example.com";
+  el("password").value = "example-password";
+  el("loginButton").click();
+  login(false);
+  check(logins.length === 1, "duplicate login was submitted");
+  check(
+    el("password").value === "example-password",
+    "password disappeared before validation",
+  );
+  check(
+    el("loginButton").disabled && el("authStatus").textContent.includes("验证"),
+    "login lacks busy feedback",
+  );
+  authResult({
+    id: logins[0].requestId,
+    phase: "error",
+    message: "邮箱或密码不正确",
+  });
+  check(
+    !el("loginButton").disabled && el("password").value === "example-password",
+    "error should retain password for correction",
+  );
+  el("showPassword").click();
+  check(el("password").type === "text", "password visibility toggle failed");
+  el("loginButton").click();
+  authResult({
+    id: logins[1].requestId,
+    phase: "authenticated",
+    message: "登录成功，正在同步",
+  });
+  check(
+    el("password").value === "" &&
+      el("authStatus").textContent.includes("登录成功"),
+    "success must be shown before sync completion",
+  );
+  check(
+    el("loginButton").disabled,
+    "login must stay locked during initial sync",
+  );
+  authResult({ id: logins[1].requestId, phase: "complete", message: "已同步" });
+  check(!el("loginButton").disabled, "sync completion must release controls");
+  el("settings").close();
   WordPopAndroid.command = () => {
     throw Error("bridge failed");
   };
   el("reveal").click();
   check(!visible("ratings"), "bridge error left fake revealed state");
 }
+async function checkDesktop() {
+  let resolveLogin;
+  const logins = [];
+  ipcMain.handle("cloud:status", () => ({ message: "未连接" }));
+  ipcMain.handle("cloud:login", (_event, input) => {
+    logins.push(input);
+    return new Promise((resolve) => {
+      resolveLogin = resolve;
+    });
+  });
+  const win = new BrowserWindow({
+    show: false,
+    width: 560,
+    height: 680,
+    webPreferences: {
+      preload: path.join(__dirname, "../../src/preload/preload.js"),
+      nodeIntegration: false,
+      contextIsolation: true,
+      backgroundThrottling: false,
+    },
+  });
+  async function until(fn) {
+    const end = Date.now() + 5000;
+    while (Date.now() < end) {
+      if (await fn()) return;
+      await new Promise((r) => setTimeout(r, 20));
+    }
+    throw Error("Desktop auth check timed out");
+  }
+  try {
+    await win.loadFile(
+      path.join(__dirname, "../../src/renderer/cloud/index.html"),
+    );
+    await until(() =>
+      win.webContents.executeJavaScript(
+        'document.getElementById("status").textContent === "未连接"',
+      ),
+    );
+    await win.webContents.executeJavaScript(`
+      if(document.getElementById("url").getBoundingClientRect().height)throw Error("desktop project should be hidden");
+      document.getElementById("email").value="user@example.com";
+      document.getElementById("password").value="example-password";
+      document.getElementById("login").click();document.getElementById("signup").click();
+      if(document.getElementById("password").value!=="example-password")throw Error("desktop cleared password too early");
+      if(!document.getElementById("login").disabled || !document.getElementById("signup").disabled)throw Error("desktop permits duplicate auth");
+    `);
+    await until(() => logins.length === 1);
+    resolveLogin({ error: true, message: "密码不正确" });
+    await until(() =>
+      win.webContents.executeJavaScript(
+        '!document.getElementById("login").disabled',
+      ),
+    );
+    await win.webContents.executeJavaScript(
+      `if(document.getElementById("password").value!=="example-password")throw Error("desktop should retain rejected password");document.getElementById("login").click()`,
+    );
+    await until(() => logins.length === 2);
+    resolveLogin({ authenticated: true, message: "已同步" });
+    await until(() =>
+      win.webContents.executeJavaScript(
+        'document.getElementById("password").value === ""',
+      ),
+    );
+  } finally {
+    win.destroy();
+    ipcMain.removeHandler("cloud:status");
+    ipcMain.removeHandler("cloud:login");
+  }
+}
+
 app
   .whenReady()
   .then(async () => {
@@ -115,6 +253,7 @@ app
       "Android reveal Chromium checks passed: instant buttons, 500ms native delay, queued polls, duplicate taps, ordered replies and failure rollback.",
     );
     win.destroy();
+    await checkDesktop();
     fs.rmSync(profile, { recursive: true, force: true });
     app.exit(0);
   })

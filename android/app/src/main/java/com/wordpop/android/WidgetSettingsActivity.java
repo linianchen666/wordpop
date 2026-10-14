@@ -57,7 +57,7 @@ public class WidgetSettingsActivity extends Activity {
     autoSpeak.setChecked(WidgetAppearance.autoSpeak(this, id));
     panel.addView(autoSpeak);
     TextView explanation = new TextView(this);
-    explanation.setText("默认开启：显示释义或评分后切换下一词时播放，同一张卡片不重复自动播放。桌面定时刷新、缩放和云同步保持静音。");
+    explanation.setText("默认开启：点击显示释义时播放，同一张卡片不重复自动播放。桌面定时刷新、缩放和云同步保持静音。");
     explanation.setTextColor(Color.LTGRAY);
     panel.addView(explanation);
     Button save = new Button(this);

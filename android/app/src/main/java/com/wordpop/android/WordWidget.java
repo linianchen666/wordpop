@@ -60,17 +60,6 @@ public class WordWidget extends AppWidgetProvider {
         || previousNonce.isEmpty()
         || view.optJSONObject("word") == null) return false;
     if ("reveal".equals(action)) return nonce.equals(previousNonce) && view.optBoolean("revealed");
-    if (!"review".equals(action)
-        || nonce.equals(previousNonce)
-        || reviewId == null
-        || reviewId.isEmpty()) return false;
-    JSONObject state = view.optJSONObject("state");
-    org.json.JSONArray events = state == null ? null : state.optJSONArray("events");
-    if (events != null)
-      for (int i = 0; i < events.length(); i++) {
-        JSONObject event = events.optJSONObject(i);
-        if (event != null && reviewId.equals(event.optString("id"))) return true;
-      }
     return false;
   }
 
