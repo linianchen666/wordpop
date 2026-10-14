@@ -43,8 +43,13 @@
     >Supabase 项目网址<input
       id="url"
       type="url"
+      value="https://iuledvriatwnbyavqjsw.supabase.co"
       placeholder="https://项目编号.supabase.co" /></label
-  ><label>项目公开 API 密钥<input id="key" autocomplete="off" /></label
+  ><label
+    >项目公开 API 密钥<input
+      id="key"
+      autocomplete="off"
+      value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ" /></label
   ><label>邮箱<input id="email" type="email" autocomplete="username" /></label
   ><label
     >密码<input
@@ -53,8 +58,20 @@
       autocomplete="current-password" /></label
   ><button id="login" class="btn btn-primary">登录并同步</button
   ><button id="signup" class="btn">注册</button
+  ><button id="resend" class="btn">重发确认邮件</button
   ><button id="sync" class="btn">立即同步</button
   ><button id="logout" class="btn">退出云账户</button>
   <p id="status"></p>
+  <details>
+    <summary>确认链接打不开？</summary>
+    <p>
+      点击邮件后若跳到 localhost
+      并打不开，邮箱可能已经确认，请回到软件尝试登录。仍提示未确认时，检查
+      Supabase → Authentication → URL Configuration 的 Site URL，将默认
+      localhost 改为可访问的 HTTPS 网页（例如
+      https://github.com/linianchen666/wordpop），保存后重发邮件并点击最新链接。确认后需要手动返回软件登录。
+    </p>
+    <p>链接过期或已使用时，请先尝试登录；仍未确认，再重发确认邮件。</p>
+  </details>
   <script src="cloud.js"></script>
 </html>

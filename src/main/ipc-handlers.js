@@ -23,6 +23,7 @@ function registerIpcHandlers() {
   if (registered) return;
   ipcMain.handle('cloud:status', () => require('./cloud-sync').getStatus());
   ipcMain.handle('cloud:login', (_event, input) => require('./cloud-sync').login(input));
+  ipcMain.handle('cloud:resend-confirmation', (_event, input) => require('./cloud-sync').resendConfirmation(input));
   ipcMain.handle('cloud:sync', () => require('./cloud-sync').sync());
   ipcMain.handle('cloud:logout', () => require('./cloud-sync').logout());
   ipcMain.handle('cloud:open', () => {

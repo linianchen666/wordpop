@@ -1,10 +1,15 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
   <uses-permission android:name="android.permission.INTERNET"/>
   <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-  <application android:allowBackup="false" android:label="WordPop" android:icon="@drawable/wordpop" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="false" android:supportsRtl="true">
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK"/>
+  <queries><intent><action android:name="android.intent.action.TTS_SERVICE"/></intent></queries>
+  <application android:allowBackup="false" android:label="WordPop" android:icon="@drawable/wordpop" android:theme="@android:style/Theme.Material.NoActionBar" android:usesCleartextTraffic="false" android:supportsRtl="true">
     <activity android:name=".MainActivity" android:exported="true" android:resizeableActivity="true">
       <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
     </activity>
+    <activity android:name=".WidgetSettingsActivity" android:exported="true"/>
+    <service android:name=".WidgetSpeechService" android:exported="false" android:foregroundServiceType="mediaPlayback"/>
     <receiver android:name=".WordWidget" android:exported="false">
       <intent-filter><action android:name="android.appwidget.action.APPWIDGET_UPDATE"/></intent-filter>
       <meta-data android:name="android.appwidget.provider" android:resource="@xml/word_widget"/>

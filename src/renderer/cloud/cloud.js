@@ -21,6 +21,23 @@ async function auth(signup) {
 }
 document.getElementById("login").onclick = () => auth(false);
 document.getElementById("signup").onclick = () => auth(true);
+document.getElementById("resend").onclick = async () => {
+  const button = document.getElementById("resend");
+  button.disabled = true;
+  status.textContent = "正在重新发送…";
+  try {
+    const result = await window.wordpopAPI.cloudResendConfirmation({
+      url: document.getElementById("url").value,
+      key: document.getElementById("key").value,
+      email: document.getElementById("email").value,
+    });
+    status.textContent = result.message;
+  } catch (_) {
+    status.textContent = "连接失败，请检查网络及项目配置";
+  } finally {
+    button.disabled = false;
+  }
+};
 document.getElementById("sync").onclick = async () => {
   status.textContent = "正在同步…";
   const result = await window.wordpopAPI.cloudSync();
@@ -32,6 +49,7 @@ document.getElementById("logout").onclick = async () => {
 };
 window.wordpopAPI.cloudStatus().then((result) => {
   status.textContent = result.message;
-  document.getElementById("url").value = result.url || "";
+  if (result.url) document.getElementById("url").value = result.url;
+  if (result.key) document.getElementById("key").value = result.key;
   document.getElementById("email").value = result.email || "";
 });

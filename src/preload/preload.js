@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   getReviewPreview:    (id) => ipcRenderer.invoke('review:preview', id),
   cloudStatus: () => ipcRenderer.invoke('cloud:status'),
   cloudLogin: input => ipcRenderer.invoke('cloud:login', input),
+  cloudResendConfirmation: input => ipcRenderer.invoke('cloud:resend-confirmation', input),
   cloudSync: () => ipcRenderer.invoke('cloud:sync'),
   cloudLogout: () => ipcRenderer.invoke('cloud:logout'),
   openCloud: () => ipcRenderer.invoke('cloud:open'),

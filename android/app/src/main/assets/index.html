@@ -66,7 +66,7 @@
     }
     #ratings {
       display: grid;
-      grid-template-columns: repeat(4, 1fr);
+      grid-template-columns: repeat(3, 1fr);
       gap: 6px;
     }
     #ratings button {
@@ -83,7 +83,21 @@
       background: #23604e;
     }
     #easy {
-      background: #544071;
+      background: transparent;
+      color: #b9a0df;
+      padding: 0 4px;
+      min-width: 36px;
+      font-size: 24px;
+      line-height: 1;
+    }
+    #easy:disabled {
+      opacity: 0.3;
+      cursor: default;
+    }
+    #easy .interval {
+      font-size: 9px;
+      margin-top: 4px;
+      white-space: nowrap;
     }
     .interval {
       display: block;
@@ -140,33 +154,200 @@
       gap: 8px;
       flex-wrap: wrap;
     }
-    @media (max-height: 500px) {
+    html {
+      background: #080c13;
+      height: 100%;
+    }
+    body {
+      background: radial-gradient(ellipse at top, #16253b, #080c13 70%);
+      min-height: 100dvh;
+      padding: 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 12px;
+    }
+    header {
+      gap: 12px;
+      flex-shrink: 0;
+    }
+    h1 {
+      font-size: 16px;
+      letter-spacing: 0.04em;
+    }
+    #counts {
+      margin-left: auto;
+      font-size: 11px;
+    }
+    #menu {
+      background: #ffffff0c;
+      border: 1px solid #ffffff16;
+      padding: 8px 12px;
+    }
+    #card {
+      flex: 1;
+      min-height: 0;
+      margin: 0;
+      padding: 24px 18px 16px;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      border: 1px solid #ffffff12;
+      background: #ffffff05;
+      border-radius: 24px;
+    }
+    #word {
+      font-size: clamp(30px, 8vw, 52px);
+      color: #e2efff;
+      line-height: 1.12;
+      margin: 10px 0;
+    }
+    .pronunciation {
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      gap: 8px;
+    }
+    #phonetic {
+      margin: 0;
+      font-size: 14px;
+    }
+    #speak {
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      padding: 0;
+      background: #8abaff16;
+      color: #a8d0ff;
+      font-size: 22px;
+    }
+    #meaning {
+      margin: 14px 0;
+      padding: 0;
+      font-size: 18px;
+      line-height: 1.55;
+    }
+    #reveal {
+      margin-top: 12px;
+      background: #d9eaff;
+      color: #172638;
+      font-weight: 600;
+    }
+    #ratings {
+      margin-top: 14px;
+      gap: 8px;
+    }
+    #ratings button {
+      min-height: 58px;
+      padding: 10px 2px;
+    }
+    #fullPanel {
+      margin-bottom: 0;
+      font-size: 12px;
+      padding: 10px;
+      background: #ffffff05;
+    }
+    #cloudStatus {
+      margin: 0;
+      min-height: 16px;
+      color: #8293ac;
+      font-size: 10px;
+      overflow: hidden;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+    }
+    #cloudStatus:empty {
+      display: none;
+    }
+    dialog {
+      width: min(520px, calc(100% - 24px));
+      max-height: calc(100dvh - 24px);
+      border: 1px solid #ffffff20;
+      border-radius: 22px;
+      background: #101a2a;
+      color: #e8edf7;
+      padding: 18px;
+      overflow-y: auto;
+    }
+    dialog::backdrop {
+      background: #000a;
+    }
+    .settings-heading {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    @media (max-height: 600px) {
       body {
-        padding: 10px;
+        padding: 10px 14px;
+        gap: 8px;
       }
       #card {
-        padding: 10px 14px;
-        margin: 10px 0;
-      }
-      #meaning {
-        padding: 8px 0;
-        font-size: 16px;
+        padding: 12px 16px;
+        border-radius: 20px;
       }
       #word {
-        margin: 4px 0;
+        font-size: clamp(28px, 8vw, 44px);
+        margin: 4px 0 8px;
+      }
+      #meaning {
+        font-size: 16px;
+        margin: 10px 0;
+      }
+      #ratings {
+        margin-top: 10px;
       }
       #ratings button {
-        padding: 10px 2px;
+        min-height: 52px;
+      }
+      #fullPanel {
+        margin-top: 8px;
+        padding: 8px;
+      }
+      #reveal {
+        padding: 12px;
+        margin-top: 8px;
+      }
+      header h1 {
+        font-size: 14px;
+      }
+      #cloudStatus {
+        max-height: 15px;
       }
     }
   </style>
   <header>
     <h1>WordPop</h1>
-    <span id="counts">准备词库…</span>
+    <span id="counts">准备词库…</span
+    ><button
+      id="easy"
+      class="easy-star"
+      aria-label="轻松"
+      title="轻松"
+      disabled
+      onclick="rate('easy')"
+    >
+      ★<span class="interval"></span></button
+    ><button
+      id="menu"
+      aria-label="打开设置"
+      onclick="el('settings').showModal()"
+    >
+      ☰
+    </button>
   </header>
   <section id="card">
     <div id="word">WordPop</div>
-    <div id="phonetic"></div>
+    <div class="pronunciation">
+      <span id="phonetic"></span
+      ><button
+        id="speak"
+        aria-label="播放单词发音"
+        onclick="if(current.word)WordPopAndroid.speak(current.word.word)"
+      >
+        🔊
+      </button>
+    </div>
     <div id="meaning"></div>
     <button id="reveal" onclick="send('reveal')">回忆后，显示释义</button>
     <div id="ratings" hidden>
@@ -175,9 +356,7 @@
       ><button id="fuzzy" onclick="rate('fuzzy')">
         模糊<span class="interval"></span></button
       ><button id="known" onclick="rate('known')">
-        认识<span class="interval"></span></button
-      ><button id="easy" onclick="rate('easy')">
-        轻松<span class="interval"></span>
+        认识<span class="interval"></span>
       </button>
     </div>
     <details id="fullPanel" hidden>
@@ -185,77 +364,104 @@
       <p id="full"></p>
     </details>
   </section>
-  <div class="actions">
-    <button onclick="send('view')">刷新</button
-    ><button onclick="WordPopAndroid.addWidget()">添加桌面小组件</button
-    ><button onclick="if(current.word)WordPopAndroid.speak(current.word.word)">
-      发音
-    </button>
-  </div>
-  <p id="planReason"></p>
-  <div id="cloudStatus"></div>
-  <details>
-    <summary>学习设置</summary>
-    <label
-      >词库<select id="list">
-        <option value="cet4">四级</option>
-        <option value="cet6">六级</option>
-        <option value="kaoyan">考研</option>
-      </select></label
-    ><label
-      >每日模式<select id="mode">
-        <option value="fixed">固定每日新词</option>
-        <option value="target">智能目标规划</option>
-      </select></label
-    ><label
-      >固定新词量<input
-        id="daily"
-        type="number"
-        min="1"
-        max="200"
-        value="20" /></label
-    ><label>目标完成日期<input id="target" type="date" /></label
-    ><label
-      ><input
-        id="balance"
-        type="checkbox"
-        style="display: inline; width: auto"
-        checked
-      />复习积压时减半或暂停推新</label
-    ><button onclick="saveConfig()">保存学习设置</button>
-  </details>
-  <details>
-    <summary>电脑与手机云同步</summary>
-    <p>
-      先在电脑端连接并初始化云记录，再用同一账户登录手机。应用打开时每 5
-      秒同步，操作小组件后也会同步；后台更新受系统休眠限制，可能延迟。
-    </p>
-    <label
-      >Supabase 项目网址<input
-        id="url"
-        type="url"
-        placeholder="https://项目编号.supabase.co"
-        autocomplete="off" /></label
-    ><label>项目公开 API 密钥<input id="key" autocomplete="off" /></label
-    ><label>邮箱<input id="email" type="email" autocomplete="username" /></label
-    ><label
-      >密码<input id="password" type="password" autocomplete="current-password"
-    /></label>
-    <div class="actions">
-      <button onclick="login(false)">登录</button
-      ><button onclick="login(true)">注册</button
-      ><button onclick="WordPopAndroid.sync()">立即同步</button>
+  <div id="cloudStatus" role="status"></div>
+  <dialog id="settings">
+    <div class="settings-heading">
+      <h1>设置</h1>
+      <button aria-label="关闭设置" onclick="el('settings').close()">
+        完成
+      </button>
     </div>
-  </details>
-  <details>
-    <summary>三星折叠外屏</summary>
-    <p>
-      普通桌面支持标准 Android 小组件。三星外屏是否允许添加第三方小组件取决于
-      One UI 和外屏启动器，未做机型实测。若系统无法直接添加，可在三星 Good Lock
-      的 MultiStar 外屏应用启动器中允许
-      WordPop，再打开这个可缩放的背词界面；这与直接添加外屏小组件不同。
-    </p>
-  </details>
+    <div class="actions">
+      <button onclick="send('view')">刷新</button
+      ><button onclick="WordPopAndroid.addWidget()">添加桌面小组件</button
+      ><button onclick="WordPopAndroid.widgetAppearance()">小组件背景</button>
+    </div>
+    <p id="planReason"></p>
+
+    <details>
+      <summary>学习设置</summary>
+      <label
+        >词库<select id="list">
+          <option value="cet4">四级</option>
+          <option value="cet6">六级</option>
+          <option value="kaoyan">考研</option>
+        </select></label
+      ><label
+        >每日模式<select id="mode">
+          <option value="fixed">固定每日新词</option>
+          <option value="target">智能目标规划</option>
+        </select></label
+      ><label
+        >固定新词量<input
+          id="daily"
+          type="number"
+          min="1"
+          max="200"
+          value="20" /></label
+      ><label>目标完成日期<input id="target" type="date" /></label
+      ><label
+        ><input
+          id="balance"
+          type="checkbox"
+          style="display: inline; width: auto"
+          checked
+        />复习积压时减半或暂停推新</label
+      ><button onclick="saveConfig()">保存学习设置</button>
+    </details>
+    <details>
+      <summary>电脑与手机云同步</summary>
+      <p>
+        先在电脑端连接并初始化云记录，再用同一账户登录手机。应用打开时每 5
+        秒同步，操作小组件后也会同步；后台更新受系统休眠限制，可能延迟。
+      </p>
+      <label
+        >Supabase 项目网址<input
+          id="url"
+          type="url"
+          value="https://iuledvriatwnbyavqjsw.supabase.co"
+          placeholder="https://项目编号.supabase.co"
+          autocomplete="off" /></label
+      ><label
+        >项目公开 API 密钥<input
+          id="key"
+          autocomplete="off"
+          value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ" /></label
+      ><label
+        >邮箱<input id="email" type="email" autocomplete="username" /></label
+      ><label
+        >密码<input
+          id="password"
+          type="password"
+          autocomplete="current-password"
+      /></label>
+      <div class="actions">
+        <button onclick="login(false)">登录</button
+        ><button onclick="login(true)">注册</button
+        ><button onclick="resendConfirmation()">重发确认邮件</button
+        ><button onclick="WordPopAndroid.sync()">立即同步</button>
+      </div>
+      <details>
+        <summary>确认链接打不开？</summary>
+        <p>
+          点击邮件后若跳到 localhost
+          并打不开，邮箱可能已经确认，请回软件尝试登录。仍未确认时，在 Supabase
+          → Authentication → URL Configuration 将 Site URL 改为可访问的 HTTPS
+          网页（例如
+          https://github.com/linianchen666/wordpop），保存后重发确认邮件，点击最新链接，再回软件登录。
+        </p>
+      </details>
+    </details>
+    <details>
+      <summary>三星折叠外屏</summary>
+      <p>
+        普通桌面支持标准 Android 小组件。三星外屏是否允许添加第三方小组件取决于
+        One UI 和外屏启动器，未做机型实测。若系统无法直接添加，可在三星 Good
+        Lock 的 MultiStar 外屏应用启动器中允许
+        WordPop，再打开这个可缩放的背词界面；这与直接添加外屏小组件不同。
+      </p>
+    </details>
+  </dialog>
   <script>
     let current = {};
     const el = (id) => document.getElementById(id);
@@ -282,6 +488,8 @@
         : view.word
           ? "先独立回忆它的含义"
           : "暂无到期单词，可稍后刷新";
+      el("speak").hidden = !view.word;
+      el("easy").disabled = !view.word || !view.revealed;
       el("reveal").hidden = !view.word || view.revealed;
       el("ratings").hidden = !view.word || !view.revealed;
       el("fullPanel").hidden = !view.word || !view.revealed;
@@ -293,7 +501,7 @@
           ? interval(view.intervals[action])
           : "";
       const c = view.state.config;
-      if (!document.activeElement.closest("details")) {
+      if (!document.activeElement.closest("#settings")) {
         el("list").value = c.selectedWordlists[0];
         el("mode").value = c.dailyNewWordsMode;
         el("daily").value = c.dailyNewWords;
@@ -340,6 +548,16 @@
       );
       el("password").value = "";
       notice("正在连接…");
+    }
+    function resendConfirmation() {
+      WordPopAndroid.resendConfirmation(
+        JSON.stringify({
+          url: el("url").value,
+          key: el("key").value,
+          email: el("email").value,
+        }),
+      );
+      notice("正在重新发送…");
     }
   </script>
 </html>

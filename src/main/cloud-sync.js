@@ -68,10 +68,32 @@ async function request(route, method = "GET", body, credentials = session) {
       signal: controller.signal,
     });
     const text = await response.text();
-    if (!response.ok)
+    if (!response.ok) {
+      let code;
+      try {
+        code = JSON.parse(text).error_code || JSON.parse(text).code;
+      } catch (_) {}
+      const messages = {
+        email_not_confirmed:
+          "邮箱尚未确认。请点击确认邮件中的链接，再回到软件登录；若最后跳到 localhost 并打不开，邮箱可能已确认，可再次尝试登录。",
+        invalid_credentials: "邮箱或密码不正确，请检查后重试。",
+        user_already_exists: "此邮箱已注册，请直接登录。",
+        email_exists: "此邮箱已注册，请直接登录。",
+        weak_password: "密码不符合项目要求，请使用更长、更复杂的密码。",
+        signup_disabled:
+          "项目未开放注册，请在 Supabase Authentication 设置中启用用户注册。",
+        over_email_send_rate_limit:
+          "确认邮件发送太频繁或邮件额度已用完，请稍后再试。",
+        over_request_rate_limit: "请求过于频繁，请稍后再试。",
+        email_address_invalid: "邮箱格式不正确，请检查邮箱地址。",
+        email_address_not_authorized:
+          "当前邮件服务不允许发送到此邮箱，请在 Supabase 配置自定义 SMTP。",
+      };
       throw new Error(
-        `云服务请求失败（${response.status}），请检查账户和数据库配置`,
+        messages[code] ||
+          `云服务请求失败（${response.status}），请检查账户和数据库配置`,
       );
+    }
     return text ? JSON.parse(text) : null;
   } finally {
     clearTimeout(timeout);
@@ -271,22 +293,27 @@ async function sync() {
 }
 async function login(input) {
   if (busy || authenticating) return { message: "正在连接，请稍后再登录" };
-  const url = new URL(input.url);
-  if (url.protocol !== "https:")
-    return { message: "云服务地址必须使用 HTTPS", error: true };
-  const previous = session,
-    credentials = { url: url.origin, key: input.key };
+  const previous = session;
   authenticating = true;
   try {
+    const credentials = authCredentials(input);
+    const email = authEmail(input);
+    if (typeof input.password !== "string" || !input.password)
+      throw new Error("请填写密码");
+    if (input.signup && input.password.length < 6)
+      throw new Error("注册密码至少需要 6 个字符，建议使用 8 个以上字符");
     const response = await request(
       input.signup ? "/auth/v1/signup" : "/auth/v1/token?grant_type=password",
       "POST",
-      { email: input.email, password: input.password },
+      { email, password: input.password },
       credentials,
     );
     if (!response.access_token) {
       session = previous;
-      return { message: "请查收确认邮件，确认后登录" };
+      return {
+        message:
+          "注册请求已提交，请查收确认邮件（包括垃圾邮件），点击链接后回到软件登录。若最后跳到 localhost 并打不开，可先尝试登录；已有账户请直接登录。",
+      };
     }
     if (previous?.user?.id && previous.user.id !== response.user.id)
       throw new Error("请先导出当前记录并使用独立本地配置，再切换学习账户");
@@ -294,7 +321,7 @@ async function login(input) {
       ...credentials,
       ...response,
       initialBaseline: require("./backup").createBackupData(),
-      email: input.email,
+      email,
       expires_at: Date.now() / 1000 + response.expires_in,
     };
     persist();
@@ -302,6 +329,44 @@ async function login(input) {
     return await sync();
   } catch (error) {
     session = previous;
+    return { message: error.message, error: true };
+  } finally {
+    authenticating = false;
+  }
+}
+function authCredentials(input) {
+  let url;
+  try {
+    url = new URL(String(input.url || "").trim());
+  } catch (_) {
+    throw new Error("请填写有效的 Supabase 项目网址");
+  }
+  if (url.protocol !== "https:") throw new Error("云服务地址必须使用 HTTPS");
+  const key = String(input.key || "").trim();
+  if (!key) throw new Error("请填写项目公开 API 密钥");
+  return { url: url.origin, key };
+}
+function authEmail(input) {
+  const email = String(input.email || "").trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+    throw new Error("请填写有效的邮箱地址");
+  return email;
+}
+async function resendConfirmation(input) {
+  if (busy || authenticating) return { message: "正在连接，请稍后再试" };
+  authenticating = true;
+  try {
+    await request(
+      "/auth/v1/resend",
+      "POST",
+      { type: "signup", email: authEmail(input) },
+      authCredentials(input),
+    );
+    return {
+      message:
+        "已提交重新发送请求，请查收最新确认邮件。若已确认，请直接登录；发送受项目邮件额度限制。",
+    };
+  } catch (error) {
     return { message: error.message, error: true };
   } finally {
     authenticating = false;
@@ -354,11 +419,13 @@ module.exports = {
   captureReview,
   captureUndo,
   login,
+  resendConfirmation,
   sync,
   logout,
   getStatus: () => ({
     message: status,
     url: session?.url,
+    key: session?.key,
     email: session?.email,
   }),
 };

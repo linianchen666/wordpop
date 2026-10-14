@@ -33,7 +33,7 @@ public class MainActivity extends Activity {
     super.onCreate(state);
     active = new WeakReference<>(this);
     web = new WebView(this);
-    web.setBackgroundColor(0xff111827);
+    web.setBackgroundColor(0xff080c13);
     web.getSettings().setJavaScriptEnabled(true);
     web.getSettings().setAllowFileAccess(false);
     web.getSettings().setAllowContentAccess(false);
@@ -66,7 +66,8 @@ public class MainActivity extends Activity {
             this,
             result -> {
               voiceReady = result == TextToSpeech.SUCCESS;
-              if (voiceReady) tts.setLanguage(Locale.US);
+              if (voiceReady)
+                voiceReady = tts.setLanguage(Locale.US) >= TextToSpeech.LANG_AVAILABLE;
             });
     SyncWorker.schedule(this);
   }
@@ -142,8 +143,30 @@ public class MainActivity extends Activity {
     }
 
     @JavascriptInterface
+    public void resendConfirmation(String json) {
+      try {
+        CloudClient.resendConfirmation(new JSONObject(json));
+      } catch (Exception e) {
+        CloudClient.status = "请检查云服务配置";
+        notifyStatus();
+      }
+    }
+
+    @JavascriptInterface
     public void speak(String word) {
-      if (voiceReady) tts.speak(word, TextToSpeech.QUEUE_FLUSH, null, "wordpop");
+      runOnUiThread(
+          () -> {
+            if (voiceReady) tts.speak(word, TextToSpeech.QUEUE_FLUSH, null, "wordpop");
+            else notice("发音尚未就绪，请在手机文字转语音设置中检查英语语音");
+          });
+    }
+
+    @JavascriptInterface
+    public void widgetAppearance() {
+      runOnUiThread(
+          () ->
+              startActivity(
+                  new android.content.Intent(MainActivity.this, WidgetSettingsActivity.class)));
     }
 
     @JavascriptInterface

@@ -47,7 +47,15 @@ final class CloudClient {
           while ((count = input.read(buffer)) != -1) bytes.write(buffer, 0, count);
         }
       String response = bytes.toString("UTF-8");
-      if (code >= 400) throw new Exception("云服务请求失败（" + code + "），请检查项目、账户和数据库配置");
+      if (code >= 400) {
+        String errorCode = "";
+        try {
+          JSONObject error = new JSONObject(response);
+          errorCode = error.optString("error_code", error.optString("code"));
+        } catch (Exception ignored) {
+        }
+        throw new Exception(authError(errorCode, code));
+      }
       return response;
     } finally {
       connection.disconnect();
@@ -60,12 +68,18 @@ final class CloudClient {
           try {
             JSONObject session =
                 new JSONObject()
-                    .put("url", input.getString("url").replaceAll("/+$", ""))
-                    .put("key", input.getString("key"));
+                    .put("url", input.getString("url").trim().replaceAll("/+$", ""))
+                    .put("key", input.getString("key").trim());
             JSONObject credentials =
                 new JSONObject()
-                    .put("email", input.getString("email"))
+                    .put("email", input.getString("email").trim())
                     .put("password", input.getString("password"));
+            if (!android.util.Patterns.EMAIL_ADDRESS
+                .matcher(credentials.getString("email"))
+                .matches()) throw new Exception("请填写有效的邮箱地址");
+            if (credentials.getString("password").isEmpty()) throw new Exception("请填写密码");
+            if (signup && credentials.getString("password").length() < 6)
+              throw new Exception("注册密码至少需要 6 个字符，建议使用 8 个以上字符");
             JSONObject result =
                 new JSONObject(
                     request(
@@ -74,7 +88,7 @@ final class CloudClient {
                         "POST",
                         credentials.toString()));
             if (!result.has("access_token")) {
-              status = "请查收确认邮件，确认后登录";
+              status = "注册请求已提交，请查收确认邮件，点击后回软件登录。若跳到 localhost 并打不开，可先尝试登录；已有账户请直接登录。";
               return;
             }
             session
@@ -87,6 +101,57 @@ final class CloudClient {
             SecretPrefs.save(context, session.toString());
             status = "已登录，正在同步";
             syncBlocking(context);
+          } catch (Exception error) {
+            status = error.getMessage();
+          } finally {
+            MainActivity.notifyStatus();
+          }
+        });
+  }
+
+  static String authError(String errorCode, int code) {
+    switch (errorCode) {
+      case "email_not_confirmed":
+        return "邮箱尚未确认。点击确认邮件后回软件登录；若跳到 localhost 并打不开，可先再次尝试登录。";
+      case "invalid_credentials":
+        return "邮箱或密码不正确，请检查后重试。";
+      case "user_already_exists":
+      case "email_exists":
+        return "此邮箱已注册，请直接登录。";
+      case "weak_password":
+        return "密码不符合项目要求，请使用更长、更复杂的密码。";
+      case "signup_disabled":
+        return "项目未开放注册，请在 Supabase Authentication 设置中启用用户注册。";
+      case "over_email_send_rate_limit":
+        return "确认邮件发送太频繁或邮件额度已用完，请稍后再试。";
+      case "over_request_rate_limit":
+        return "请求过于频繁，请稍后再试。";
+      case "email_address_invalid":
+        return "邮箱格式不正确，请检查邮箱地址。";
+      case "email_address_not_authorized":
+        return "当前邮件服务不允许发送到此邮箱，请在 Supabase 配置自定义 SMTP。";
+      default:
+        return "云服务请求失败（" + code + "），请检查项目、账户和数据库配置";
+    }
+  }
+
+  static void resendConfirmation(JSONObject input) {
+    network.execute(
+        () -> {
+          try {
+            String email = input.getString("email").trim();
+            if (!android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches())
+              throw new Exception("请填写有效的邮箱地址");
+            JSONObject project =
+                new JSONObject()
+                    .put("url", input.getString("url").trim().replaceAll("/+$", ""))
+                    .put("key", input.getString("key").trim());
+            request(
+                project,
+                "/auth/v1/resend",
+                "POST",
+                new JSONObject().put("type", "signup").put("email", email).toString());
+            status = "已提交重新发送请求，请查收最新邮件。若已确认，请直接登录；发送受项目邮件额度限制。";
           } catch (Exception error) {
             status = error.getMessage();
           } finally {
