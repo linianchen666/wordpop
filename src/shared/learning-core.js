@@ -17,6 +17,7 @@ function empty() {
     seeds: {},
     dailySeeds: [],
     current: null,
+    undo: null,
   };
 }
 function fold(seeds, events) {
@@ -44,6 +45,15 @@ function fold(seeds, events) {
     logs.push({ ...event, ...next, wasNew: !before });
   }
   return { progress, logs };
+}
+// Only the most recent local rating is offered. A later rating for the same
+// word (including one received from another device) makes that offer stale.
+function undoTarget(state, logs) {
+  if (!state.undo) return null;
+  for (let i = logs.length - 1; i >= 0; i--)
+    if (logs[i].word === state.undo.word)
+      return logs[i].id === state.undo.id ? state.undo : null;
+  return null;
 }
 function view(state, vocab, now = Date.now(), logs) {
   const selected = state.config.selectedWordlists || ["cet4"];
@@ -121,14 +131,17 @@ function view(state, vocab, now = Date.now(), logs) {
     newRemaining: remaining,
     quota,
     intervals,
+    undo: undoTarget(state, logs),
   };
 }
 function dispatch(state, vocab, command, now = Date.now(), runtime) {
   state = state || empty();
+  state.undo ??= null;
   let logs = runtime?.logs;
   if (command.type === "config") {
     state.config = { ...state.config, ...command.config };
     state.current = null;
+    state.undo = null;
   }
   if (command.type === "reveal" && state.current?.nonce === command.nonce)
     state.current.revealed = true;
@@ -169,7 +182,51 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
       state.progress = folded.progress;
       logs = folded.logs;
     }
+    state.undo = { id: event.id, word: event.word, action: event.action };
     state.current = null;
+  }
+  if (command.type === "undo") {
+    logs = logs || fold(state.seeds, state.events).logs;
+    const target = undoTarget(state, logs);
+    if (!target || command.target_id !== target.id)
+      throw new Error("这条评分已无法撤销，请查看当前单词的最新记录");
+    if (!command.id || state.events.some((e) => e.id === command.id))
+      throw new Error("撤销请求重复，请刷新后重试");
+    state.events.push({
+      id: command.id,
+      word: target.word,
+      action: "undo",
+      target_id: target.id,
+      reviewed_at: now,
+    });
+    if (runtime) {
+      const seeds = state.seeds[target.word]
+        ? { [target.word]: state.seeds[target.word] }
+        : {};
+      const restored = fold(
+        seeds,
+        state.events.filter((e) => e.word === target.word),
+      );
+      if (restored.progress[target.word])
+        state.progress[target.word] = restored.progress[target.word];
+      else delete state.progress[target.word];
+      logs = [
+        ...logs.filter((e) => e.word !== target.word),
+        ...restored.logs,
+      ].sort(
+        (a, b) => a.reviewed_at - b.reviewed_at || a.id.localeCompare(b.id),
+      );
+    } else {
+      const restored = fold(state.seeds, state.events);
+      state.progress = restored.progress;
+      logs = restored.logs;
+    }
+    state.undo = null;
+    state.current = {
+      word: target.word,
+      revealed: true,
+      nonce: `${now}:undo:${command.id}`,
+    };
   }
   if (command.type === "sync") {
     if (state.cloudUser && state.cloudUser !== command.userId)
@@ -204,6 +261,7 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
       state.progress = folded.progress;
       logs = folded.logs;
     }
+    if (!undoTarget(state, logs)) state.undo = null;
   }
   if (runtime) {
     runtime.logs = logs;
@@ -223,6 +281,7 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
 }
 function createSession(initialState, vocab) {
   let state = initialState || empty();
+  state.undo ??= null;
   const runtime = {
     logs: fold(state.seeds, state.events).logs,
     ids: new Set(state.events.map((e) => e.id)),
@@ -261,7 +320,7 @@ function createSession(initialState, vocab) {
       display.current = memory.current;
       if (
         fullState ||
-        ["sync", "config"].includes(command.type) ||
+        ["sync", "config", "undo"].includes(command.type) ||
         (command.type === "review" && !canPatch)
       )
         display.state = memory;

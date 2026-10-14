@@ -87,6 +87,7 @@ final class StudyEngine {
           new JSONObject(isolate.evaluateJavaScriptAsync(code).get(6, TimeUnit.SECONDS));
       JSONObject full = view.optJSONObject("state");
       String previous = cachedState == null ? "" : String.valueOf(cachedState.opt("current"));
+      String priorUndo = cachedState == null ? "" : String.valueOf(cachedState.opt("undo"));
       JSONObject patch = view.optJSONObject("reviewPatch");
       if (full != null) cachedState = full;
       else {
@@ -97,10 +98,12 @@ final class StudyEngine {
               .put(patch.getString("word"), patch.getJSONObject("progress"));
         }
         cachedState.put("current", view.opt("current"));
+        cachedState.put("undo", view.opt("undo"));
       }
       if (full != null
           || patch != null
-          || !previous.equals(String.valueOf(cachedState.opt("current")))) store.save(cachedState);
+          || !previous.equals(String.valueOf(cachedState.opt("current")))
+          || !priorUndo.equals(String.valueOf(cachedState.opt("undo")))) store.save(cachedState);
       view.put("state", cachedState);
       view.remove("current");
       view.remove("reviewPatch");
@@ -143,10 +146,11 @@ final class StudyEngine {
             }
           }
           if (failure == null
-              && command.optString("type").equals("review")
+              && (command.optString("type").equals("review")
+                  || command.optString("type").equals("undo"))
               && result != null
               && cachedState.optJSONArray("events").length() > beforeEvents)
-            CloudClient.reviewSaved(context);
+            CloudClient.eventSaved(context);
         });
   }
 }

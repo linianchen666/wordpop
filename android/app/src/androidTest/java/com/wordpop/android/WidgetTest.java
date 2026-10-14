@@ -66,6 +66,7 @@ public class WidgetTest {
                     .put("phonetic", "/aɪˌdentɪfɪˈkeɪʃən/"))
             .put("revealed", true)
             .put("nonce", "resize-test")
+            .put("undo", new JSONObject().put("id", "last-rating").put("word", "test"))
             .put(
                 "intervals",
                 new JSONObject()
@@ -100,6 +101,8 @@ public class WidgetTest {
       assertTrue(root.get().findViewById(R.id.translation).getHeight() >= Math.round(20 * density));
       assertEquals(View.VISIBLE, root.get().findViewById(R.id.speak).getVisibility());
       assertEquals(View.VISIBLE, root.get().findViewById(R.id.easy).getVisibility());
+      assertEquals(View.VISIBLE, root.get().findViewById(R.id.undo).getVisibility());
+      assertTrue(root.get().findViewById(R.id.undo).getRight() <= width);
       assertEquals(
           compact ? "不认识" : "不认识\n1分",
           ((TextView) root.get().findViewById(R.id.unknown)).getText().toString());
@@ -187,6 +190,7 @@ public class WidgetTest {
             });
     assertEquals(View.GONE, root.get().findViewById(R.id.ratings).getVisibility());
     assertEquals(View.GONE, root.get().findViewById(R.id.easy).getVisibility());
+    assertEquals(View.GONE, root.get().findViewById(R.id.undo).getVisibility());
     assertTrue(
         ((TextView) root.get().findViewById(R.id.translation)).getText().toString().contains("回忆"));
     JSONObject reveal =
@@ -229,5 +233,40 @@ public class WidgetTest {
     assertNotNull(state);
     assertEquals(1, state.getJSONArray("events").length());
     assertEquals("unknown", state.getJSONArray("events").getJSONObject(0).getString("action"));
+    JSONObject graded =
+        engine
+            .executor
+            .submit(() -> engine.run(new JSONObject().put("type", "view")))
+            .get(10, TimeUnit.SECONDS);
+    assertEquals(
+        state.getJSONArray("events").getJSONObject(0).getString("id"),
+        graded.getJSONObject("undo").getString("id"));
+    InstrumentationRegistry.getInstrumentation()
+        .runOnMainSync(
+            () -> {
+              try {
+                View undoWidget =
+                    WordWidget.buildViews(context, 999, graded)
+                        .apply(context, new FrameLayout(context));
+                assertEquals(View.VISIBLE, undoWidget.findViewById(R.id.undo).getVisibility());
+                undoWidget.findViewById(R.id.undo).performClick();
+                undoWidget.findViewById(R.id.undo).performClick();
+              } catch (Exception e) {
+                throw new RuntimeException(e);
+              }
+            });
+    end = System.currentTimeMillis() + 10000;
+    while (System.currentTimeMillis() < end) {
+      state = engine.store.load();
+      if (state.getJSONArray("events").length() == 2) break;
+      Thread.sleep(50);
+    }
+    assertEquals(2, state.getJSONArray("events").length());
+    assertEquals("undo", state.getJSONArray("events").getJSONObject(1).getString("action"));
+    assertEquals(0, state.getJSONObject("progress").length());
+    assertEquals(
+        initial.getJSONObject("word").getString("word"),
+        state.getJSONObject("current").getString("word"));
+    assertTrue(state.getJSONObject("current").getBoolean("revealed"));
   }
 }

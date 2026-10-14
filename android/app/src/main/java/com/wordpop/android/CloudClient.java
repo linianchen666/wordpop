@@ -183,8 +183,8 @@ final class CloudClient {
         });
   }
 
-  // Called only after a new rating has been committed to SQLite.
-  static void reviewSaved(Context context) {
+  // Called only after a rating or undo event has been committed to SQLite.
+  static void eventSaved(Context context) {
     gate.changed();
     SyncWorker.uploadSoon(context);
     enqueueSync(context, 750);

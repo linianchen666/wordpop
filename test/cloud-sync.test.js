@@ -146,13 +146,36 @@ try {
       recordReview(db, 1, "unknown", now);
       await cloud.sync();
       assert.equal(serverEvents.length, 1);
-      serverEvents.push({
-        id: "phone-review",
-        word: "test",
-        action: "known",
-        reviewed_at: now + MINUTE,
-        user_id: "test-user",
-      });
+      const { createSession } = require("../src/shared/learning-core");
+      const phone = createSession(null, [
+        { word: "test", wordlists: ["cet4"], translation: "n. 测试" },
+      ]);
+      let phoneView = phone.dispatch(
+        {
+          type: "sync",
+          userId: "test-user",
+          seeds: {},
+          events: serverEvents,
+          dailySeeds: [],
+        },
+        now + MINUTE,
+      );
+      phoneView = phone.dispatch(
+        { type: "reveal", nonce: phoneView.nonce },
+        now + MINUTE,
+      );
+      phoneView = phone.dispatch(
+        {
+          type: "review",
+          nonce: phoneView.nonce,
+          id: "phone-review",
+          action: "known",
+        },
+        now + MINUTE,
+      );
+      serverEvents.push(
+        phoneView.state.events.find((e) => e.id === "phone-review"),
+      );
       await cloud.sync();
       assert.equal(
         db.prepare("SELECT interval FROM progress").get().interval,
@@ -172,13 +195,13 @@ try {
           .words_reviewed,
         2,
       );
-      serverEvents.push({
-        id: "undo-phone",
-        word: "test",
-        action: "undo",
-        target_id: "phone-review",
-        reviewed_at: now + 2 * MINUTE,
-      });
+      phoneView = phone.dispatch(
+        { type: "undo", id: "undo-phone", target_id: "phone-review" },
+        now + 2 * MINUTE,
+      );
+      serverEvents.push(
+        phoneView.state.events.find((e) => e.id === "undo-phone"),
+      );
       await cloud.sync();
       assert.equal(
         db.prepare("SELECT interval FROM progress").get().interval,

@@ -80,6 +80,14 @@ assert(
     now + 3,
   ) <= 5,
 );
+assert(
+  step({ type: "undo", id: "local-undo-2", target_id: "new-2" }, now + 4) <= 5,
+  "undo should replay only the affected word, not all unrelated history",
+);
+step(
+  { type: "review", nonce: "current", id: "new-2-corrected", action: "known" },
+  now + 5,
+);
 let sync = {
   type: "sync",
   userId: "same-user",
@@ -124,6 +132,7 @@ const revealed = fresh.render(
   false,
 );
 mirror.current = revealed.current;
+mirror.undo = revealed.undo;
 const scored = fresh.render(
   { type: "review", nonce: first.nonce, id: "patch-event", action: "known" },
   now + 2,
@@ -136,6 +145,7 @@ assert(
 mirror.events.push(scored.reviewPatch.event);
 mirror.progress[scored.reviewPatch.word] = scored.reviewPatch.progress;
 mirror.current = scored.current;
+mirror.undo = scored.undo;
 const canonical = fresh.render({ type: "view" }, now + 2, true).state;
 assert.deepEqual(mirror, canonical);
 console.log(

@@ -109,7 +109,15 @@ public class MainActivity extends Activity {
     JSONObject display = new JSONObject();
     for (String key :
         new String[] {
-          "word", "revealed", "nonce", "dueCount", "newRemaining", "quota", "intervals", "revision"
+          "word",
+          "revealed",
+          "nonce",
+          "dueCount",
+          "newRemaining",
+          "quota",
+          "intervals",
+          "revision",
+          "undo"
         }) display.put(key, view.opt(key));
     display.put(
         "state",
@@ -173,7 +181,7 @@ public class MainActivity extends Activity {
     public void command(String json) {
       try {
         JSONObject command = new JSONObject(json);
-        if (command.optString("type").equals("review"))
+        if (command.optString("type").equals("review") || command.optString("type").equals("undo"))
           command.put("id", java.util.UUID.randomUUID().toString());
         MainActivity.this.command(command);
       } catch (Exception e) {

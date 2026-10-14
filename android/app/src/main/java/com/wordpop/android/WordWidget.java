@@ -34,6 +34,10 @@ public class WordWidget extends AppWidgetProvider {
       command
           .put("type", action == null ? "view" : action)
           .put("nonce", intent.getStringExtra("nonce"));
+      if ("undo".equals(action))
+        command
+            .put("target_id", intent.getStringExtra("target_id"))
+            .put("id", UUID.randomUUID().toString());
       if ("review".equals(action))
         command
             .put("action", intent.getStringExtra("rating"))
@@ -42,8 +46,13 @@ public class WordWidget extends AppWidgetProvider {
           .submit(
               command,
               (view, error) -> {
-                if (error != null) error(context, error);
-                else autoSpeak(context, intent, command.optString("id"), view);
+                if (error != null) {
+                  // A stale undo PendingIntent must not replace a newer widget with an error card.
+                  if ("undo".equals(action))
+                    android.widget.Toast.makeText(context, error, android.widget.Toast.LENGTH_SHORT)
+                        .show();
+                  else error(context, error);
+                } else autoSpeak(context, intent, command.optString("id"), view);
                 pending.finish();
               });
     } catch (Exception e) {
@@ -92,6 +101,7 @@ public class WordWidget extends AppWidgetProvider {
       views.setTextViewText(R.id.translation, message);
       views.setViewVisibility(R.id.ratings, View.GONE);
       views.setViewVisibility(R.id.easy, View.GONE);
+      views.setViewVisibility(R.id.undo, View.GONE);
       views.setOnClickPendingIntent(R.id.open, open(context, id));
       manager.updateAppWidget(id, views);
     }
@@ -135,6 +145,7 @@ public class WordWidget extends AppWidgetProvider {
             .putExtra("command", type)
             .putExtra("nonce", nonce)
             .putExtra("rating", rating);
+    if ("undo".equals(type)) intent.putExtra("target_id", rating);
     intent.setData(
         Uri.parse("wordpop://widget/" + id + "/" + Uri.encode(nonce) + "/" + type + "/" + rating));
     return PendingIntent.getBroadcast(
@@ -182,6 +193,13 @@ public class WordWidget extends AppWidgetProvider {
             context.getPackageName(),
             compact ? R.layout.word_widget_compact : R.layout.word_widget);
     appearance(context, id, views);
+    JSONObject undo = data.optJSONObject("undo");
+    views.setViewVisibility(R.id.undo, undo == null ? View.GONE : View.VISIBLE);
+    if (undo != null) {
+      views.setContentDescription(R.id.undo, "撤销上次评分：" + undo.optString("word"));
+      views.setOnClickPendingIntent(
+          R.id.undo, command(context, id, nonce, "undo", undo.getString("id")));
+    }
     views.setViewVisibility(R.id.speak, word == null ? View.GONE : View.VISIBLE);
     views.setViewVisibility(R.id.easy, word != null && revealed ? View.VISIBLE : View.GONE);
     views.setTextViewText(

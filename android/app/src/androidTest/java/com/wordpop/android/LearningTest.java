@@ -64,6 +64,24 @@ public class LearningTest {
     assertEquals(progress, reloaded.getJSONObject("state").getJSONObject("progress").toString());
     assertEquals(1, reloaded.getJSONObject("state").getJSONArray("events").length());
     assertEquals(graded.getString("nonce"), reloaded.getString("nonce"));
+    assertEquals("persisted-review", reloaded.getJSONObject("undo").getString("id"));
+    JSONObject undone =
+        engine
+            .executor
+            .submit(
+                () ->
+                    engine.run(
+                        new JSONObject()
+                            .put("type", "undo")
+                            .put("id", "persisted-undo")
+                            .put("target_id", "persisted-review")))
+            .get(10, TimeUnit.SECONDS);
+    assertEquals(2, engine.store.load().getJSONArray("events").length());
+    assertEquals(0, engine.store.load().getJSONObject("progress").length());
+    assertEquals(
+        initial.getJSONObject("word").getString("word"),
+        undone.getJSONObject("word").getString("word"));
+    assertTrue(undone.getBoolean("revealed"));
   }
 
   @Test

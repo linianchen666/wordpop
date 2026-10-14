@@ -76,6 +76,7 @@ async function checkFlow() {
     revision: 3,
     nonce: "second",
     word: { ...v.word, word: "next" },
+    undo: { id: "first-rating", word: "test", action: "known" },
   };
   receive(next, null, commands[1].clientRequestId);
   check(speeches.length === 1, "review switching words must not auto speak");
@@ -85,6 +86,42 @@ async function checkFlow() {
   );
   receive({ ...v, revision: 2, revealed: true }, null, "");
   check(el("word").textContent === "next", "old callback restored prior word");
+  check(visible("undo"), "grading must expose a touch undo control");
+  el("undo").click();
+  undoReview();
+  check(
+    commands.filter((c) => c.type === "undo").length === 1,
+    "rapid taps duplicated undo",
+  );
+  check(
+    commands.at(-1).target_id === "first-rating",
+    "undo did not bind the exact rating",
+  );
+  check(el("undo").disabled, "undo must lock while native save is pending");
+  receive(null, "撤销保存失败", commands.at(-1).clientRequestId);
+  check(
+    !el("undo").disabled && el("word").textContent === "next",
+    "failed undo should retain the current card and allow retry",
+  );
+  el("undo").click();
+  const undoRequest = commands.at(-1);
+  receive(
+    { ...v, revision: 4, nonce: "restored", revealed: true, undo: null },
+    null,
+    undoRequest.clientRequestId,
+  );
+  check(
+    el("word").textContent === "test" && visible("ratings"),
+    "undo should return the prior word ready for correction",
+  );
+  check(!visible("undo"), "undo should be offered only once");
+  check(speeches.length === 1, "undo must not auto speak");
+  receive({ ...next, revision: 3 }, null, "");
+  check(
+    el("word").textContent === "test",
+    "stale sync callback overwrote the restored word",
+  );
+  receive({ ...next, revision: 5, undo: null }, null, "");
   el("reveal").click();
   receive(null, "写入失败", commands.at(-1).clientRequestId);
   check(!visible("ratings"), "failed reveal was not rolled back");
