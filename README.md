@@ -192,8 +192,12 @@ MIT
 
 ## Android 手机与桌面小组件（开发测试版）
 
-新增 Android 应用，支持普通桌面小组件、先回忆再评分、离线学习及与电脑共用的 FSRS 算法。云同步采用 Supabase，同一账户共享评分和学习进度，需自行创建项目并执行建表脚本。此功能尚未包含在 1.8.6 正式安装包中。
+Android 应用支持普通桌面小组件、先回忆再评分、离线学习及与电脑共用的 FSRS 算法。小组件支持缩放、透明背景和交互自动发音；底部三个反馈按钮，右上角星号表示轻松。App 设置收进菜单，适合通过 MultiStar 在外屏专注背词。云同步采用 Supabase，同一账户共享评分和学习进度，默认项目网址和公开密钥已预填，也可按说明配置自己的项目。此功能尚未包含在 1.8.6 正式安装包中。
+
+[下载 Android 0.1.1 测试版](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.1-beta.1/WordPop.Android.0.1.1-beta.1.apk) · [下载 Windows 云同步预览 1.9.0-beta.2](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.1-beta.1/WordPop.Setup.1.9.0-beta.2.exe)
 
 [Android 构建与使用](android/README.md) · [云同步配置](cloud/README.md)
+
+本次 APK 与上一测试版签名不同：先在旧手机 App 完成云同步并在电脑导出备份，再卸载旧 APK、安装新版并登录恢复记录。卸载会清除手机本地数据。
 
 三星 Z Flip7 外屏尚未机型实测；标准小组件支持普通桌面，外屏应用界面可尝试通过 Good Lock/MultiStar 打开，不声称已支持外屏原生小组件。手机后台同步受 Android 休眠限制，可能延迟。
