@@ -32,15 +32,15 @@ jobs:
           gh run download "$WINDOWS_RUN" --repo "$REPO" --name wordpop-windows-sync-preview --dir artifacts/windows
           cmp artifacts/android/outputs/signing-certificate.sha256 android/signing-certificate.sha256
           mkdir packages
-          cp artifacts/android/outputs/apk/debug/app-debug.apk packages/WordPop.Android.0.1.2-beta.1.apk
-          cp artifacts/windows/*.exe packages/WordPop.Setup.1.9.0-beta.3.exe
+          cp artifacts/android/outputs/apk/debug/app-debug.apk packages/WordPop.Android.0.1.3-beta.1.apk
+          cp artifacts/windows/*.exe packages/WordPop.Setup.1.9.0-beta.4.exe
           cd packages
           sha256sum *.apk *.exe > SHA256SUMS.txt
       - name: Upload and publish tested preview
         run: |
-          gh release view android-v0.1.2-beta.1 --repo "$REPO" >/dev/null || gh release create android-v0.1.2-beta.1 --repo "$REPO" --target "$GITHUB_SHA" --draft --prerelease --title 'WordPop Android 0.1.2：即时释义与固定签名' --notes-file android/RELEASE-NOTES.md
-          gh release upload android-v0.1.2-beta.1 packages/* --repo "$REPO" --clobber
-          gh release edit android-v0.1.2-beta.1 --repo "$REPO" --draft=false --prerelease=true --latest=false --notes-file android/RELEASE-NOTES.md
+          gh release view android-v0.1.3-beta.1 --repo "$REPO" >/dev/null || gh release create android-v0.1.3-beta.1 --repo "$REPO" --target "$GITHUB_SHA" --draft --prerelease --title 'WordPop Android 0.1.3：触屏撤销与同步优化' --notes-file android/RELEASE-NOTES.md
+          gh release upload android-v0.1.3-beta.1 packages/* --repo "$REPO" --clobber
+          gh release edit android-v0.1.3-beta.1 --repo "$REPO" --draft=false --prerelease=true --latest=false --notes-file android/RELEASE-NOTES.md
   prune-releases:
     needs: publish
     uses: ./.github/workflows/release-retention.yml
