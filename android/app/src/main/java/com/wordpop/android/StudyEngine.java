@@ -24,6 +24,7 @@ final class StudyEngine {
   final StudyStore store;
   private JavaScriptSandbox sandbox;
   private JavaScriptIsolate isolate;
+  private long revision;
   private final Handler main = new Handler(Looper.getMainLooper());
 
   interface Callback {
@@ -73,6 +74,7 @@ final class StudyEngine {
     JSONObject view =
         new JSONObject(isolate.evaluateJavaScriptAsync(code).get(6, TimeUnit.SECONDS));
     store.save(view.getJSONObject("state"));
+    view.put("revision", ++revision);
     return view;
   }
 
@@ -83,13 +85,19 @@ final class StudyEngine {
           String error = null;
           try {
             view = run(command);
-            WordWidget.render(context, view);
           } catch (Exception e) {
             error = e.getMessage();
           }
           JSONObject result = view;
           String failure = error;
           main.post(() -> callback.done(result, failure));
+          if (result != null && failure == null) {
+            try {
+              WordWidget.render(context, result);
+            } catch (Exception e) {
+              android.util.Log.w("WordPop", "Widget update failed", e);
+            }
+          }
           if (failure == null && !command.optString("type").equals("sync"))
             CloudClient.requestSync(context);
         });

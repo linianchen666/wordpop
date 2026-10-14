@@ -95,18 +95,49 @@ public class MainActivity extends Activity {
   }
 
   private void command(JSONObject command) {
-    StudyEngine.get(this).submit(command, MainActivity::notifyView);
+    StudyEngine.get(this)
+        .submit(
+            command,
+            (view, error) -> notifyView(view, error, command.optString("clientRequestId", "")));
   }
 
   static void notifyView(JSONObject view, String error) {
+    notifyView(view, error, "");
+  }
+
+  static JSONObject uiView(JSONObject view) throws org.json.JSONException {
+    JSONObject display = new JSONObject();
+    for (String key :
+        new String[] {
+          "word", "revealed", "nonce", "dueCount", "newRemaining", "quota", "intervals", "revision"
+        }) display.put(key, view.opt(key));
+    display.put(
+        "state",
+        new JSONObject().put("config", view.getJSONObject("state").getJSONObject("config")));
+    return display;
+  }
+
+  private static void notifyView(JSONObject view, String error, String requestId) {
     MainActivity activity = active.get();
     if (activity == null) return;
+    String payload = "null";
+    try {
+      if (error == null) payload = uiView(view).toString();
+    } catch (Exception e) {
+      error = "读取学习界面失败，请刷新重试";
+    }
+    final String script =
+        "receive("
+            + payload
+            + ","
+            + JSONObject.quote(error)
+            + ","
+            + JSONObject.quote(requestId)
+            + ")";
     activity.runOnUiThread(
         () -> {
           if (activity.web == null) return;
-          activity.web.evaluateJavascript(
-              error == null ? "render(" + view + ")" : "notice(" + JSONObject.quote(error) + ")",
-              null);
+          activity.web.evaluateJavascript(script, null);
         });
   }
 

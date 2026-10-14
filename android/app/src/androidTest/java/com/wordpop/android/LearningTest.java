@@ -12,6 +12,33 @@ import org.junit.runner.RunWith;
 @RunWith(AndroidJUnit4.class)
 public class LearningTest {
   @Test
+  public void appReceivesDisplayDataWithoutFullLearningHistory() throws Exception {
+    JSONObject state =
+        new JSONObject()
+            .put("config", new JSONObject().put("dailyNewWords", 20))
+            .put(
+                "events",
+                new org.json.JSONArray().put(new JSONObject().put("id", "private-history")))
+            .put("progress", new JSONObject().put("test", new JSONObject().put("stage", 3)));
+    JSONObject view =
+        new JSONObject()
+            .put("state", state)
+            .put("nonce", "card")
+            .put("revealed", true)
+            .put("revision", 5)
+            .put("word", new JSONObject().put("word", "test"))
+            .put("intervals", new JSONObject().put("known", 600000));
+    JSONObject ui = MainActivity.uiView(view);
+    assertEquals(1, ui.getJSONObject("state").length());
+    assertEquals(20, ui.getJSONObject("state").getJSONObject("config").getInt("dailyNewWords"));
+    assertEquals("test", ui.getJSONObject("word").getString("word"));
+    assertEquals(5, ui.getInt("revision"));
+    assertEquals(600000, ui.getJSONObject("intervals").getLong("known"));
+    assertFalse(ui.toString().contains("private-history"));
+    assertTrue(state.has("events"));
+  }
+
+  @Test
   public void engineUsesSharedFsrsAndRejectsStaleActions() throws Exception {
     StudyEngine engine =
         StudyEngine.get(InstrumentationRegistry.getInstrumentation().getTargetContext());
