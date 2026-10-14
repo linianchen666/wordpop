@@ -30,7 +30,7 @@ const result = spawnSync(
     "--package",
     "esbuild@0.25.0",
     "esbuild",
-    "android/core-entry.js",
+    "src/shared/learning-core.js",
     "--bundle",
     "--platform=browser",
     "--format=iife",
