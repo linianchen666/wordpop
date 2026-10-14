@@ -1,0 +1,25 @@
+name: Android signing check
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Restore and verify fixed signing key
+        env:
+          WORDPOP_ANDROID_KEYSTORE_BASE64: ${{ secrets.WORDPOP_ANDROID_KEYSTORE_BASE64 }}
+          WORDPOP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.WORDPOP_ANDROID_KEYSTORE_PASSWORD }}
+        run: |
+          python3 android/tools/restore-signing-key.py --output "$RUNNER_TEMP/wordpop-check.p12"
+          python3 android/tools/check-signing-key.py --keystore "$RUNNER_TEMP/wordpop-check.p12" --expected android/signing-certificate.sha256
+      - name: Remove temporary key
+        if: always()
+        run: rm -f "$RUNNER_TEMP/wordpop-check.p12"
