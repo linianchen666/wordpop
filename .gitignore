@@ -8,3 +8,8 @@ build/
 *.db-shm
 .DS_Store
 core*
+*.keystore
+*.jks
+*.p12
+**/keystore-base64.txt
+**/keystore-password.txt

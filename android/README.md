@@ -6,7 +6,7 @@ Android 8.0 及以上，推荐更新 Android System WebView。针对三星 Z Fli
 
 在仓库根目录运行 `npm ci --ignore-scripts`，然后 `node android/tools/build-assets.cjs`。Android 构建需要 JDK 17、Gradle 8.11.1、Android SDK 35 和 Build Tools 35.0.0，设置 `ANDROID_HOME` 后运行 `gradle -p android assembleDebug lintDebug`。
 
-APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。测试包使用调试签名，可安装体验；后续正式发行需要固定签名密钥，不能把不同签名的 APK 当成覆盖升级包。仓库的 Android APK 工作流构建并通过模拟器执行设备测试。
+APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。测试包使用调试签名，可安装体验；后续构建已改为使用固定签名，需先按 [签名配置](SIGNING.md) 保存 GitHub Secrets；不能把不同签名的 APK 当成覆盖升级包。仓库的 Android APK 工作流构建并通过模拟器执行设备测试。
 
 ## 使用
 

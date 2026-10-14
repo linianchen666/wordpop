@@ -1,4 +1,9 @@
 plugins { id 'com.android.application' }
+def fixedStore = System.getenv('WORDPOP_ANDROID_KEYSTORE_PATH')
+def fixedPassword = System.getenv('WORDPOP_ANDROID_KEYSTORE_PASSWORD')
+if (fixedStore && !fixedPassword) {
+    throw new GradleException('Missing WORDPOP_ANDROID_KEYSTORE_PASSWORD for fixed signing key')
+}
 android {
     namespace 'com.wordpop.android'
     compileSdk 35
@@ -11,6 +16,25 @@ android {
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+    signingConfigs {
+        if (fixedStore) {
+            wordpop {
+                storeFile file(fixedStore)
+                storePassword fixedPassword
+                keyAlias 'wordpop'
+                keyPassword fixedPassword
+                storeType 'PKCS12'
+            }
+        }
+    }
+    buildTypes {
+        debug {
+            if (fixedStore) signingConfig signingConfigs.wordpop
+        }
+        release {
+            if (fixedStore) signingConfig signingConfigs.wordpop
+        }
+    }
 }
 dependencies {
     implementation 'androidx.javascriptengine:javascriptengine:1.0.0'

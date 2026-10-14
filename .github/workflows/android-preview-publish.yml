@@ -30,6 +30,7 @@ jobs:
           test "$(gh run view "$WINDOWS_RUN" --repo "$REPO" --json headSha --jq .headSha)" = "$GITHUB_SHA"
           gh run download "$ANDROID_RUN" --repo "$REPO" --name wordpop-android-test-apk --dir artifacts/android
           gh run download "$WINDOWS_RUN" --repo "$REPO" --name wordpop-windows-sync-preview --dir artifacts/windows
+          cmp artifacts/android/outputs/signing-certificate.sha256 android/signing-certificate.sha256
           mkdir packages
           cp artifacts/android/outputs/apk/debug/app-debug.apk packages/WordPop.Android.0.1.1-beta.1.apk
           cp artifacts/windows/*.exe packages/WordPop.Setup.1.9.0-beta.2.exe
