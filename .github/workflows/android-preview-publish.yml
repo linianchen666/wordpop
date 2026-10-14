@@ -29,8 +29,7 @@ jobs:
           gh run download "$ANDROID_RUN" --repo "$REPO" --name wordpop-android-test-apk --dir artifacts/android
           gh run download "$WINDOWS_RUN" --repo "$REPO" --name wordpop-windows-sync-preview --dir artifacts/windows
           mkdir packages
-          apk_path=$(rg --files artifacts/android | rg '/app-debug.apk$')
-          cp "$apk_path" packages/WordPop.Android.0.1.0-beta.1.apk
+          cp artifacts/android/outputs/apk/debug/app-debug.apk packages/WordPop.Android.0.1.0-beta.1.apk
           cp artifacts/windows/*.exe packages/WordPop.Setup.1.9.0-beta.1.exe
           cd packages
           sha256sum *.apk *.exe > SHA256SUMS.txt
