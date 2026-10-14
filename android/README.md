@@ -6,7 +6,7 @@ Android 8.0 及以上，推荐更新 Android System WebView。针对三星 Z Fli
 
 在仓库根目录运行 `npm ci --ignore-scripts`，然后 `node android/tools/build-assets.cjs`。Android 构建需要 JDK 17、Gradle 8.11.1、Android SDK 35 和 Build Tools 35.0.0，设置 `ANDROID_HOME` 后运行 `gradle -p android assembleDebug lintDebug`。
 
-APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。测试包使用调试签名，可安装体验；后续构建已改为使用固定签名，需先按 [签名配置](SIGNING.md) 保存 GitHub Secrets；不能把不同签名的 APK 当成覆盖升级包。仓库的 Android APK 工作流构建并通过模拟器执行设备测试。
+APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。GitHub 构建的测试包从 0.1.2-beta.1 开始使用固定 WordPop 签名；已按 [签名配置](SIGNING.md) 保存并验证 GitHub Secrets。首次从旧临时签名包迁移需要重装，此后保留密钥并递增 versionCode 可覆盖升级。未配置固定密钥的本地默认调试包不能作为覆盖升级包。仓库的 Android APK 工作流构建并通过模拟器执行设备测试。
 
 ## 使用
 
@@ -27,3 +27,5 @@ APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。测试包使�
 应用默认进入专注背词页，只显示进度、单词、音标、发音、释义、底部三个评分和右上角轻松星号，学习设置及云同步收进右上角菜单。小屏下自动缩小间距；完整释义可展开并滚动。若系统外屏不提供 WordPop 小组件，可通过三星 Good Lock → MultiStar 的外屏应用启动器允许并打开 WordPop（具体入口随 One UI 和地区变化）。这是外屏运行应用的替代方案，不能等同于直接添加外屏小组件。
 
 小屏布局通过浏览器多个视口验证；本次新增的透明背景和语音服务尚需在 Z Flip7 实机验证。三星外屏原生小组件限制不会因更换普通 AppWidget 元数据而自动解除。
+
+App 点击显示释义后立即展开已加载的释义和按钮，后台完成状态确认；评分过程中禁止重复提交，旧回调不会覆盖新卡片，保存失败时会恢复界面并显示提示。传回页面的数据只包含显示所需内容，完整学习记录仍保存在本地数据库。
