@@ -1,0 +1,31 @@
+name: Windows cloud sync preview
+on:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  installer:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Set preview package version
+        run: npm version 1.9.0-beta.1 --no-git-tag-version
+      - run: npm ci
+      - run: npm test
+      - run: npm run build -- --win --x64 --publish never
+      - name: Verify packaged settings and FSRS
+        shell: pwsh
+        run: |
+          $env:WORDPOP_TEST_APP_ROOT = (Resolve-Path 'build/win-unpacked/resources/app.asar').Path
+          & .\node_modules\.bin\electron.cmd test/fixtures/settings-window.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged settings failed' }
+          & .\node_modules\.bin\electron.cmd test/fixtures/review-window.cjs
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged review failed' }
+      - uses: actions/upload-artifact@v4
+        with:
+          name: wordpop-windows-sync-preview
+          path: build/WordPop Setup *.exe
