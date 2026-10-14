@@ -11,6 +11,8 @@ let session = null,
   generation = 0,
   cachedBaseline = null,
   appliedFingerprint = null,
+  lastRemoteCount = null,
+  appliedWordKey = null,
   status = "尚未连接云服务",
   db = null;
 function sessionFile() {
@@ -65,8 +67,8 @@ function queueSync() {
   if (followupTimer) return;
   followupTimer = setTimeout(() => {
     followupTimer = null;
-    sync();
-  }, 750);
+    sync({ background: true });
+  }, 10000);
   followupTimer.unref();
 }
 function pendingCount() {
@@ -78,7 +80,13 @@ function pendingCount() {
         .get(session.user.id).n
     : 0;
 }
-async function request(route, method = "GET", body, credentials = session) {
+async function request(
+  route,
+  method = "GET",
+  body,
+  credentials = session,
+  countOnly = false,
+) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 15000);
   try {
@@ -92,7 +100,9 @@ async function request(route, method = "GET", body, credentials = session) {
           ? { Authorization: "Bearer " + credentials.access_token }
           : {}),
         "Content-Type": "application/json",
-        Prefer: "resolution=ignore-duplicates,return=minimal",
+        Prefer: countOnly
+          ? "count=exact"
+          : "resolution=ignore-duplicates,return=minimal",
       },
       body: body ? JSON.stringify(body) : undefined,
       signal: controller.signal,
@@ -123,6 +133,12 @@ async function request(route, method = "GET", body, credentials = session) {
         messages[code] ||
           `云服务请求失败（${response.status}），请检查账户和数据库配置`,
       );
+    }
+    if (countOnly) {
+      const range = response.headers?.get("Content-Range");
+      return range && /\/\d+$/.test(range)
+        ? Number(range.split("/").pop())
+        : null;
     }
     return text ? JSON.parse(text) : null;
   } finally {
@@ -197,6 +213,27 @@ async function sync({ background = false } = {}) {
       );
     for (const event of upload)
       db.prepare("UPDATE cloud_events SET sent=1 WHERE id=?").run(event.id);
+    const wordRows = db.prepare("SELECT id,word FROM words ORDER BY id").all();
+    const wordKey = JSON.stringify(wordRows);
+    if (
+      background &&
+      !upload.length &&
+      lastRemoteCount != null &&
+      appliedWordKey === wordKey
+    ) {
+      const count = await fetch(
+        "/rest/v1/wordpop_events?select=id&limit=0",
+        "GET",
+        undefined,
+        session,
+        true,
+      );
+      if (count === lastRemoteCount && !pendingCount()) {
+        status = "已同步 · " + new Date().toLocaleTimeString("zh-CN");
+        succeeded = true;
+        return { message: status };
+      }
+    }
     let events = [];
     for (let offset = 0; ; offset += 1000) {
       const page = await fetch(
@@ -206,6 +243,7 @@ async function sync({ background = false } = {}) {
       events.push(...page);
       if (page.length < 1000) break;
     }
+    const remoteCount = new Set(events.map((e) => e.id)).size;
     events = [
       ...new Map(
         [
@@ -220,7 +258,6 @@ async function sync({ background = false } = {}) {
     ];
     const data = baseline[0].state.data,
       seeds = Object.fromEntries(data.progress.map((row) => [row.word, row]));
-    const wordRows = db.prepare("SELECT id,word FROM words ORDER BY id").all();
     const fingerprint = crypto
       .createHash("sha256")
       .update(
@@ -384,7 +421,9 @@ async function sync({ background = false } = {}) {
       require("./scheduler").reloadQueue();
       require("./scheduler").emit("stats-updated");
       appliedFingerprint = fingerprint;
+      appliedWordKey = wordKey;
     }
+    lastRemoteCount = remoteCount;
     const pending = pendingCount();
     status = pending
       ? `已保存本地 · ${pending} 条记录等待上传`
@@ -445,6 +484,8 @@ async function login(input) {
     generation++;
     cachedBaseline = null;
     appliedFingerprint = null;
+    lastRemoteCount = null;
+    appliedWordKey = null;
     persist();
     authenticating = false;
     status = "登录成功，密码验证通过；正在同步学习记录…";
@@ -515,8 +556,8 @@ function start(database) {
     status = "云登录已失效，请重新登录";
   }
   timer = setInterval(() => {
-    if (session) sync({ background: true });
-  }, 5000);
+    if (session && !followupTimer) sync({ background: true });
+  }, 15000);
   timer.unref();
   if (session) sync();
 }
@@ -545,6 +586,8 @@ function logout() {
   generation++;
   cachedBaseline = null;
   appliedFingerprint = null;
+  lastRemoteCount = null;
+  appliedWordKey = null;
   clearTimeout(followupTimer);
   followupTimer = null;
   syncAgain = false;

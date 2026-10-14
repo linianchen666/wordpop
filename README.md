@@ -194,11 +194,11 @@ MIT
 
 Android 应用支持普通桌面小组件、先回忆再评分、离线学习及与电脑共用的 FSRS 算法。小组件支持缩放、透明背景和交互自动发音；底部三个反馈按钮，右上角星号表示轻松。App 设置收进菜单，适合通过 MultiStar 在外屏专注背词。云同步采用 Supabase，同一账户共享评分和学习进度，默认项目网址和公开密钥已预填，也可按说明配置自己的项目。此功能尚未包含在 1.8.6 正式安装包中。
 
-[下载 Android 0.1.3 测试版](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.3-beta.1/WordPop.Android.0.1.3-beta.1.apk) · [下载 Windows 云同步预览 1.9.0-beta.4](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.3-beta.1/WordPop.Setup.1.9.0-beta.4.exe)
+[下载 Android 0.1.4 测试版](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.4-beta.1/WordPop.Android.0.1.4-beta.1.apk) · [下载 Windows 云同步预览 1.9.0-beta.5](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.4-beta.1/WordPop.Setup.1.9.0-beta.5.exe)
 
 [Android 构建与使用](android/README.md) · [云同步配置与记忆记录合并规则](cloud/README.md)
 
-Android 0.1.3 / Windows 1.9.0-beta.4 已优化同步：评分先在本地保存、后台上传；离线记录自动重试，同步期间的新评分自动续传；无新记录时不重写进度、不重置复习队列。手机增加联网补传任务，以及 App/小组件顶部的触屏撤销入口，可回到上一词重新评分。现有初始快照、评分和撤销记录继续使用，无需重建云表。
+Android 0.1.4 / Windows 1.9.0-beta.5 已精简 App 的回忆提示，小组件未展开时英文居中，点击后上移并显示释义。同步以 10 秒窗口批量上传评分，前台每 15 秒先轻量检查记录数量，未变化时不下载完整日志；评分立即保存在本地；离线记录自动重试，同步期间的新评分自动续传；无新记录时不重写进度、不重置复习队列。手机增加联网补传任务，以及 App/小组件顶部的触屏撤销入口，可回到上一词重新评分。现有初始快照、评分和撤销记录继续使用，无需重建云表。
 
 自 Android 0.1.2 起使用固定 WordPop 签名，本版沿用同一证书并递增版本，可从 0.1.2 直接覆盖升级。由更早的临时签名版本迁移时：先在旧手机 App 完成云同步并在电脑导出备份，再卸载旧 APK、安装新版并登录恢复记录。卸载会清除手机本地数据。
 

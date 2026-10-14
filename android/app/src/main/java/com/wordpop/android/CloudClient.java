@@ -7,6 +7,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONArray;
@@ -16,13 +17,34 @@ final class CloudClient {
   private static final ScheduledExecutorService network =
       Executors.newSingleThreadScheduledExecutor();
   private static final SyncGate gate = new SyncGate();
+  private static final Object queueLock = new Object();
+  private static ScheduledFuture<?> scheduledSync;
+  private static long ticket;
+  private static boolean forceRequested;
+  private static boolean flushRequested;
+  private static long lastRemoteCount = -1;
   private static JSONObject cachedBaseline;
   private static String baselineOwner;
-  private static String appliedOwner;
+  private static volatile String appliedOwner;
   private static final AtomicBoolean authenticating = new AtomicBoolean();
   static volatile String status = "尚未连接云服务";
 
   private static String request(JSONObject session, String route, String method, String body)
+      throws Exception {
+    return request(session, route, method, body, false);
+  }
+
+  static long parseRemoteCount(String range) {
+    if (range == null || !range.matches(".*/[0-9]+$")) return -1;
+    try {
+      return Long.parseLong(range.substring(range.lastIndexOf('/') + 1));
+    } catch (NumberFormatException error) {
+      return -1;
+    }
+  }
+
+  private static String request(
+      JSONObject session, String route, String method, String body, boolean countOnly)
       throws Exception {
     URL url = new URL(session.getString("url") + route);
     if (!url.getProtocol().equals("https")) throw new Exception("云服务地址必须使用 HTTPS");
@@ -34,7 +56,8 @@ final class CloudClient {
     if (!route.startsWith("/auth/") && session.has("access_token"))
       connection.setRequestProperty("Authorization", "Bearer " + session.getString("access_token"));
     connection.setRequestProperty("Content-Type", "application/json");
-    connection.setRequestProperty("Prefer", "resolution=ignore-duplicates,return=minimal");
+    connection.setRequestProperty(
+        "Prefer", countOnly ? "count=exact" : "resolution=ignore-duplicates,return=minimal");
     try {
       if (body != null) {
         connection.setDoOutput(true);
@@ -61,7 +84,9 @@ final class CloudClient {
         }
         throw new Exception(authError(errorCode, code));
       }
-      return response;
+      return countOnly
+          ? Long.toString(parseRemoteCount(connection.getHeaderField("Content-Range")))
+          : response;
     } finally {
       connection.disconnect();
     }
@@ -183,37 +208,92 @@ final class CloudClient {
         });
   }
 
-  // Called only after a rating or undo event has been committed to SQLite.
+  // A fixed ten-second window starts at the first committed event; later words
+  // join the same batch without postponing its deadline.
   static void eventSaved(Context context) {
     gate.changed();
+    if (appliedOwner != null) {
+      status = "已保存本地 · 等待批量同步";
+      MainActivity.notifyStatus();
+    }
     SyncWorker.uploadSoon(context);
-    enqueueSync(context, 750);
+    enqueueSync(context, 10000, false, false);
   }
 
   static void requestSync(Context context) {
-    enqueueSync(context, 0);
+    enqueueSync(context, 0, true, false);
   }
 
-  private static void enqueueSync(Context context, long delay) {
-    if (authenticating.get() || !gate.offer()) return;
-    Context app = context.getApplicationContext();
-    network.schedule(
+  static void poll(Context context) {
+    enqueueSync(context, 0, false, true);
+  }
+
+  static void flush(Context context) {
+    if (gate.hasChanges()) {
+      enqueueSync(context, 0, false, false);
+      return;
+    }
+    // Include events saved before a process restart or after a failed upload.
+    StudyEngine engine = StudyEngine.get(context);
+    engine.executor.execute(
         () -> {
-          gate.begin();
-          boolean succeeded = false;
           try {
-            syncBlocking(app);
-            succeeded = true;
+            if (pendingCount(engine.store.load()) > 0) enqueueSync(context, 0, false, false);
           } catch (Exception error) {
-            status = "记录已保存在本地；同步失败，将自动重试：" + error.getMessage();
-          } finally {
-            boolean again = gate.complete(succeeded);
-            MainActivity.notifyStatus();
-            if (again) enqueueSync(app, 750);
+            android.util.Log.w("WordPop", "Pending sync check failed", error);
           }
-        },
-        delay,
-        TimeUnit.MILLISECONDS);
+        });
+  }
+
+  private static void enqueueSync(Context context, long delay, boolean force, boolean pollOnly) {
+    if (authenticating.get()) return;
+    Context app = context.getApplicationContext();
+    synchronized (queueLock) {
+      if (!gate.offer()) {
+        if (pollOnly) return; // A display poll cannot prematurely flush a batch.
+        forceRequested |= force;
+        if (scheduledSync == null) {
+          if (delay == 0) {
+            flushRequested = true;
+            gate.changed();
+          }
+          return;
+        }
+        if (delay > 0) return;
+        scheduledSync.cancel(false);
+      }
+      forceRequested |= force;
+      final long scheduledTicket = ++ticket;
+      scheduledSync =
+          network.schedule(
+              () -> {
+                boolean forcePull;
+                synchronized (queueLock) {
+                  if (scheduledTicket != ticket) return;
+                  scheduledSync = null;
+                  gate.begin();
+                  forcePull = forceRequested;
+                  forceRequested = false;
+                  flushRequested = false;
+                }
+                boolean succeeded = false;
+                try {
+                  syncBlocking(app, forcePull);
+                  succeeded = true;
+                } catch (Exception error) {
+                  status = "记录已保存在本地；同步失败，将自动重试：" + error.getMessage();
+                } finally {
+                  synchronized (queueLock) {
+                    boolean again = gate.complete(succeeded);
+                    if (again || flushRequested || forceRequested)
+                      enqueueSync(app, flushRequested ? 0 : 10000, forceRequested, false);
+                  }
+                  MainActivity.notifyStatus();
+                }
+              },
+              delay,
+              TimeUnit.MILLISECONDS);
+    }
   }
 
   static int pendingCount(JSONObject state) {
@@ -229,7 +309,12 @@ final class CloudClient {
     return count;
   }
 
-  static synchronized void syncBlocking(Context context) throws Exception {
+  static void syncBlocking(Context context) throws Exception {
+    syncBlocking(context, false);
+  }
+
+  private static synchronized void syncBlocking(Context context, boolean forcePull)
+      throws Exception {
     String saved = SecretPrefs.load(context);
     if (saved == null) return;
     JSONObject session = new JSONObject(saved);
@@ -265,8 +350,6 @@ final class CloudClient {
         && state.has("cloudUser")
         && !state.getString("cloudUser").equals(session.getString("user_id")))
       throw new Exception("学习记录属于其他账户，请先备份并清除本地记录再切换");
-    status = "正在同步学习记录…";
-    MainActivity.notifyStatus();
     JSONArray upload = new JSONArray();
     if (state != null)
       for (int n = 0; n < state.getJSONArray("events").length(); n++) {
@@ -277,8 +360,22 @@ final class CloudClient {
           upload.put(event);
         }
       }
-    if (upload.length() > 0)
+    if (upload.length() > 0) {
+      status = "正在同步学习记录…";
+      MainActivity.notifyStatus();
       request(session, "/rest/v1/wordpop_events?on_conflict=id", "POST", upload.toString());
+    }
+    if (!forcePull && upload.length() == 0 && owner.equals(appliedOwner) && lastRemoteCount >= 0) {
+      long count =
+          Long.parseLong(
+              request(session, "/rest/v1/wordpop_events?select=id&limit=0", "GET", null, true));
+      if (count == lastRemoteCount) {
+        syncedStatus(engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS));
+        return;
+      }
+    }
+    status = "正在同步学习记录…";
+    MainActivity.notifyStatus();
     JSONArray events = new JSONArray();
     for (int offset = 0; ; offset += 1000) {
       JSONArray page =
@@ -292,12 +389,16 @@ final class CloudClient {
       for (int n = 0; n < page.length(); n++) events.put(page.get(n));
       if (page.length() < 1000) break;
     }
+    java.util.HashSet<String> remoteIds = new java.util.HashSet<>();
+    for (int n = 0; n < events.length(); n++)
+      remoteIds.add(events.getJSONObject(n).getString("id"));
     // The cloud journal is append-only. Already acknowledged IDs cannot change.
     // Skip the engine/SQLite/widget roundtrip on an unchanged foreground check.
     if (owner.equals(appliedOwner) && acknowledged(state, events)) {
       JSONObject latest =
           engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS);
       syncedStatus(latest);
+      lastRemoteCount = remoteIds.size();
       return;
     }
     JSONObject baseline = cachedBaseline.getJSONObject("data"), seeds = new JSONObject();
@@ -318,6 +419,7 @@ final class CloudClient {
     WordWidget.render(context, view);
     MainActivity.notifyView(view, null);
     appliedOwner = owner;
+    lastRemoteCount = remoteIds.size();
     syncedStatus(view.getJSONObject("state"));
   }
 

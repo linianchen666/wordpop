@@ -377,7 +377,7 @@
       </button>
     </div>
     <div id="meaning"></div>
-    <button id="reveal" onclick="send('reveal')">回忆后，显示释义</button>
+    <button id="reveal" onclick="send('reveal')">显示释义</button>
     <div id="ratings" hidden>
       <button id="unknown" onclick="rate('unknown')">
         不认识<span class="interval"></span></button
@@ -440,8 +440,9 @@
     <details>
       <summary>电脑与手机云同步</summary>
       <p>
-        先在电脑端连接并初始化云记录，再用同一账户登录手机。应用打开时每 5
-        秒同步，操作小组件后也会同步；后台更新受系统休眠限制，可能延迟。
+        先在电脑端初始化云记录，再用同一账户登录手机。评分立即保存在本地，约 10
+        秒批量上传；前台每 15 秒轻量检查，离开 App
+        时补传。后台更新受系统限制，可能延迟。
       </p>
       <details id="advancedCloud">
         <summary>高级连接设置</summary>
@@ -516,11 +517,12 @@
         "待复习 " + view.dueCount + " · 待新学 " + view.newRemaining;
       el("word").textContent = view.word?.word || "暂时完成";
       el("phonetic").textContent = view.word?.phonetic || "";
-      el("meaning").textContent = view.revealed
-        ? view.word.translationPreview
-        : view.word
-          ? "先独立回忆它的含义"
-          : "暂无到期单词，可稍后刷新";
+      el("meaning").hidden = !!view.word && !view.revealed;
+      el("meaning").textContent = view.word
+        ? view.revealed
+          ? view.word.translationPreview
+          : ""
+        : "暂无到期单词，可稍后刷新";
       el("undo").hidden = !view.undo;
       el("undo").disabled = !!pendingReview || !!pendingReveal;
       el("undo").title = view.undo

@@ -24,8 +24,16 @@ public class MainActivity extends Activity {
       new Runnable() {
         public void run() {
           command(new JSONObject());
-          CloudClient.requestSync(MainActivity.this);
+
           handler.postDelayed(this, 5000);
+        }
+      };
+
+  private final Runnable cloudPoll =
+      new Runnable() {
+        public void run() {
+          CloudClient.poll(MainActivity.this);
+          handler.postDelayed(this, 15000);
         }
       };
 
@@ -76,11 +84,14 @@ public class MainActivity extends Activity {
     super.onResume();
     active = new WeakReference<>(this);
     handler.post(poll);
+    handler.post(cloudPoll);
     if (web != null) command(new JSONObject());
   }
 
   protected void onPause() {
     handler.removeCallbacks(poll);
+    handler.removeCallbacks(cloudPoll);
+    CloudClient.flush(this);
     super.onPause();
   }
 

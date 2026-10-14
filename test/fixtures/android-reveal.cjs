@@ -41,6 +41,14 @@ async function checkFlow() {
     },
   };
   render(v);
+  check(
+    el("meaning").hidden && el("meaning").textContent === "",
+    "recall should not repeat instructional copy",
+  );
+  check(
+    el("reveal").textContent === "显示释义",
+    "reveal button should use just four characters",
+  );
   check(speeches.length === 0, "word appearance must stay silent");
   el("reveal").click();
   check(

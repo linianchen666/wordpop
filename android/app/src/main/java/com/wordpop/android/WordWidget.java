@@ -99,6 +99,7 @@ public class WordWidget extends AppWidgetProvider {
       appearance(context, id, views);
       views.setViewVisibility(R.id.speak, View.GONE);
       views.setTextViewText(R.id.translation, message);
+      views.setViewVisibility(R.id.translation, View.VISIBLE);
       views.setViewVisibility(R.id.ratings, View.GONE);
       views.setViewVisibility(R.id.easy, View.GONE);
       views.setViewVisibility(R.id.undo, View.GONE);
@@ -206,16 +207,19 @@ public class WordWidget extends AppWidgetProvider {
         R.id.status, "待复习 " + data.optInt("dueCount") + " · 待新学 " + data.optInt("newRemaining"));
     views.setTextViewText(R.id.word, word == null ? "暂时完成" : word.optString("word"));
     views.setTextViewText(R.id.phonetic, word == null ? "" : word.optString("phonetic"));
+    views.setViewVisibility(R.id.translation, word == null || revealed ? View.VISIBLE : View.GONE);
+    views.setContentDescription(
+        R.id.study_body, word == null ? "刷新单词" : revealed ? "单词与释义" : "显示释义");
     views.setTextViewText(
         R.id.translation,
-        word == null
-            ? "暂无到期单词，点击刷新"
-            : revealed ? word.optString("translationPreview") : "先回忆，再点这里显示释义");
+        word == null ? "暂无到期单词，点击刷新" : revealed ? word.optString("translationPreview") : "");
     views.setViewVisibility(R.id.ratings, word != null && revealed ? View.VISIBLE : View.GONE);
     views.setOnClickPendingIntent(
         R.id.translation, command(context, id, nonce, word == null ? "view" : "reveal", ""));
     views.setOnClickPendingIntent(R.id.open, open(context, id));
-    views.setOnClickPendingIntent(R.id.word, open(context, id));
+    PendingIntent reveal = command(context, id, nonce, word == null ? "view" : "reveal", "");
+    views.setOnClickPendingIntent(R.id.study_body, reveal);
+    views.setOnClickPendingIntent(R.id.word, reveal);
     if (word != null) {
       views.setOnClickPendingIntent(
           R.id.speak,

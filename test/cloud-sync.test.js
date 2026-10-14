@@ -22,7 +22,29 @@ let baseline = null,
   holdPull = null,
   baselineReads = 0,
   reloads = 0,
-  pulls = 0;
+  pulls = 0,
+  counts = 0,
+  uploadedBatches = [],
+  countHeaderAvailable = true;
+const realSetTimeout = global.setTimeout,
+  realClearTimeout = global.clearTimeout;
+const batches = [];
+global.setTimeout = (fn, delay, ...args) => {
+  if (delay !== 10000) return realSetTimeout(fn, delay, ...args);
+  const timer = { batch: true, active: true, fn, unref() {} };
+  batches.push(timer);
+  return timer;
+};
+global.clearTimeout = (timer) => {
+  if (timer?.batch) timer.active = false;
+  else realClearTimeout(timer);
+};
+function flushBatch() {
+  const next = batches.find((b) => b.active);
+  assert(next, "automatic batch should be scheduled");
+  next.active = false;
+  next.fn();
+}
 try {
   Module._load = function (request, parent) {
     if (request === "electron")
@@ -79,6 +101,7 @@ try {
       }
     } else if (route.endsWith("wordpop_events")) {
       if (options.method === "POST") {
+        uploadedBatches.push(body);
         for (const event of body)
           if (!serverEvents.some((e) => e.id === event.id))
             serverEvents.push(event);
@@ -86,18 +109,15 @@ try {
           lostUploadReply = false;
           throw new Error("fixture lost reply");
         }
+      } else if (options.headers.Prefer === "count=exact") {
+        counts++;
+        result = [];
       } else {
         pulls++;
         if (holdPull) await holdPull;
         if (injectOnPull) {
           const callback = injectOnPull;
-          (injectOnPull = null),
-            (offline = false),
-            (lostUploadReply = false),
-            (holdPull = null),
-            (baselineReads = 0),
-            (reloads = 0),
-            (pulls = 0);
+          injectOnPull = null;
           callback();
         }
         const offset = Number(parsed.searchParams.get("offset") || 0);
@@ -111,6 +131,12 @@ try {
     return {
       ok: true,
       status: 200,
+      headers: {
+        get: (key) =>
+          key === "Content-Range" && countHeaderAvailable
+            ? "*/" + serverEvents.length
+            : null,
+      },
       text: async () => (result === null ? "" : JSON.stringify(result)),
     };
   };
@@ -142,6 +168,22 @@ try {
         initialChanges,
         "unchanged checks must not rewrite SQLite",
       );
+      const initialPulls = pulls;
+      await cloud.sync({ background: true });
+      assert.equal(counts, 1);
+      assert.equal(
+        pulls,
+        initialPulls,
+        "unchanged background checks return only the count, not the full journal",
+      );
+      countHeaderAvailable = false;
+      await cloud.sync({ background: true });
+      assert.equal(
+        pulls,
+        initialPulls + 1,
+        "missing count header safely falls back to a full pull",
+      );
+      countHeaderAvailable = true;
       const now = Date.now();
       recordReview(db, 1, "unknown", now);
       await cloud.sync();
@@ -242,6 +284,7 @@ try {
           await new Promise((resolve) => setTimeout(resolve, 25));
         }
       };
+      flushBatch();
       await until(
         () => cloud.getStatus().pending === 0 && !cloud.getStatus().syncing,
       );
@@ -337,6 +380,50 @@ try {
         "a fresh review replaces the deferred queue time",
       );
 
+      const beforeBatchedUploads = serverEvents.length;
+      const beforePostCount = uploadedBatches.length;
+      recordReview(db, 1, "unknown", now + 7 * MINUTE);
+      const scheduled = batches.filter((b) => b.active).length;
+      recordReview(db, 1, "fuzzy", now + 8 * MINUTE);
+      recordReview(db, 1, "known", now + 9 * MINUTE);
+      assert.equal(
+        batches.filter((b) => b.active).length,
+        scheduled,
+        "later words must not reset or duplicate the ten-second window",
+      );
+      assert.equal(cloud.getStatus().pending, 3);
+      assert.equal(
+        serverEvents.length,
+        beforeBatchedUploads,
+        "grades remain local until the batch starts",
+      );
+      flushBatch();
+      await until(
+        () => cloud.getStatus().pending === 0 && !cloud.getStatus().syncing,
+      );
+      assert.equal(serverEvents.length, beforeBatchedUploads + 3);
+      assert.equal(
+        uploadedBatches.length,
+        beforePostCount + 1,
+        "three grades must upload in one POST",
+      );
+      assert.equal(uploadedBatches.at(-1).length, 3);
+      const beforeIdlePull = pulls;
+      await cloud.sync({ background: true });
+      assert.equal(pulls, beforeIdlePull);
+      serverEvents.push({
+        id: "new-on-count-check",
+        word: "test",
+        action: "unknown",
+        reviewed_at: now + 10 * MINUTE,
+      });
+      await cloud.sync({ background: true });
+      assert.equal(
+        pulls,
+        beforeIdlePull + 2,
+        "a changed count fetches all pages and merges the new remote rating",
+      );
+
       const beforeLogout = db.prepare("SELECT total_changes() n").get().n;
       let release;
       holdPull = new Promise((resolve) => {
@@ -366,6 +453,8 @@ try {
       );
     } finally {
       cloud.logout();
+      global.setTimeout = realSetTimeout;
+      global.clearTimeout = realClearTimeout;
       Module._load = originalLoad;
       global.fetch = originalFetch;
       db.close();

@@ -36,7 +36,7 @@ public class SyncWorker extends Worker {
             ExistingWorkPolicy.KEEP,
             new OneTimeWorkRequest.Builder(SyncWorker.class)
                 .setInputData(new Data.Builder().putBoolean("uploadOnly", true).build())
-                .setInitialDelay(10, TimeUnit.SECONDS)
+                .setInitialDelay(30, TimeUnit.SECONDS)
                 .setConstraints(
                     new Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
                 .build());

@@ -16,6 +16,72 @@ import org.junit.runner.RunWith;
 
 @RunWith(AndroidJUnit4.class)
 public class WidgetTest {
+  private View measuredWidget(Context context, JSONObject data, int width, int height) {
+    AtomicReference<View> result = new AtomicReference<>();
+    float density = context.getResources().getDisplayMetrics().density;
+    InstrumentationRegistry.getInstrumentation()
+        .runOnMainSync(
+            () -> {
+              try {
+                View root =
+                    WordWidget.buildViews(context, 9877, data, width, height)
+                        .apply(context, new FrameLayout(context));
+                int w = Math.round(width * density), h = Math.round(height * density);
+                root.measure(
+                    View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+                    View.MeasureSpec.makeMeasureSpec(h, View.MeasureSpec.EXACTLY));
+                root.layout(0, 0, w, h);
+                result.set(root);
+              } catch (Exception error) {
+                throw new RuntimeException(error);
+              }
+            });
+    return result.get();
+  }
+
+  @Test
+  public void recallCentersTheWordAndRevealMovesItUp() throws Exception {
+    Context context = InstrumentationRegistry.getInstrumentation().getTargetContext();
+    JSONObject data =
+        new JSONObject()
+            .put(
+                "word",
+                new JSONObject()
+                    .put("word", "leather")
+                    .put("phonetic", "/ˈleðə/")
+                    .put("translationPreview", "n. 皮革"))
+            .put("nonce", "recall-layout")
+            .put(
+                "intervals",
+                new JSONObject()
+                    .put("unknown", 60000)
+                    .put("fuzzy", 60000)
+                    .put("known", 600000)
+                    .put("easy", 86400000));
+    for (int[] size : new int[][] {{180, 160}, {220, 200}, {320, 300}, {520, 500}}) {
+      data.put("revealed", false);
+      View recall = measuredWidget(context, data, size[0], size[1]);
+      assertEquals(View.GONE, recall.findViewById(R.id.translation).getVisibility());
+      assertEquals("", ((TextView) recall.findViewById(R.id.translation)).getText().toString());
+      View word = recall.findViewById(R.id.word), body = recall.findViewById(R.id.study_body);
+      assertEquals("显示释义", body.getContentDescription().toString());
+      assertTrue("word must leave space above it in recall mode", word.getTop() > 0);
+      int groupHeight = word.getHeight();
+      if (!WordWidget.compactForSize(size[0], size[1]))
+        groupHeight += recall.findViewById(R.id.phonetic).getHeight();
+      assertTrue(
+          "recall group is centered",
+          Math.abs(word.getTop() + groupHeight / 2 - body.getHeight() / 2) <= 2);
+      data.put("revealed", true);
+      View revealed = measuredWidget(context, data, size[0], size[1]);
+      assertEquals(View.VISIBLE, revealed.findViewById(R.id.translation).getVisibility());
+      assertEquals(
+          "n. 皮革", ((TextView) revealed.findViewById(R.id.translation)).getText().toString());
+      assertTrue(revealed.findViewById(R.id.word).getTop() < word.getTop());
+      assertEquals(View.VISIBLE, revealed.findViewById(R.id.ratings).getVisibility());
+    }
+  }
+
   @Test
   public void autoSpeechOnlyFollowsValidWidgetInteraction() throws Exception {
     JSONObject view =
@@ -191,17 +257,20 @@ public class WidgetTest {
     assertEquals(View.GONE, root.get().findViewById(R.id.ratings).getVisibility());
     assertEquals(View.GONE, root.get().findViewById(R.id.easy).getVisibility());
     assertEquals(View.GONE, root.get().findViewById(R.id.undo).getVisibility());
-    assertTrue(
-        ((TextView) root.get().findViewById(R.id.translation)).getText().toString().contains("回忆"));
+    assertEquals(View.GONE, root.get().findViewById(R.id.translation).getVisibility());
+    assertEquals("", ((TextView) root.get().findViewById(R.id.translation)).getText().toString());
+    InstrumentationRegistry.getInstrumentation()
+        .runOnMainSync(() -> root.get().findViewById(R.id.study_body).performClick());
+    long revealEnd = System.currentTimeMillis() + 10000;
+    while (System.currentTimeMillis() < revealEnd) {
+      if (engine.store.load().getJSONObject("current").getBoolean("revealed")) break;
+      Thread.sleep(50);
+    }
+    assertTrue(engine.store.load().getJSONObject("current").getBoolean("revealed"));
     JSONObject reveal =
         engine
             .executor
-            .submit(
-                () ->
-                    engine.run(
-                        new JSONObject()
-                            .put("type", "reveal")
-                            .put("nonce", initial.getString("nonce"))))
+            .submit(() -> engine.run(new JSONObject().put("type", "view")))
             .get(10, TimeUnit.SECONDS);
     InstrumentationRegistry.getInstrumentation()
         .runOnMainSync(
