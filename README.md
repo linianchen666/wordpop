@@ -196,7 +196,9 @@ Android 应用支持普通桌面小组件、先回忆再评分、离线学习及
 
 [下载 Android 0.1.2 测试版](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.2-beta.1/WordPop.Android.0.1.2-beta.1.apk) · [下载 Windows 云同步预览 1.9.0-beta.3](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.2-beta.1/WordPop.Setup.1.9.0-beta.3.exe)
 
-[Android 构建与使用](android/README.md) · [云同步配置](cloud/README.md)
+[Android 构建与使用](android/README.md) · [云同步配置与记忆记录合并规则](cloud/README.md)
+
+当前 main 源码已优化同步：评分先在本地保存、后台上传；离线记录自动重试，同步期间的新评分自动续传；无新记录时不重写进度、不重置复习队列。手机增加联网补传任务。现有初始快照、评分和撤销记录继续使用，无需重建云表；这些改进将在下一次打包发布后提供。
 
 本次 APK 开始使用固定 WordPop 签名。由旧临时签名版本迁移时：先在旧手机 App 完成云同步并在电脑导出备份，再卸载旧 APK、安装新版并登录恢复记录。卸载会清除手机本地数据。
 

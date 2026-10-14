@@ -35,10 +35,10 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.11.1'
-      - name: Build and lint APK
+      - name: Build APK, run unit tests and lint
         env:
           WORDPOP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.WORDPOP_ANDROID_KEYSTORE_PASSWORD }}
-        run: gradle -p android assembleDebug lintDebug
+        run: gradle -p android assembleDebug testDebugUnitTest lintDebug
       - name: Verify fixed APK signature
         run: |
           python3 android/tools/verify-signing.py --apk android/app/build/outputs/apk/debug/app-debug.apk --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --expected android/signing-certificate.sha256 --output android/app/build/outputs/signing-certificate.sha256
@@ -63,6 +63,7 @@ jobs:
           path: |
             android/app/build/outputs/apk/debug/*.apk
             android/app/build/reports/
+            android/app/build/test-results/
             android/app/build/outputs/androidTest-results/
             android/app/build/outputs/signing-certificate.sha256
       - name: Remove temporary signing key

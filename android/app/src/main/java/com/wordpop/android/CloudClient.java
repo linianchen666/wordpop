@@ -5,16 +5,20 @@ import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
-import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
 final class CloudClient {
-  private static final ExecutorService network = Executors.newSingleThreadExecutor();
-  private static final AtomicBoolean queued = new AtomicBoolean();
+  private static final ScheduledExecutorService network =
+      Executors.newSingleThreadScheduledExecutor();
+  private static final SyncGate gate = new SyncGate();
+  private static JSONObject cachedBaseline;
+  private static String baselineOwner;
+  private static String appliedOwner;
   private static final AtomicBoolean authenticating = new AtomicBoolean();
   static volatile String status = "尚未连接云服务";
 
@@ -123,6 +127,7 @@ final class CloudClient {
           } finally {
             authenticating.set(false);
             MainActivity.notifyStatus();
+            if (gate.hasChanges()) requestSync(context);
           }
         });
   }
@@ -178,20 +183,50 @@ final class CloudClient {
         });
   }
 
+  // Called only after a new rating has been committed to SQLite.
+  static void reviewSaved(Context context) {
+    gate.changed();
+    SyncWorker.uploadSoon(context);
+    enqueueSync(context, 750);
+  }
+
   static void requestSync(Context context) {
-    if (authenticating.get()) return;
-    if (!queued.compareAndSet(false, true)) return;
-    network.execute(
+    enqueueSync(context, 0);
+  }
+
+  private static void enqueueSync(Context context, long delay) {
+    if (authenticating.get() || !gate.offer()) return;
+    Context app = context.getApplicationContext();
+    network.schedule(
         () -> {
+          gate.begin();
+          boolean succeeded = false;
           try {
-            syncBlocking(context);
+            syncBlocking(app);
+            succeeded = true;
           } catch (Exception error) {
-            status = error.getMessage();
+            status = "记录已保存在本地；同步失败，将自动重试：" + error.getMessage();
           } finally {
-            queued.set(false);
+            boolean again = gate.complete(succeeded);
             MainActivity.notifyStatus();
+            if (again) enqueueSync(app, 750);
           }
-        });
+        },
+        delay,
+        TimeUnit.MILLISECONDS);
+  }
+
+  static int pendingCount(JSONObject state) {
+    if (state == null) return 0;
+    JSONArray events = state.optJSONArray("events");
+    JSONObject sent = state.optJSONObject("cloudSyncedIds");
+    int count = 0;
+    if (events != null)
+      for (int n = 0; n < events.length(); n++) {
+        JSONObject event = events.optJSONObject(n);
+        if (event != null && (sent == null || !sent.optBoolean(event.optString("id")))) count++;
+      }
+    return count;
   }
 
   static synchronized void syncBlocking(Context context) throws Exception {
@@ -215,12 +250,14 @@ final class CloudClient {
               "expires_at", System.currentTimeMillis() / 1000 + tokens.optLong("expires_in", 3600));
       SecretPrefs.save(context, session.toString());
     }
-    JSONArray base =
-        new JSONArray(
-            request(session, "/rest/v1/wordpop_baseline?select=state&limit=1", "GET", null));
-    if (base.length() == 0) {
-      status = "请先在电脑端连接此账户并上传初始记录";
-      return;
+    String owner = session.getString("url") + ":" + session.getString("user_id");
+    if (!owner.equals(baselineOwner) || cachedBaseline == null) {
+      JSONArray base =
+          new JSONArray(
+              request(session, "/rest/v1/wordpop_baseline?select=state&limit=1", "GET", null));
+      if (base.length() == 0) throw new Exception("请先在电脑端连接此账户并上传初始记录");
+      cachedBaseline = base.getJSONObject(0).getJSONObject("state");
+      baselineOwner = owner;
     }
     StudyEngine engine = StudyEngine.get(context);
     JSONObject state = engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS);
@@ -228,6 +265,8 @@ final class CloudClient {
         && state.has("cloudUser")
         && !state.getString("cloudUser").equals(session.getString("user_id")))
       throw new Exception("学习记录属于其他账户，请先备份并清除本地记录再切换");
+    status = "正在同步学习记录…";
+    MainActivity.notifyStatus();
     JSONArray upload = new JSONArray();
     if (state != null)
       for (int n = 0; n < state.getJSONArray("events").length(); n++) {
@@ -253,8 +292,15 @@ final class CloudClient {
       for (int n = 0; n < page.length(); n++) events.put(page.get(n));
       if (page.length() < 1000) break;
     }
-    JSONObject baseline = base.getJSONObject(0).getJSONObject("state").getJSONObject("data"),
-        seeds = new JSONObject();
+    // The cloud journal is append-only. Already acknowledged IDs cannot change.
+    // Skip the engine/SQLite/widget roundtrip on an unchanged foreground check.
+    if (owner.equals(appliedOwner) && acknowledged(state, events)) {
+      JSONObject latest =
+          engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS);
+      syncedStatus(latest);
+      return;
+    }
+    JSONObject baseline = cachedBaseline.getJSONObject("data"), seeds = new JSONObject();
     JSONArray progress = baseline.getJSONArray("progress");
     for (int n = 0; n < progress.length(); n++) {
       JSONObject row = progress.getJSONObject(n);
@@ -263,9 +309,7 @@ final class CloudClient {
     JSONObject command =
         new JSONObject()
             .put("type", "sync")
-            .put(
-                "initialConfig",
-                base.getJSONObject(0).getJSONObject("state").optJSONObject("config"))
+            .put("initialConfig", cachedBaseline.optJSONObject("config"))
             .put("userId", session.getString("user_id"))
             .put("seeds", seeds)
             .put("events", events)
@@ -273,9 +317,28 @@ final class CloudClient {
     JSONObject view = engine.executor.submit(() -> engine.run(command)).get(20, TimeUnit.SECONDS);
     WordWidget.render(context, view);
     MainActivity.notifyView(view, null);
+    appliedOwner = owner;
+    syncedStatus(view.getJSONObject("state"));
+  }
+
+  static boolean acknowledged(JSONObject state, JSONArray events) {
+    if (state == null || state.optJSONObject("cloudSyncedIds") == null) return false;
+    JSONObject sent = state.optJSONObject("cloudSyncedIds");
+    for (int n = 0; n < events.length(); n++) {
+      JSONObject event = events.optJSONObject(n);
+      if (event == null || !sent.optBoolean(event.optString("id"))) return false;
+    }
+    return true;
+  }
+
+  private static void syncedStatus(JSONObject state) {
+    int pending = pendingCount(state);
+    if (pending > 0) gate.changed();
     status =
-        "已同步 · "
-            + new java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA)
-                .format(new java.util.Date());
+        pending > 0
+            ? "已保存本地 · " + pending + " 条记录等待上传"
+            : "已同步 · "
+                + new java.text.SimpleDateFormat("HH:mm", java.util.Locale.CHINA)
+                    .format(new java.util.Date());
   }
 }

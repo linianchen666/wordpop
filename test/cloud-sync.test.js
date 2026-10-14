@@ -16,7 +16,13 @@ const originalLoad = Module._load,
   originalFetch = global.fetch;
 let baseline = null,
   serverEvents = [],
-  injectOnPull = null;
+  injectOnPull = null,
+  offline = false,
+  lostUploadReply = false,
+  holdPull = null,
+  baselineReads = 0,
+  reloads = 0,
+  pulls = 0;
 try {
   Module._load = function (request, parent) {
     if (request === "electron")
@@ -29,7 +35,12 @@ try {
         },
       };
     if (parent?.filename.endsWith("cloud-sync.js") && request === "./scheduler")
-      return { reloadQueue() {}, emit() {} };
+      return {
+        reloadQueue() {
+          reloads++;
+        },
+        emit() {},
+      };
     if (parent?.filename.endsWith("cloud-sync.js") && request === "./backup")
       return {
         createBackupData: () => ({
@@ -48,7 +59,9 @@ try {
   const cloud = require("../src/main/cloud-sync");
   cloud.start(db);
   global.fetch = async (url, options) => {
-    const route = new URL(url).pathname;
+    if (offline) throw new Error("fixture offline");
+    const parsed = new URL(url);
+    const route = parsed.pathname;
     const body = options.body && JSON.parse(options.body);
     let result = null;
     if (route.includes("/auth/"))
@@ -60,19 +73,39 @@ try {
       };
     else if (route.endsWith("wordpop_baseline")) {
       if (options.method === "POST") baseline = body.state;
-      else result = baseline ? [{ state: baseline }] : [];
+      else {
+        baselineReads++;
+        result = baseline ? [{ state: baseline }] : [];
+      }
     } else if (route.endsWith("wordpop_events")) {
       if (options.method === "POST") {
         for (const event of body)
           if (!serverEvents.some((e) => e.id === event.id))
             serverEvents.push(event);
+        if (lostUploadReply) {
+          lostUploadReply = false;
+          throw new Error("fixture lost reply");
+        }
       } else {
+        pulls++;
+        if (holdPull) await holdPull;
         if (injectOnPull) {
           const callback = injectOnPull;
-          injectOnPull = null;
+          (injectOnPull = null),
+            (offline = false),
+            (lostUploadReply = false),
+            (holdPull = null),
+            (baselineReads = 0),
+            (reloads = 0),
+            (pulls = 0);
           callback();
         }
-        result = serverEvents;
+        const offset = Number(parsed.searchParams.get("offset") || 0);
+        result = [...serverEvents]
+          .sort(
+            (a, b) => a.reviewed_at - b.reviewed_at || a.id.localeCompare(b.id),
+          )
+          .slice(offset, offset + 1000);
       }
     }
     return {
@@ -90,6 +123,25 @@ try {
         password: "fixture-password",
       });
       assert.ok(!login.error, login.message);
+      const initialBaselineReads = baselineReads;
+      const initialReloads = reloads;
+      const initialChanges = db.prepare("SELECT total_changes() n").get().n;
+      await cloud.sync();
+      assert.equal(
+        baselineReads,
+        initialBaselineReads,
+        "immutable baseline is cached",
+      );
+      assert.equal(
+        reloads,
+        initialReloads,
+        "unchanged checks must not reset the study queue",
+      );
+      assert.equal(
+        db.prepare("SELECT total_changes() n").get().n,
+        initialChanges,
+        "unchanged checks must not rewrite SQLite",
+      );
       const now = Date.now();
       recordReview(db, 1, "unknown", now);
       await cloud.sync();
@@ -160,14 +212,134 @@ try {
         db.prepare("SELECT COUNT(*) n FROM cloud_events WHERE sent=0").get().n,
         1,
       );
+      const until = async (predicate) => {
+        const deadline = Date.now() + 5000;
+        while (!predicate()) {
+          assert(Date.now() < deadline, "automatic upload timed out");
+          await new Promise((resolve) => setTimeout(resolve, 25));
+        }
+      };
+      await until(
+        () => cloud.getStatus().pending === 0 && !cloud.getStatus().syncing,
+      );
+      assert.equal(
+        serverEvents.length,
+        5,
+        "a rating during pull uploads without manual sync",
+      );
+      assert.equal(
+        db
+          .prepare("SELECT COUNT(*) n FROM cloud_events WHERE action='undo'")
+          .get().n,
+        2,
+        "remote undo tombstones are durable",
+      );
+
+      offline = true;
+      recordReview(db, 1, "fuzzy", now + 5 * MINUTE);
+      const failed = await cloud.sync();
+      assert(failed.error);
+      assert.equal(cloud.getStatus().pending, 1);
+      assert(cloud.getStatus().message.includes("已保存本地"));
+      assert.equal(serverEvents.length, 5);
+      offline = false;
+      lostUploadReply = true;
+      assert((await cloud.sync()).error);
+      assert.equal(
+        cloud.getStatus().pending,
+        1,
+        "no acknowledgement means keep the outbox",
+      );
       await cloud.sync();
       assert.equal(
-        db.prepare("SELECT COUNT(*) n FROM cloud_events WHERE sent=0").get().n,
-        0,
+        serverEvents.length,
+        6,
+        "retry after a lost response must not duplicate a rating",
       );
-      assert.equal(serverEvents.length, 5);
+      assert.equal(cloud.getStatus().pending, 0);
+
+      // Offline events may arrive with older review times. Full pulls and UUID dedup retain them.
+      const { fold } = require("../src/shared/learning-core");
+      for (let i = 0; i < 1005; i++)
+        serverEvents.push({
+          id: "offline-phone-" + i,
+          word: "missing",
+          action: "unknown",
+          reviewed_at: now - (2000 - i) * MINUTE,
+        });
+      const deferred = now + 7 * 24 * 60 * MINUTE;
+      db.prepare("UPDATE progress SET next_review_at=? WHERE word_id=1").run(
+        deferred,
+      );
+      const previousPulls = pulls;
+      await cloud.sync();
+      assert.equal(pulls - previousPulls, 2, "all pages must be fetched");
+      assert.equal(
+        db
+          .prepare("SELECT COUNT(*) n FROM cloud_events WHERE word='missing'")
+          .get().n,
+        1005,
+      );
+      assert.equal(db.prepare("SELECT COUNT(*) n FROM progress").get().n, 1);
+      assert.equal(
+        db.prepare("SELECT next_review_at FROM progress WHERE word_id=1").get()
+          .next_review_at,
+        deferred,
+        "syncing another word must preserve local backlog spreading",
+      );
+      db.prepare("INSERT INTO words VALUES(2,'missing')").run();
+      await cloud.sync();
+      assert.equal(
+        db.prepare("SELECT COUNT(*) n FROM progress").get().n,
+        2,
+        "installing a dictionary materializes retained remote history",
+      );
+      assert.equal(
+        db.prepare("SELECT wrong_count FROM progress WHERE word_id=2").get()
+          .wrong_count,
+        fold({}, serverEvents).progress.missing.wrong_count,
+      );
+
+      serverEvents.push({
+        id: "new-after-deferral",
+        word: "test",
+        action: "known",
+        reviewed_at: now + 6 * MINUTE,
+      });
+      await cloud.sync();
+      assert.notEqual(
+        db.prepare("SELECT next_review_at FROM progress WHERE word_id=1").get()
+          .next_review_at,
+        deferred,
+        "a fresh review replaces the deferred queue time",
+      );
+
+      const beforeLogout = db.prepare("SELECT total_changes() n").get().n;
+      let release;
+      holdPull = new Promise((resolve) => {
+        release = resolve;
+      });
+      const beforeHeldPull = pulls;
+      serverEvents.push({
+        id: "late-after-logout",
+        word: "test",
+        action: "easy",
+        reviewed_at: now + 6 * MINUTE,
+      });
+      const held = cloud.sync();
+      await until(() => pulls > beforeHeldPull);
+      cloud.logout();
+      release();
+      await held;
+      holdPull = null;
+      assert.equal(
+        db.prepare("SELECT total_changes() n").get().n,
+        beforeLogout,
+        "logout must stop an in-flight pull from applying records",
+      );
+      assert.equal(cloud.getStatus().message, "已退出云账户");
       console.log(
-        "Cloud sync checks passed: real SQLite persistence, desktop outbox, phone feedback, idempotent replay, daily statistics and remote undo.",
+        "Cloud sync checks passed: real SQLite persistence, desktop outbox, phone feedback, no-op polls, automatic followup, offline/lost-response retries, pagination, missing dictionaries, remote undo and logout cancellation.",
       );
     } finally {
       cloud.logout();

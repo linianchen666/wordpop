@@ -6,6 +6,11 @@ let session = null,
   timer = null,
   busy = false,
   authenticating = false,
+  followupTimer = null,
+  syncAgain = false,
+  generation = 0,
+  cachedBaseline = null,
+  appliedFingerprint = null,
   status = "尚未连接云服务",
   db = null;
 function sessionFile() {
@@ -26,7 +31,9 @@ function persist() {
 }
 function tables(database) {
   database.exec(
-    `CREATE TABLE IF NOT EXISTS cloud_events(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,word TEXT NOT NULL,action TEXT NOT NULL,reviewed_at INTEGER NOT NULL,history_id INTEGER,target_id TEXT,sent INTEGER DEFAULT 0);`,
+    `CREATE TABLE IF NOT EXISTS cloud_events(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,word TEXT NOT NULL,action TEXT NOT NULL,reviewed_at INTEGER NOT NULL,history_id INTEGER,target_id TEXT,sent INTEGER DEFAULT 0);
+     CREATE INDEX IF NOT EXISTS cloud_events_outbox ON cloud_events(user_id,sent);
+     CREATE INDEX IF NOT EXISTS cloud_events_history ON cloud_events(user_id,history_id);`,
   );
 }
 function captureReview(database, wordId, action, now, historyId) {
@@ -47,6 +54,29 @@ function captureReview(database, wordId, action, now, historyId) {
       null,
       0,
     );
+  queueSync();
+}
+function queueSync() {
+  if (!session) return;
+  if (busy) {
+    syncAgain = true;
+    return;
+  }
+  if (followupTimer) return;
+  followupTimer = setTimeout(() => {
+    followupTimer = null;
+    sync();
+  }, 750);
+  followupTimer.unref();
+}
+function pendingCount() {
+  return session && db
+    ? db
+        .prepare(
+          "SELECT COUNT(*) n FROM cloud_events WHERE user_id=? AND sent=0",
+        )
+        .get(session.user.id).n
+    : 0;
 }
 async function request(route, method = "GET", body, credentials = session) {
   const controller = new AbortController();
@@ -99,14 +129,32 @@ async function request(route, method = "GET", body, credentials = session) {
     clearTimeout(timeout);
   }
 }
-async function sync() {
+async function sync({ background = false } = {}) {
   if (!session) return { message: "请先登录云账户" };
   if (authenticating) return { message: "正在登录" };
-  if (busy) return { message: status };
+  if (busy) {
+    if (!background) syncAgain = true;
+    return { message: "正在同步学习记录…" };
+  }
+  clearTimeout(followupTimer);
+  followupTimer = null;
   busy = true;
+  syncAgain = false;
+  const activeGeneration = generation;
+  let succeeded = false;
+  const checkSession = () => {
+    if (generation !== activeGeneration || !session)
+      throw new Error("云账户已退出，停止同步");
+  };
+  const fetch = async (...args) => {
+    const result = await request(...args);
+    checkSession();
+    return result;
+  };
+  status = "正在同步学习记录…";
   try {
     if (session.expires_at < Date.now() / 1000 + 60) {
-      const fresh = await request(
+      const fresh = await fetch(
         "/auth/v1/token?grant_type=refresh_token",
         "POST",
         { refresh_token: session.refresh_token },
@@ -118,20 +166,20 @@ async function sync() {
       };
       persist();
     }
-    let baseline = await request(
-      "/rest/v1/wordpop_baseline?select=state&limit=1",
-    );
+    let baseline =
+      cachedBaseline ||
+      (await fetch("/rest/v1/wordpop_baseline?select=state&limit=1"));
     if (!baseline.length) {
       const snapshot =
         session.initialBaseline || require("./backup").createBackupData();
-      await request("/rest/v1/wordpop_baseline?on_conflict=user_id", "POST", {
+      await fetch("/rest/v1/wordpop_baseline?on_conflict=user_id", "POST", {
         user_id: session.user.id,
         state: snapshot,
       });
-      baseline = await request(
-        "/rest/v1/wordpop_baseline?select=state&limit=1",
-      );
+      baseline = await fetch("/rest/v1/wordpop_baseline?select=state&limit=1");
     }
+    if (!baseline.length) throw new Error("云端初始记录尚未建立，请稍后重试");
+    cachedBaseline = baseline;
     if (session.initialBaseline) {
       delete session.initialBaseline;
       persist();
@@ -142,7 +190,7 @@ async function sync() {
       )
       .all(session.user.id);
     if (upload.length)
-      await request(
+      await fetch(
         "/rest/v1/wordpop_events?on_conflict=id",
         "POST",
         upload.map((event) => ({ ...event, user_id: session.user.id })),
@@ -151,7 +199,7 @@ async function sync() {
       db.prepare("UPDATE cloud_events SET sent=1 WHERE id=?").run(event.id);
     let events = [];
     for (let offset = 0; ; offset += 1000) {
-      const page = await request(
+      const page = await fetch(
         "/rest/v1/wordpop_events?select=id,word,action,reviewed_at,target_id&order=reviewed_at.asc,id.asc&limit=1000&offset=" +
           offset,
       );
@@ -172,123 +220,193 @@ async function sync() {
     ];
     const data = baseline[0].state.data,
       seeds = Object.fromEntries(data.progress.map((row) => [row.word, row]));
-    const result = fold(seeds, events);
-    db.transaction(() => {
-      const wordIds = new Map(
-        db
-          .prepare("SELECT id,word FROM words")
-          .all()
-          .map((w) => [w.word, w.id]),
-      );
-      for (const word of new Set(events.map((event) => event.word)))
-        if (!result.progress[word] && wordIds.has(word))
-          db.prepare("DELETE FROM progress WHERE word_id=?").run(
-            wordIds.get(word),
-          );
-      const cancelled = new Set(
-        events
-          .filter((event) => event.action === "undo")
-          .map((event) => event.target_id),
-      );
-      for (const id of cancelled) {
-        const mapped = db
-          .prepare("SELECT history_id FROM cloud_events WHERE id=?")
-          .get(id);
-        if (mapped?.history_id)
-          db.prepare("DELETE FROM review_history WHERE id=?").run(
-            mapped.history_id,
-          );
-      }
-      for (const [word, progress] of Object.entries(result.progress)) {
-        const id = wordIds.get(word);
-        if (!id) continue;
-        db.prepare(
-          `INSERT INTO progress(word_id,stage,next_review_at,last_review_at,correct_count,wrong_count,mastered_count,efactor,interval,repetitions,fsrs_card) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(word_id) DO UPDATE SET stage=excluded.stage,next_review_at=excluded.next_review_at,last_review_at=excluded.last_review_at,correct_count=excluded.correct_count,wrong_count=excluded.wrong_count,mastered_count=excluded.mastered_count,efactor=excluded.efactor,interval=excluded.interval,repetitions=excluded.repetitions,fsrs_card=excluded.fsrs_card`,
-        ).run(
-          id,
-          progress.stage,
-          progress.next_review_at,
-          progress.last_review_at || 0,
-          progress.correct_count || 0,
-          progress.wrong_count || 0,
-          progress.mastered_count || 0,
-          progress.efactor || 2.5,
-          progress.interval || 0,
-          progress.repetitions || 0,
-          progress.fsrs_card || null,
+    const wordRows = db.prepare("SELECT id,word FROM words ORDER BY id").all();
+    const fingerprint = crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify([
+          data,
+          wordRows,
+          [...events]
+            .sort((a, b) => a.id.localeCompare(b.id))
+            .map((e) => [
+              e.id,
+              e.word,
+              e.action,
+              e.reviewed_at,
+              e.target_id || null,
+            ]),
+        ]),
+      )
+      .digest("hex");
+    if (fingerprint !== appliedFingerprint) {
+      const result = fold(seeds, events);
+      db.transaction(() => {
+        const wordIds = new Map(wordRows.map((w) => [w.word, w.id]));
+        for (const word of new Set(events.map((event) => event.word)))
+          if (!result.progress[word] && wordIds.has(word))
+            db.prepare("DELETE FROM progress WHERE word_id=?").run(
+              wordIds.get(word),
+            );
+        const cancelled = new Set(
+          events
+            .filter((event) => event.action === "undo")
+            .map((event) => event.target_id),
         );
-      }
-      for (const log of result.logs) {
-        const id = wordIds.get(log.word);
-        if (!id) continue;
-        let existing = db
-          .prepare("SELECT history_id,sent FROM cloud_events WHERE id=?")
-          .get(log.id);
-        let historyId = existing?.history_id;
-        if (historyId)
+        for (const id of cancelled) {
+          const mapped = db
+            .prepare("SELECT history_id FROM cloud_events WHERE id=?")
+            .get(id);
+          if (mapped?.history_id)
+            db.prepare("DELETE FROM review_history WHERE id=?").run(
+              mapped.history_id,
+            );
+        }
+        // Persist every event, including undo tombstones and words not installed locally.
+        // Repeated pulls must never resurrect a cancelled review or duplicate a local event.
+        for (const event of events)
           db.prepare(
-            "UPDATE review_history SET card_before=?,card_after=?,log=? WHERE id=?",
-          ).run(log.fsrs_before, log.fsrs_card, log.fsrs_log, historyId);
-        else
-          historyId = db
-            .prepare(
-              "INSERT INTO review_history(word_id,reviewed_at,rating,card_before,card_after,log) VALUES(?,?,?,?,?,?)",
-            )
-            .run(
-              id,
-              log.reviewed_at,
-              log.rating,
-              log.fsrs_before,
-              log.fsrs_card,
-              log.fsrs_log,
-            ).lastInsertRowid;
-        db.prepare(
-          "INSERT OR REPLACE INTO cloud_events VALUES(?,?,?,?,?,?,?,?)",
-        ).run(
-          log.id,
-          session.user.id,
-          log.word,
-          log.action,
-          log.reviewed_at,
-          historyId,
-          null,
-          existing?.sent ?? 1,
+            "INSERT OR IGNORE INTO cloud_events VALUES(?,?,?,?,?,?,?,?)",
+          ).run(
+            event.id,
+            session.user.id,
+            event.word,
+            event.action,
+            event.reviewed_at,
+            null,
+            event.target_id || null,
+            1,
+          );
+        for (const [word, progress] of Object.entries(result.progress)) {
+          const id = wordIds.get(word);
+          if (!id) continue;
+          const current = db
+            .prepare("SELECT * FROM progress WHERE word_id=?")
+            .get(id);
+          // Backlog spreading is a local queue adjustment, not a review. Preserve
+          // it while the underlying memory is identical; a new review replaces it.
+          const sameMemory =
+            current &&
+            [
+              "stage",
+              "last_review_at",
+              "correct_count",
+              "wrong_count",
+              "mastered_count",
+              "efactor",
+              "interval",
+              "repetitions",
+              "fsrs_card",
+            ].every(
+              (key) => (current[key] ?? null) === (progress[key] ?? null),
+            );
+          const nextReview = sameMemory
+            ? Math.max(current.next_review_at, progress.next_review_at)
+            : progress.next_review_at;
+          db.prepare(
+            `INSERT INTO progress(word_id,stage,next_review_at,last_review_at,correct_count,wrong_count,mastered_count,efactor,interval,repetitions,fsrs_card) VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(word_id) DO UPDATE SET stage=excluded.stage,next_review_at=excluded.next_review_at,last_review_at=excluded.last_review_at,correct_count=excluded.correct_count,wrong_count=excluded.wrong_count,mastered_count=excluded.mastered_count,efactor=excluded.efactor,interval=excluded.interval,repetitions=excluded.repetitions,fsrs_card=excluded.fsrs_card`,
+          ).run(
+            id,
+            progress.stage,
+            nextReview,
+            progress.last_review_at || 0,
+            progress.correct_count || 0,
+            progress.wrong_count || 0,
+            progress.mastered_count || 0,
+            progress.efactor || 2.5,
+            progress.interval || 0,
+            progress.repetitions || 0,
+            progress.fsrs_card || null,
+          );
+        }
+        for (const log of result.logs) {
+          const id = wordIds.get(log.word);
+          if (!id) continue;
+          let existing = db
+            .prepare("SELECT history_id,sent FROM cloud_events WHERE id=?")
+            .get(log.id);
+          let historyId = existing?.history_id;
+          if (historyId)
+            db.prepare(
+              "UPDATE review_history SET card_before=?,card_after=?,log=? WHERE id=?",
+            ).run(log.fsrs_before, log.fsrs_card, log.fsrs_log, historyId);
+          else
+            historyId = db
+              .prepare(
+                "INSERT INTO review_history(word_id,reviewed_at,rating,card_before,card_after,log) VALUES(?,?,?,?,?,?)",
+              )
+              .run(
+                id,
+                log.reviewed_at,
+                log.rating,
+                log.fsrs_before,
+                log.fsrs_card,
+                log.fsrs_log,
+              ).lastInsertRowid;
+          db.prepare(
+            "INSERT OR REPLACE INTO cloud_events VALUES(?,?,?,?,?,?,?,?)",
+          ).run(
+            log.id,
+            session.user.id,
+            log.word,
+            log.action,
+            log.reviewed_at,
+            historyId,
+            null,
+            existing?.sent ?? 1,
+          );
+        }
+        const daily = new Map(
+          (data.daily_stats || []).map((row) => [row.date, { ...row }]),
         );
-      }
-      const daily = new Map(
-        (data.daily_stats || []).map((row) => [row.date, { ...row }]),
-      );
-      const { localDateKey } = require("./study-policy");
-      for (const log of result.logs) {
-        const date = localDateKey(log.reviewed_at);
-        const day = daily.get(date) || {
-          date,
-          words_reviewed: 0,
-          words_learned: 0,
-        };
-        day.words_reviewed++;
-        if (log.wasNew) day.words_learned++;
-        daily.set(date, day);
-      }
-      for (const event of events) {
-        const date = localDateKey(event.reviewed_at);
-        if (!daily.has(date))
-          daily.set(date, { date, words_reviewed: 0, words_learned: 0 });
-      }
-      for (const day of daily.values())
-        db.prepare(
-          "INSERT OR REPLACE INTO daily_stats(date,words_reviewed,words_learned) VALUES(?,?,?)",
-        ).run(day.date, day.words_reviewed, day.words_learned);
-    })();
-    require("./scheduler").reloadQueue();
-    require("./scheduler").emit("stats-updated");
-    status = "已同步 · " + new Date().toLocaleTimeString("zh-CN");
+        const { localDateKey } = require("./study-policy");
+        for (const log of result.logs) {
+          const date = localDateKey(log.reviewed_at);
+          const day = daily.get(date) || {
+            date,
+            words_reviewed: 0,
+            words_learned: 0,
+          };
+          day.words_reviewed++;
+          if (log.wasNew) day.words_learned++;
+          daily.set(date, day);
+        }
+        for (const event of events) {
+          const date = localDateKey(event.reviewed_at);
+          if (!daily.has(date))
+            daily.set(date, { date, words_reviewed: 0, words_learned: 0 });
+        }
+        for (const day of daily.values())
+          db.prepare(
+            "INSERT OR REPLACE INTO daily_stats(date,words_reviewed,words_learned) VALUES(?,?,?)",
+          ).run(day.date, day.words_reviewed, day.words_learned);
+      })();
+      require("./scheduler").reloadQueue();
+      require("./scheduler").emit("stats-updated");
+      appliedFingerprint = fingerprint;
+    }
+    const pending = pendingCount();
+    status = pending
+      ? `已保存本地 · ${pending} 条记录等待上传`
+      : "已同步 · " + new Date().toLocaleTimeString("zh-CN");
+    succeeded = true;
     return { message: status };
   } catch (error) {
-    status = error.message;
+    if (generation === activeGeneration) {
+      const pending = pendingCount();
+      status = pending
+        ? `已保存本地 · ${pending} 条记录等待联网重试：${error.message}`
+        : "同步失败，将自动重试：" + error.message;
+    }
     return { message: status, error: true };
   } finally {
     busy = false;
+    if (
+      succeeded &&
+      generation === activeGeneration &&
+      (syncAgain || pendingCount())
+    )
+      queueSync();
   }
 }
 async function login(input) {
@@ -324,6 +442,9 @@ async function login(input) {
       email,
       expires_at: Date.now() / 1000 + response.expires_in,
     };
+    generation++;
+    cachedBaseline = null;
+    appliedFingerprint = null;
     persist();
     authenticating = false;
     status = "登录成功，密码验证通过；正在同步学习记录…";
@@ -394,7 +515,7 @@ function start(database) {
     status = "云登录已失效，请重新登录";
   }
   timer = setInterval(() => {
-    if (session) sync();
+    if (session) sync({ background: true });
   }, 5000);
   timer.unref();
   if (session) sync();
@@ -404,7 +525,7 @@ function captureUndo(database, historyId, now = Date.now()) {
   const event = database
     .prepare("SELECT * FROM cloud_events WHERE history_id=? AND user_id=?")
     .get(historyId, session.user.id);
-  if (event)
+  if (event) {
     database
       .prepare("INSERT INTO cloud_events VALUES(?,?,?,?,?,?,?,?)")
       .run(
@@ -417,8 +538,16 @@ function captureUndo(database, historyId, now = Date.now()) {
         event.id,
         0,
       );
+    queueSync();
+  }
 }
 function logout() {
+  generation++;
+  cachedBaseline = null;
+  appliedFingerprint = null;
+  clearTimeout(followupTimer);
+  followupTimer = null;
+  syncAgain = false;
   session = null;
   if (fs.existsSync(sessionFile())) fs.unlinkSync(sessionFile());
   status = "已退出云账户";
@@ -432,7 +561,12 @@ module.exports = {
   sync,
   logout,
   getStatus: () => ({
-    message: status,
+    message:
+      pendingCount() && !busy && !status.includes("等待")
+        ? `已保存本地 · ${pendingCount()} 条记录等待上传`
+        : status,
+    pending: pendingCount(),
+    syncing: busy,
     url: session?.url,
     key: session?.key,
     email: session?.email,

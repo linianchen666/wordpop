@@ -121,6 +121,10 @@ final class StudyEngine {
   void submit(JSONObject command, Callback callback) {
     executor.execute(
         () -> {
+          int beforeEvents =
+              cachedState == null || cachedState.optJSONArray("events") == null
+                  ? 0
+                  : cachedState.optJSONArray("events").length();
           JSONObject view = null;
           String error = null;
           try {
@@ -138,8 +142,11 @@ final class StudyEngine {
               android.util.Log.w("WordPop", "Widget update failed", e);
             }
           }
-          if (failure == null && !command.optString("type").equals("sync"))
-            CloudClient.requestSync(context);
+          if (failure == null
+              && command.optString("type").equals("review")
+              && result != null
+              && cachedState.optJSONArray("events").length() > beforeEvents)
+            CloudClient.reviewSaved(context);
         });
   }
 }
