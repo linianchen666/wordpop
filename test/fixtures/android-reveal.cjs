@@ -14,7 +14,10 @@ async function checkFlow() {
   const visible = (id) => el(id).getBoundingClientRect().height > 0;
   window.commands = [];
   window.speeches = [];
+  let updateChecks = 0;
   window.WordPopAndroid = {
+    versionName: () => "0.1.4",
+    checkUpdates: () => updateChecks++,
     command: (raw) => commands.push(JSON.parse(raw)),
     speakOnReveal: (word) => speeches.push(word),
   };
@@ -137,7 +140,13 @@ async function checkFlow() {
     el("cloudStatus").textContent === "写入失败",
     "native error was hidden",
   );
-  el("settings").showModal();
+  el("menu").click();
+  check(
+    el("appVersion").textContent === "当前版本：0.1.4",
+    "installed Android version missing",
+  );
+  el("checkUpdates").click();
+  check(updateChecks === 1, "update menu must call the native checker");
   const cloud = [...document.querySelectorAll("#settings > details")].find(
     (d) => d.querySelector("summary")?.textContent.includes("云同步"),
   );

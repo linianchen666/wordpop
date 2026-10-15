@@ -356,11 +356,7 @@
       onclick="rate('easy')"
     >
       ★<span class="interval"></span></button
-    ><button
-      id="menu"
-      aria-label="打开设置"
-      onclick="el('settings').showModal()"
-    >
+    ><button id="menu" aria-label="打开设置" onclick="showSettings()">
       ☰
     </button>
   </header>
@@ -403,8 +399,12 @@
     <div class="actions">
       <button onclick="send('view')">刷新</button
       ><button onclick="WordPopAndroid.addWidget()">添加桌面小组件</button
-      ><button onclick="WordPopAndroid.widgetAppearance()">小组件背景</button>
+      ><button onclick="WordPopAndroid.widgetAppearance()">小组件背景</button
+      ><button id="checkUpdates" onclick="WordPopAndroid.checkUpdates()">
+        检查更新
+      </button>
     </div>
+    <p id="appVersion"></p>
     <p id="planReason"></p>
 
     <details>
@@ -495,6 +495,14 @@
     let requestSequence = 0,
       latestRevision = 0;
     const el = (id) => document.getElementById(id);
+    function showSettings() {
+      let version = "未知";
+      try {
+        version = WordPopAndroid.versionName() || version;
+      } catch (_) {}
+      el("appVersion").textContent = "当前版本：" + version;
+      el("settings").showModal();
+    }
     function notice(text) {
       el("cloudStatus").textContent = text || "";
     }

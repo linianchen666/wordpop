@@ -17,6 +17,7 @@ import org.json.JSONObject;
 public class MainActivity extends Activity {
   private static WeakReference<MainActivity> active = new WeakReference<>(null);
   private WebView web;
+  private AppUpdateChecker updates;
   private TextToSpeech tts;
   private boolean voiceReady;
   private final Handler handler = new Handler(Looper.getMainLooper());
@@ -40,6 +41,7 @@ public class MainActivity extends Activity {
   public void onCreate(Bundle state) {
     super.onCreate(state);
     active = new WeakReference<>(this);
+    updates = new AppUpdateChecker(this);
     web = new WebView(this);
     web.setBackgroundColor(0xff080c13);
     web.getSettings().setJavaScriptEnabled(true);
@@ -97,6 +99,7 @@ public class MainActivity extends Activity {
 
   protected void onDestroy() {
     if (active.get() == this) active.clear();
+    if (updates != null) updates.close();
     if (tts != null) tts.shutdown();
     if (web != null) {
       web.removeJavascriptInterface("WordPopAndroid");
@@ -188,6 +191,16 @@ public class MainActivity extends Activity {
   }
 
   final class Bridge {
+    @JavascriptInterface
+    public String versionName() {
+      return AppUpdateChecker.installedVersion(MainActivity.this);
+    }
+
+    @JavascriptInterface
+    public void checkUpdates() {
+      runOnUiThread(() -> updates.check());
+    }
+
     @JavascriptInterface
     public void command(String json) {
       try {
