@@ -37,10 +37,11 @@ Module._load = function(request) {
   try {
     const cases = ['1.7.1', '1.8.0-beta.10', '1.8.1', '1.8.2', '1.8.3', '1.8.6', '1.9.0-beta.5', latest]
       .map(current => ({ current, needUpdate: current !== latest }));
+    const [major, minor, patch] = latest.split('.').map(Number);
     cases.push(
       { current: `${latest}+local.1`, needUpdate: false },
-      { current: '1.9.1-beta.1', needUpdate: false },
-      { current: '1.10.0', needUpdate: false }
+      { current: `${major}.${minor}.${patch + 1}-beta.1`, needUpdate: false },
+      { current: `${major}.${minor + 1}.0`, needUpdate: false }
     );
     for (const { current, needUpdate } of cases) {
       version = current; dialogs.length = 0; links.length = 0; requests.length = 0;
