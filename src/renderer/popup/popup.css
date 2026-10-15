@@ -643,3 +643,6 @@ html, body { background: transparent; }
   white-space: pre-line; line-height: 1.35; text-align: center;
   border-radius: 0; overflow: visible; text-overflow: clip; overflow-wrap: anywhere;
 }
+
+.popup-title { display: flex; align-items: center; gap: 4px; }
+.popup-title img { flex-shrink: 0; }

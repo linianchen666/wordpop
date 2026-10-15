@@ -28,6 +28,7 @@ function registerIpcHandlers() {
   ipcMain.handle('cloud:logout', () => require('./cloud-sync').logout());
   ipcMain.handle('cloud:open', () => {
     const window = new BrowserWindow({ width: 560, height: 680, title: 'WordPop 云同步',
+      icon: require('path').join(__dirname, '../../assets/icon.png'),
       webPreferences: { preload: require('path').join(__dirname, '../preload/preload.js'), contextIsolation: true, nodeIntegration: false } });
     return window.loadFile(require('path').join(__dirname, '../renderer/cloud/index.html'));
   });

@@ -16,14 +16,17 @@ public class WordWidget extends AppWidgetProvider {
   public void onReceive(Context context, Intent intent) {
     if (AppWidgetManager.ACTION_APPWIDGET_DELETED.equals(intent.getAction())) {
       int[] ids = intent.getIntArrayExtra(AppWidgetManager.EXTRA_APPWIDGET_IDS);
-      if (ids != null)
-        for (int id : ids)
-          WidgetAppearance.prefs(context)
-              .edit()
-              .remove("opacity_" + id)
-              .remove("auto_speak_" + id)
-              .remove("spoken_nonce_" + id)
-              .apply();
+      if (ids == null) {
+        int id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1);
+        ids = id < 0 ? new int[0] : new int[] {id};
+      }
+      for (int id : ids)
+        WidgetAppearance.prefs(context)
+            .edit()
+            .remove("opacity_" + id)
+            .remove("auto_speak_" + id)
+            .remove("spoken_nonce_" + id)
+            .apply();
       return;
     }
     PendingResult pending = goAsync();
@@ -92,10 +95,45 @@ public class WordWidget extends AppWidgetProvider {
     }
   }
 
+  static int[] widgetIds(Context context) {
+    AppWidgetManager manager = AppWidgetManager.getInstance(context);
+    int[] home = manager.getAppWidgetIds(new ComponentName(context, WordWidget.class));
+    int[] cover = manager.getAppWidgetIds(new ComponentName(context, CoverWordWidget.class));
+    int[] all = java.util.Arrays.copyOf(home, home.length + cover.length);
+    System.arraycopy(cover, 0, all, home.length, cover.length);
+    return all;
+  }
+
+  static boolean isCover(Context context, int id) {
+    android.appwidget.AppWidgetProviderInfo info =
+        AppWidgetManager.getInstance(context).getAppWidgetInfo(id);
+    return info != null && new ComponentName(context, CoverWordWidget.class).equals(info.provider);
+  }
+
+  private static android.os.Bundle activityOptions(Context context, int id, Intent intent) {
+    if (!isCover(context, id)) return null;
+    android.hardware.display.DisplayManager manager =
+        context.getSystemService(android.hardware.display.DisplayManager.class);
+    android.view.Display display = manager == null ? null : manager.getDisplay(1);
+    if (display == null) return null;
+    android.app.ActivityManager activities =
+        context.getSystemService(android.app.ActivityManager.class);
+    if (android.os.Build.VERSION.SDK_INT >= 29
+        && (activities == null
+            || !activities.isActivityStartAllowedOnDisplay(
+                context, display.getDisplayId(), intent))) return null;
+    return android.app.ActivityOptions.makeBasic()
+        .setLaunchDisplayId(display.getDisplayId())
+        .toBundle();
+  }
+
   static void error(Context context, String message) {
     AppWidgetManager manager = AppWidgetManager.getInstance(context);
-    for (int id : manager.getAppWidgetIds(new ComponentName(context, WordWidget.class))) {
-      RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.word_widget);
+    for (int id : widgetIds(context)) {
+      RemoteViews views =
+          new RemoteViews(
+              context.getPackageName(),
+              isCover(context, id) ? R.layout.word_widget_cover : R.layout.word_widget);
       appearance(context, id, views);
       views.setViewVisibility(R.id.speak, View.GONE);
       views.setTextViewText(R.id.translation, message);
@@ -109,12 +147,15 @@ public class WordWidget extends AppWidgetProvider {
   }
 
   private static PendingIntent open(Context context, int id) {
+    Intent intent =
+        new Intent(context, MainActivity.class)
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
     return PendingIntent.getActivity(
         context,
         id,
-        new Intent(context, MainActivity.class)
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP),
-        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE);
+        intent,
+        PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE,
+        activityOptions(context, id, intent));
   }
 
   private static void appearance(Context context, int id, RemoteViews views) {
@@ -122,14 +163,17 @@ public class WordWidget extends AppWidgetProvider {
         R.id.background,
         "setImageAlpha",
         Math.round(WidgetAppearance.opacity(context, id) * 2.55f));
+    Intent intent =
+        new Intent(context, WidgetSettingsActivity.class)
+            .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id);
     views.setOnClickPendingIntent(
         R.id.appearance,
         PendingIntent.getActivity(
             context,
             id,
-            new Intent(context, WidgetSettingsActivity.class)
-                .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id),
-            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE));
+            intent,
+            PendingIntent.FLAG_UPDATE_CURRENT | PendingIntent.FLAG_IMMUTABLE,
+            activityOptions(context, id, intent)));
   }
 
   static Intent speechIntent(Context context, int id, String word) {
@@ -185,14 +229,22 @@ public class WordWidget extends AppWidgetProvider {
 
   static RemoteViews buildViews(Context context, int id, JSONObject data, int width, int height)
       throws Exception {
-    boolean compact = compactForSize(width, height);
+    return buildViews(context, id, data, width, height, isCover(context, id));
+  }
+
+  static RemoteViews buildViews(
+      Context context, int id, JSONObject data, int width, int height, boolean cover)
+      throws Exception {
+    boolean compact = !cover && compactForSize(width, height);
     JSONObject word = data.optJSONObject("word");
     boolean revealed = data.optBoolean("revealed");
     String nonce = data.optString("nonce", "");
     RemoteViews views =
         new RemoteViews(
             context.getPackageName(),
-            compact ? R.layout.word_widget_compact : R.layout.word_widget);
+            cover
+                ? R.layout.word_widget_cover
+                : compact ? R.layout.word_widget_compact : R.layout.word_widget);
     appearance(context, id, views);
     JSONObject undo = data.optJSONObject("undo");
     views.setViewVisibility(R.id.undo, undo == null ? View.GONE : View.VISIBLE);
@@ -245,7 +297,6 @@ public class WordWidget extends AppWidgetProvider {
 
   static void render(Context context, JSONObject data) throws Exception {
     AppWidgetManager manager = AppWidgetManager.getInstance(context);
-    for (int id : manager.getAppWidgetIds(new ComponentName(context, WordWidget.class)))
-      manager.updateAppWidget(id, buildViews(context, id, data));
+    for (int id : widgetIds(context)) manager.updateAppWidget(id, buildViews(context, id, data));
   }
 }

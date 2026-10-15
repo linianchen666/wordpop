@@ -74,7 +74,7 @@ public class WidgetSpeechService extends Service {
     startForeground(
         42,
         new Notification.Builder(this, "pronunciation")
-            .setSmallIcon(android.R.drawable.ic_lock_silent_mode_off)
+            .setSmallIcon(R.drawable.ic_stat_wordpop)
             .setContentTitle("WordPop 单词发音")
             .setContentText("正在播放英语发音")
             .setOngoing(true)

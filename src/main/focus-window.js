@@ -30,6 +30,7 @@ function createFocusWindow({
     } catch (e) {}
 
     const window = new BrowserWindow({
+      icon: getAppPath('assets', 'icon.png'),
       width: 680,
       height: 540,
       center: true,

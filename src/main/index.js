@@ -244,6 +244,7 @@ async function ensureWordlistsImported(config) {
 function showErrorWindow() {
   try {
     const win = new BrowserWindow({
+      icon: path.join(__dirname, '../../assets/icon.png'),
       width: 520, height: 400, title: 'WordPop — 启动错误',
       autoHideMenuBar: true,
       webPreferences: { contextIsolation: false, nodeIntegration: true }
@@ -264,6 +265,7 @@ function openSettingsWindow() {
   if (settingsWindow && !settingsWindow.isDestroyed()) { settingsWindow.focus(); return; }
   try {
     settingsWindow = new BrowserWindow({
+      icon: path.join(__dirname, '../../assets/icon.png'),
       width: 520, height: 640, resizable: false, title: 'WordPop — 设置',
       autoHideMenuBar: true,
       webPreferences: {
@@ -280,6 +282,7 @@ function openStatsWindow() {
   if (statsWindow && !statsWindow.isDestroyed()) { statsWindow.focus(); return; }
   try {
     statsWindow = new BrowserWindow({
+      icon: path.join(__dirname, '../../assets/icon.png'),
       width: 520, height: 600, resizable: true, title: 'WordPop — 学习统计',
       autoHideMenuBar: true,
       webPreferences: {
@@ -300,6 +303,7 @@ function openStubbornWindow() {
   }
   try {
     statsWindow = new BrowserWindow({
+      icon: path.join(__dirname, '../../assets/icon.png'),
       width: 520, height: 600, resizable: true, title: 'WordPop — 顽固单词',
       autoHideMenuBar: true,
       webPreferences: {
@@ -318,6 +322,7 @@ function openStubbornWindow() {
 function openSetupWindow() {
   try {
     setupWindow = new BrowserWindow({
+      icon: path.join(__dirname, '../../assets/icon.png'),
       width: 480, height: 560, resizable: false, title: 'WordPop — 初始设置',
       autoHideMenuBar: true,
       webPreferences: {

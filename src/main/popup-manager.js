@@ -60,6 +60,7 @@ function createPopupWindow() {
     const bounds = getPopupBounds(popupConfig.position);
 
     popupWindow = new BrowserWindow({
+      icon: getAsarPath('assets', 'icon.png'),
       width: bounds.width,
       height: bounds.height,
       ...minimumSize(),

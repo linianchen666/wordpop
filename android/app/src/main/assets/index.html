@@ -27,6 +27,14 @@
       color: #aab8ce;
       font-size: 13px;
     }
+    .app-brand {
+      display: flex;
+      gap: 5px;
+      align-items: center;
+    }
+    .app-brand img {
+      flex-shrink: 0;
+    }
     h1 {
       font-size: 18px;
       margin: 0;
@@ -337,7 +345,9 @@
     }
   </style>
   <header>
-    <h1>WordPop</h1>
+    <h1 class="app-brand">
+      <img src="brand.png" width="22" height="22" alt="" />WordPop
+    </h1>
     <span id="counts">准备词库…</span
     ><button
       id="undo"

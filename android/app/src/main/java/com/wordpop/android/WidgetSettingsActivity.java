@@ -61,15 +61,13 @@ public class WidgetSettingsActivity extends Activity {
     explanation.setTextColor(Color.LTGRAY);
     panel.addView(explanation);
     Button save = new Button(this);
-    save.setText(id < 0 ? "应用到所有桌面小组件" : "保存");
+    save.setText(id < 0 ? "应用到所有小组件" : "保存");
     save.setOnClickListener(
         view -> {
           WidgetAppearance.save(this, id, slider.getProgress());
           WidgetAppearance.saveAutoSpeak(this, id, autoSpeak.isChecked());
           if (id < 0) {
-            int[] ids =
-                AppWidgetManager.getInstance(this)
-                    .getAppWidgetIds(new android.content.ComponentName(this, WordWidget.class));
+            int[] ids = WordWidget.widgetIds(this);
             for (int widgetId : ids) {
               WidgetAppearance.save(this, widgetId, slider.getProgress());
               WidgetAppearance.saveAutoSpeak(this, widgetId, autoSpeak.isChecked());
@@ -80,7 +78,10 @@ public class WidgetSettingsActivity extends Activity {
           finish();
         });
     panel.addView(save);
-    setContentView(panel);
+    android.widget.ScrollView scroll = new android.widget.ScrollView(this);
+    scroll.setFillViewport(true);
+    scroll.addView(panel);
+    setContentView(scroll);
     panel.setOnApplyWindowInsetsListener(
         (view, insets) -> {
           view.setPadding(

@@ -29,12 +29,15 @@ win:
     - target: nsis
       arch:
         - x64
-  # 在 Linux CI 中禁用 rcedit（需要 Wine 显示服务）
+  icon: assets/icon.ico
+  # 正式构建在 Windows CI 执行，写入程序图标和版本信息。
   rfc3161TimeStampServer: ""
   timeStampServer: ""
-  signAndEditExecutable: false
+  signAndEditExecutable: true
 
 nsis:
+  installerIcon: assets/icon.ico
+  uninstallerIcon: assets/icon.ico
   oneClick: false
   perMachine: true
   allowToChangeInstallationDirectory: true
