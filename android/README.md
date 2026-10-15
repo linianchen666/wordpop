@@ -10,7 +10,7 @@ APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。GitHub 构建
 
 正式发布选择工作流的 `release` 变体，使用同一固定签名生成非调试 APK，执行 `assembleRelease testReleaseUnitTest lintRelease -PwordpopReleaseTests=true` 和 `connectedReleaseAndroidTest -PwordpopReleaseTests=true`。正式 APK 输出为 `android/app/build/outputs/apk/release/app-release.apk`；本地构建也需先按签名说明配置固定密钥环境变量。`wordpopReleaseTests` 让设备测试验证实际 release 变体，默认仍测试 debug。
 
-[下载 Android 0.1.6 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.2/WordPop.Android.0.1.6.apk)，与 Windows 1.9.2 一起发布。Android versionCode 为 8，0.1.2 起的固定签名包（包括 0.1.4-beta.1）可直接覆盖升级，保留账号和学习记录。
+[下载 Android 0.1.7 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.3/WordPop.Android.0.1.7.apk)，与 Windows 1.9.3 一起发布。Android versionCode 为 9，0.1.2 起的固定签名包（包括 0.1.4-beta.1）可直接覆盖升级，保留账号和学习记录。
 
 ## 使用
 
@@ -21,6 +21,10 @@ APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。GitHub 构建
 打开 App 右上角菜单 → **检查更新**。设置页和检查弹窗显示当前安装的安卓版本；弹窗提供最新安卓版本及更新说明。检查只访问 GitHub 的最新正式发布，按 `WordPop.Android.X.Y.Z.apk` 附件识别安卓版本，不使用 Windows 的发布标签，也不提示测试版或降级安装；同版本的测试版可升级到正式版。检查不需要登录云账户，也不消耗 Supabase 数据库额度。
 
 发现新版后点“下载 APK”，由系统浏览器打开本仓库的 HTTPS 下载地址；下载完成后在系统中确认覆盖安装，沿用固定签名并保留学习记录。也可点“发布页”查看完整说明。检查中可取消，网络失败时可重试；不会自动下载或自动安装。Android 0.1.4 及更早版本没有该入口，请先手动覆盖安装最新正式版，以后可从此入口检查正式更新。
+
+### 同步 400 修复（Android 0.1.7）
+
+评分、撤销和离线重试统一上传字段，修复同一批记录字段不一致导致的 400；服务器生成的 `created_at` 不回传。失败时保留本地记录，覆盖安装后可继续补传。同步报错区分初始记录、上传、数量检查和下载步骤，并显示 HTTP 状态及服务错误码；如果仍报错，可按该码排查云表或权限配置，详见 [同步排查](../cloud/README.md#安卓同步-400-排查)。
 
 ### 点错评分时撤销
 
@@ -46,7 +50,7 @@ Android 0.1.6 已新增独立的 **WordPop 外屏背词** 小组件，采用三�
 
 安装 Android 0.1.6 或更新版本后，先打开 App 初始化词库，再进入三星 **设置 → 外屏 → 小组件**，查找 WordPop / WordPop 外屏背词并启用；具体入口随 One UI 和地区变化。添加后可直接在组件里显示释义、选择底部三个反馈或右上角轻松星号，无需先通过 MultiStar 启动 App。组件背景设置也应用到外屏组件。
 
-实现依据是三星的 [Flex Window 开发文档](https://developer.samsung.com/galaxy-z/flex_window.html)和[原生小组件教程](https://developer.samsung.com/codelab/galaxy-z/widget-flex-window.html)。这些公开接口最初面向 Flip5；本仓库可以验证组件声明、布局和评分交互，但普通 Android 模拟器不能验证 Flip7 的三星外屏列表。**尚需 Flip7 实机确认能否添加**，不能保证所有 One UI 版本、地区和锁屏策略都开放第三方组件。
+实现依据是三星的 [Flex Window 开发文档](https://developer.samsung.com/galaxy-z/flex_window.html)和[原生小组件教程](https://developer.samsung.com/codelab/galaxy-z/widget-flex-window.html)。这些公开接口最初面向 Flip5；本仓库可以验证组件声明、布局和评分交互，但普通 Android 模拟器不能验证 Flip7 的三星外屏列表。已有 **Z Flip7 用户确认可添加并使用**；其他 One UI 版本、地区和锁屏策略仍需分别确认。
 
 若新版仍不出现在列表，可尝试第三方 [CoverWidgets](https://play.google.com/store/apps/details?id=apps.ijp.coverwidgets)，将 WordPop 的普通桌面组件放入外屏；其商店说明列出 Flip7 / One UI 8 支持，并要求无障碍权限，部分功能可能付费。这是可选的独立工具，WordPop 不依赖它。原有 Good Lock → MultiStar 外屏应用启动器方案也保留。应用默认进入专注背词页，小屏下缩小间距，完整释义可展开并滚动；这是运行 App 的替代方式。
 
