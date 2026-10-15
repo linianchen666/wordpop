@@ -1,0 +1,25 @@
+name: Cloud settings schema
+on:
+  workflow_dispatch:
+  push:
+    paths: ['cloud/supabase.sql', 'test/cloud-settings-schema.sql', '.github/workflows/cloud-settings-tests.yml']
+permissions:
+  contents: read
+jobs:
+  schema:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_PASSWORD: wordpop-fixture
+        ports: ['5432:5432']
+        options: --health-cmd pg_isready --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: psql -v ON_ERROR_STOP=1 -f test/cloud-settings-schema.sql
+        env:
+          PGHOST: localhost
+          PGUSER: postgres
+          PGPASSWORD: wordpop-fixture
+          PGDATABASE: postgres

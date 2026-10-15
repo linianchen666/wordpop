@@ -571,7 +571,7 @@ btnSave.addEventListener('click', async () => {
 
   // 保存配置
   try {
-    const result = await window.wordpopAPI.saveConfig(newConfig);
+    const result = await window.wordpopAPI.saveConfig(newConfig, currentConfig);
     if (result.success) {
       btnSave.textContent = '✓ 已保存';
       setTimeout(() => {
@@ -692,3 +692,11 @@ if (btnLogs) {
 }
 
 document.getElementById('btn-cloud').addEventListener('click', () => window.wordpopAPI.openCloud());
+let settingsDirty = false;
+document.addEventListener('input', () => { settingsDirty = true; });
+document.addEventListener('change', () => { settingsDirty = true; });
+for (const control of [modeOptTarget, modeOptFixed, positionSelector])
+  control?.addEventListener('click', () => { settingsDirty = true; });
+window.wordpopAPI.onConfigChanged?.(() => {
+  if (!settingsDirty && !btnSave.disabled) init();
+});

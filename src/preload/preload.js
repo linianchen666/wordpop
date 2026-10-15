@@ -22,7 +22,7 @@ contextBridge.exposeInMainWorld('wordpopAPI', {
   cloudSync: () => ipcRenderer.invoke('cloud:sync'),
   cloudLogout: () => ipcRenderer.invoke('cloud:logout'),
   openCloud: () => ipcRenderer.invoke('cloud:open'),
-  saveConfig:          (c) => ipcRenderer.invoke('config:save', c),
+  saveConfig:          (c, base) => ipcRenderer.invoke('config:save', c, base),
   getWordlists:        ()  => ipcRenderer.invoke('wordlists:get'),
   importWordlist:      (id) => ipcRenderer.invoke('wordlist:import', id),
   importCustomWordlist: ()  => ipcRenderer.invoke('wordlist:import-custom'),

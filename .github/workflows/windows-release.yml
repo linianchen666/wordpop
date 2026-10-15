@@ -69,6 +69,9 @@ jobs:
         run: npm test
       - name: Build Windows x64 NSIS installer
         run: npm run build -- --win --x64 --publish never
+      - name: Verify installed icons and retained shortcut upgrades
+        shell: pwsh
+        run: ./tools/verify-windows-icons.ps1
       - name: Verify packaged first-run wordlists and settings
         shell: pwsh
         run: |

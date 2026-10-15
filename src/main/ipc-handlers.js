@@ -82,9 +82,16 @@ function registerIpcHandlers() {
 
   ipcMain.handle('config:get', () => loadConfig());
 
-  ipcMain.handle('config:save', (_ev, config) => {
+  ipcMain.handle('config:save', (_ev, config, configBase) => {
+    const before = loadConfig();
+    if (configBase) {
+      try { config = require('../shared/learning-settings').mergeDraft(before, config, configBase); }
+      catch (_) { /* Custom dictionaries stay local and keep the existing save flow. */ }
+    }
     const result = saveConfig(config);
     if (result.success) {
+      try { require('./cloud-sync').captureSettings(before, result.config); }
+      catch (error) { console.warn('[Cloud] Learning settings not queued:', error.message); }
       scheduler.applyConfig(result.config);
       popupManager.updateConfig(result.config);
       ambientPill.updateConfig(result.config);

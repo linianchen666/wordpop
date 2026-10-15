@@ -420,7 +420,7 @@
     <details>
       <summary>学习设置</summary>
       <label
-        >词库<select id="list">
+        >词库（可多选）<select id="list" multiple size="3">
           <option value="cet4">四级</option>
           <option value="cet6">六级</option>
           <option value="kaoyan">考研</option>
@@ -523,6 +523,7 @@
           ? Math.round(ms / 3600000) + "小时后"
           : Math.round(ms / 86400000) + "天后";
     }
+    let settingsFormBase = null;
     function render(view) {
       if (view.revision != null && view.revision < latestRevision) return;
       if (view.revision != null) latestRevision = view.revision;
@@ -563,7 +564,9 @@
         el(action).disabled = !!pendingReview;
       const c = view.state.config;
       if (!document.activeElement.closest("#settings")) {
-        el("list").value = c.selectedWordlists[0];
+        settingsFormBase = JSON.parse(JSON.stringify(c));
+        for (const option of el("list").options)
+          option.selected = c.selectedWordlists.includes(option.value);
         el("mode").value = c.dailyNewWordsMode;
         el("daily").value = c.dailyNewWords;
         el("target").value = c.targetDate || "";
@@ -641,13 +644,22 @@
       send("undo", { target_id: current.undo.id });
     }
     function saveConfig() {
+      const lists = Array.from(
+        el("list").selectedOptions,
+        (option) => option.value,
+      );
+      if (!lists.length) {
+        notice("请至少选择一个词库");
+        return;
+      }
       if (el("mode").value === "target" && !el("target").value) {
         notice("请先选择目标日期");
         return;
       }
       send("config", {
+        configBase: settingsFormBase,
         config: {
-          selectedWordlists: [el("list").value],
+          selectedWordlists: lists,
           dailyNewWordsMode: el("mode").value,
           dailyNewWords: Math.max(
             1,

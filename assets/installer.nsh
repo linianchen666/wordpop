@@ -1,6 +1,13 @@
 ; WordPop NSIS 自定义安装脚本
 ; 功能：安装前检测 WordPop 是否正在运行，提示关闭后继续
 
+!macro refreshWordPopLink link
+  ${If} ${FileExists} "${link}"
+    CreateShortCut "${link}" "$appExe" "" "$INSTDIR\resources\wordpop-launcher-v2.ico" 0 "" "" "${APP_DESCRIPTION}"
+    WinShell::SetLnkAUMI "${link}" "${APP_ID}"
+  ${EndIf}
+!macroend
+
 !macro customInstall
   ; 检测 WordPop 进程
   nsExec::ExecToStack `tasklist /FI "IMAGENAME eq WordPop.exe" /NH`
@@ -28,4 +35,15 @@
     
     done:
   ${EndIf}
+  ; electron-builder retains existing links on upgrades. Give them an explicit,
+  ; versioned icon file, including a per-user link shadowing the all-users link.
+  !insertmacro refreshWordPopLink "$newDesktopLink"
+  !insertmacro refreshWordPopLink "$newStartMenuLink"
+  SetShellVarContext current
+  !insertmacro refreshWordPopLink "$DESKTOP\${SHORTCUT_NAME}.lnk"
+  !insertmacro refreshWordPopLink "$SMPROGRAMS\${SHORTCUT_NAME}.lnk"
+  ${If} $installMode == "all"
+    SetShellVarContext all
+  ${EndIf}
+  System::Call 'Shell32::SHChangeNotify(i 0x8000000, i 0, i 0, i 0)'
 !macroend

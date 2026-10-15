@@ -13,6 +13,8 @@ files:
   - package.json
 
 extraResources:
+  - from: assets/icon.ico
+    to: wordpop-launcher-v2.ico
   - from: src/data/wordlists
     to: wordlists
     filter:

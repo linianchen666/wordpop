@@ -47,11 +47,11 @@ public class SyncWorker extends Worker {
       if (SecretPrefs.load(getApplicationContext()) == null) return Result.success();
       StudyEngine engine = StudyEngine.get(getApplicationContext());
       if (getInputData().getBoolean("uploadOnly", false)
-          && CloudClient.pendingCount(
+          && CloudClient.pendingUploads(
                   engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS))
               == 0) return Result.success();
       CloudClient.syncBlocking(getApplicationContext());
-      if (CloudClient.pendingCount(
+      if (CloudClient.pendingUploads(
               engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS))
           > 0) return Result.retry();
       return Result.success();

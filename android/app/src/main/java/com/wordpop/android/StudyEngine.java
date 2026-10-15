@@ -74,6 +74,34 @@ final class StudyEngine {
           .get(6, TimeUnit.SECONDS);
       sessionReady = true;
     }
+    String type = command.optString("type");
+    if ("config".equals(type) && !command.has("settingsEditId"))
+      command.put("settingsEditId", java.util.UUID.randomUUID().toString());
+    if ("settingsBind".equals(type) || "settingsApply".equals(type)) {
+      try {
+        if (cachedState == null) run(new JSONObject().put("type", "view"));
+        JSONObject result =
+            new JSONObject(
+                isolate
+                    .evaluateJavaScriptAsync(
+                        "JSON.stringify(learningSession.settings(" + command + "))")
+                    .get(6, TimeUnit.SECONDS));
+        String previous = String.valueOf(cachedState.opt("settingsSync"));
+        cachedState.put("settingsSync", result.getJSONObject("settingsSync"));
+        cachedState.put("config", result.getJSONObject("config"));
+        if (result.getBoolean("changed")) {
+          cachedState.put("current", JSONObject.NULL);
+          cachedState.put("undo", JSONObject.NULL);
+        }
+        if (result.getBoolean("changed")
+            || !previous.equals(result.getJSONObject("settingsSync").toString()))
+          store.save(cachedState);
+        return result;
+      } catch (Exception error) {
+        invalidate();
+        throw error;
+      }
+    }
     String code =
         "JSON.stringify(learningSession.render("
             + command.toString()
@@ -151,6 +179,8 @@ final class StudyEngine {
               && result != null
               && cachedState.optJSONArray("events").length() > beforeEvents)
             CloudClient.eventSaved(context);
+          if (failure == null && result != null && "config".equals(command.optString("type")))
+            CloudClient.settingsSaved(context, cachedState);
         });
   }
 }

@@ -10,6 +10,9 @@ db.exec(`CREATE TABLE words(id INTEGER PRIMARY KEY,word TEXT);INSERT INTO words 
 CREATE TABLE progress(word_id INTEGER UNIQUE,stage,next_review_at,last_review_at,correct_count,wrong_count,mastered_count,efactor,interval,repetitions,fsrs_card);
 CREATE TABLE review_history(id INTEGER PRIMARY KEY AUTOINCREMENT,word_id,reviewed_at,rating,card_before,card_after,log);
 CREATE TABLE daily_stats(date TEXT PRIMARY KEY,words_reviewed,words_learned);`);
+db.exec(
+  "CREATE TABLE word_wordlists(word_id,wordlist,UNIQUE(word_id,wordlist));INSERT INTO word_wordlists VALUES(1,'cet4')",
+);
 const { recordReview } = require("../src/main/review-progress");
 const { MINUTE } = require("../src/main/review-algorithm");
 const originalLoad = Module._load,
@@ -28,6 +31,9 @@ let baseline = null,
   countHeaderAvailable = true,
   createdSequence = 0,
   downloadedRows = 0;
+let settingsEnabled = false,
+  settingsRecords = [],
+  settingImports = [];
 const realSetTimeout = global.setTimeout,
   realClearTimeout = global.clearTimeout;
 const batches = [];
@@ -57,6 +63,7 @@ try {
           encryptString: (value) => Buffer.from(value),
           decryptString: (buffer) => buffer.toString(),
         },
+        BrowserWindow: { getAllWindows: () => [] },
       };
     if (parent?.filename.endsWith("cloud-sync.js") && request === "./scheduler")
       return {
@@ -64,6 +71,23 @@ try {
           reloads++;
         },
         emit() {},
+        applyConfig() {
+          reloads++;
+        },
+      };
+    if (
+      parent?.filename.endsWith("cloud-sync.js") &&
+      ["./popup-manager", "./ambient-pill"].includes(request)
+    )
+      return { updateConfig() {} };
+    if (parent?.filename.endsWith("cloud-sync.js") && request === "./db")
+      return {
+        importWordlist(id) {
+          settingImports.push(id);
+          db.prepare("INSERT OR IGNORE INTO word_wordlists VALUES(1,?)").run(
+            id,
+          );
+        },
       };
     if (parent?.filename.endsWith("cloud-sync.js") && request === "./backup")
       return {
@@ -101,6 +125,20 @@ try {
         baselineReads++;
         result = baseline ? [{ state: baseline }] : [];
       }
+    } else if (route.endsWith("wordpop_current_settings") && settingsEnabled) {
+      result = [
+        ...new Map(
+          settingsRecords.map((row) => [row.setting_key, row]),
+        ).values(),
+      ];
+    } else if (route.endsWith("wordpop_settings_changes") && settingsEnabled) {
+      for (const row of body)
+        if (
+          !settingsRecords.some(
+            (old) => old.id === row.id && old.setting_key === row.setting_key,
+          )
+        )
+          settingsRecords.push(row);
     } else if (route.endsWith("wordpop_events")) {
       if (options.method === "POST") {
         uploadedBatches.push(body);
@@ -508,6 +546,92 @@ try {
       assert(!(await cloud.sync({ background: true })).error);
       assert(
         db.prepare("SELECT id FROM cloud_events WHERE id='merge-retry'").get(),
+      );
+
+      // Upgrade an existing account: current Windows settings seed the new
+      // independent table, not the original baseline's old configuration.
+      settingsEnabled = true;
+      const config = require("../src/main/config");
+      config.saveConfig({
+        selectedWordlists: ["cet4"],
+        dailyNewWordsMode: "fixed",
+        dailyNewWords: 35,
+        targetDate: null,
+        autoBalanceLoad: true,
+        popupPosition: "top-left",
+      });
+      assert(!(await cloud.sync({ background: true })).error);
+      assert.equal(settingsRecords.length, 3);
+      assert.equal(
+        settingsRecords.find((row) => row.setting_key === "learningPlan").value
+          .dailyNewWords,
+        35,
+      );
+      const idleWrites = db.prepare("SELECT total_changes() n").get().n;
+      const idleReloads = reloads;
+      await cloud.sync({ background: true });
+      assert.equal(
+        db.prepare("SELECT total_changes() n").get().n,
+        idleWrites,
+        "unchanged settings must not rewrite SQLite",
+      );
+      assert.equal(
+        reloads,
+        idleReloads,
+        "unchanged settings must not reload queue",
+      );
+      // Phone selects CET-6 and a target plan. Windows imports the dictionary
+      // before rebuilding the queue and keeps its own window position.
+      settingsRecords.push({
+        id: "phone-lists",
+        setting_key: "selectedWordlists",
+        value: ["cet6"],
+      });
+      settingsRecords.push({
+        id: "phone-plan",
+        setting_key: "learningPlan",
+        value: {
+          dailyNewWordsMode: "target",
+          dailyNewWords: 98,
+          targetDate: "2027-06-01",
+        },
+      });
+      const settingsResult = await cloud.sync({ background: true });
+      assert(
+        !settingsResult.message.includes("学习设置未同步"),
+        settingsResult.message,
+      );
+      assert.deepStrictEqual(config.loadConfig().selectedWordlists, ["cet6"]);
+      assert.equal(config.loadConfig().dailyNewWordsMode, "target");
+      assert.equal(config.loadConfig().popupPosition, "top-left");
+      assert(settingImports.includes("cet6"));
+      // An offline Windows edit survives a failed sync and gets published later.
+      offline = true;
+      const previous = config.loadConfig();
+      config.saveConfig({ dailyNewWordsMode: "fixed", dailyNewWords: 42 });
+      cloud.captureSettings(previous, config.loadConfig());
+      await until(() => !cloud.getStatus().syncing);
+      assert((await cloud.sync({ background: true })).error);
+      const queued = JSON.parse(
+        db.prepare("SELECT state FROM cloud_learning_settings").get().state,
+      );
+      assert.equal(queued.pending.learningPlan.value.dailyNewWords, 42);
+      offline = false;
+      await cloud.sync({ background: true });
+      assert.equal(
+        [...settingsRecords]
+          .reverse()
+          .find((row) => row.setting_key === "learningPlan").value
+          .dailyNewWords,
+        42,
+      );
+      assert.equal(
+        Object.keys(
+          JSON.parse(
+            db.prepare("SELECT state FROM cloud_learning_settings").get().state,
+          ).pending,
+        ).length,
+        0,
       );
 
       const credentialsBeforeLogout = fs.readFileSync(

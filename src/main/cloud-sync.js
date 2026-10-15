@@ -3,6 +3,9 @@ const fs = require("fs"),
   crypto = require("crypto");
 const { fold } = require("../shared/learning-core");
 const { downloadJournal } = require("./cloud-journal");
+const learningSettings = require("../shared/learning-settings");
+const SETTINGS_ROUTE =
+  "/rest/v1/wordpop_current_settings?select=setting_key,value,id&limit=3";
 let session = null,
   timer = null,
   busy = false,
@@ -37,7 +40,8 @@ function tables(database) {
     `CREATE TABLE IF NOT EXISTS cloud_events(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,word TEXT NOT NULL,action TEXT NOT NULL,reviewed_at INTEGER NOT NULL,history_id INTEGER,target_id TEXT,sent INTEGER DEFAULT 0);
      CREATE INDEX IF NOT EXISTS cloud_events_outbox ON cloud_events(user_id,sent);
      CREATE INDEX IF NOT EXISTS cloud_events_history ON cloud_events(user_id,history_id);
-     CREATE TABLE IF NOT EXISTS cloud_download_cache(owner TEXT PRIMARY KEY,snapshot TEXT NOT NULL);`,
+     CREATE TABLE IF NOT EXISTS cloud_download_cache(owner TEXT PRIMARY KEY,snapshot TEXT NOT NULL);
+     CREATE TABLE IF NOT EXISTS cloud_learning_settings(owner TEXT PRIMARY KEY,state TEXT NOT NULL);`,
   );
 }
 function captureReview(database, wordId, action, now, historyId) {
@@ -60,18 +64,116 @@ function captureReview(database, wordId, action, now, historyId) {
     );
   queueSync();
 }
-function queueSync() {
+function queueSync(delay = 10000) {
   if (!session) return;
   if (busy) {
     syncAgain = true;
     return;
   }
-  if (followupTimer) return;
+  if (followupTimer && delay > 0) return;
+  if (followupTimer) clearTimeout(followupTimer);
   followupTimer = setTimeout(() => {
     followupTimer = null;
     sync({ background: true });
-  }, 10000);
+  }, delay);
   followupTimer.unref();
+}
+function settingsState(owner) {
+  const row = db
+    .prepare("SELECT state FROM cloud_learning_settings WHERE owner=?")
+    .get(owner);
+  return row ? JSON.parse(row.state) : { pending: {}, initialized: false };
+}
+function saveSettingsState(owner, state) {
+  const serialized = JSON.stringify(state);
+  if (
+    db
+      .prepare("SELECT state FROM cloud_learning_settings WHERE owner=?")
+      .get(owner)?.state === serialized
+  )
+    return;
+  db.prepare("INSERT OR REPLACE INTO cloud_learning_settings VALUES(?,?)").run(
+    owner,
+    serialized,
+  );
+}
+function captureSettings(before, after) {
+  if (!session?.user?.id || !db) return;
+  const owner = session.url + ":" + session.user.id;
+  const previous = settingsState(owner);
+  const next = learningSettings.capture(
+    previous,
+    before,
+    after,
+    crypto.randomUUID(),
+  );
+  if (JSON.stringify(previous.pending) === JSON.stringify(next.pending)) return;
+  saveSettingsState(owner, next);
+  queueSync(0);
+}
+async function syncSettings(fetch, owner) {
+  const config = require("./config");
+  let state = settingsState(owner);
+  const rows = await fetch(SETTINGS_ROUTE);
+  if (!Array.isArray(rows)) throw new Error("云端学习设置响应无效");
+  state = settingsState(owner);
+  // The first upgraded Windows client seeds current preferences, rather than an
+  // old baseline. Android waits for these unless its user explicitly edits them.
+  if (!state.initialized) {
+    const seeded = learningSettings.seed(
+      state,
+      config.loadConfig(),
+      crypto.randomUUID(),
+    );
+    const pending = { ...state.pending };
+    for (const key of learningSettings.GROUPS)
+      if (!rows.some((row) => row.setting_key === key) && !pending[key])
+        pending[key] = seeded.pending[key];
+    state = { ...state, pending };
+    saveSettingsState(owner, state);
+  }
+  const sent = learningSettings.upload(state, session.user.id);
+  if (sent.length)
+    await fetch(
+      "/rest/v1/wordpop_settings_changes?on_conflict=id,setting_key",
+      "POST",
+      sent,
+    );
+  const latest = sent.length ? await fetch(SETTINGS_ROUTE) : rows;
+  const result = learningSettings.apply(
+    settingsState(owner),
+    config.loadConfig(),
+    latest,
+    sent,
+  );
+  if (result.changed) {
+    const { importWordlist } = require("./db");
+    for (const id of result.config.selectedWordlists) {
+      if (
+        !db
+          .prepare("SELECT COUNT(*) n FROM word_wordlists WHERE wordlist=?")
+          .get(id).n
+      )
+        importWordlist(id);
+    }
+    const saved = config.saveConfig({
+      selectedWordlists: result.config.selectedWordlists,
+      dailyNewWordsMode: result.config.dailyNewWordsMode,
+      dailyNewWords: result.config.dailyNewWords,
+      targetDate: result.config.targetDate,
+      autoBalanceLoad: result.config.autoBalanceLoad,
+    });
+    if (!saved.success) throw new Error(saved.error || "保存云端学习设置失败");
+    require("./scheduler").applyConfig(saved.config);
+    require("./popup-manager").updateConfig(saved.config);
+    require("./ambient-pill").updateConfig(saved.config);
+    const { BrowserWindow } = require("electron");
+    for (const window of BrowserWindow.getAllWindows())
+      if (!window.isDestroyed())
+        window.webContents.send("config:changed", saved.config);
+  }
+  saveSettingsState(owner, { ...result.state, initialized: true });
+  return Object.keys(result.state.pending).length ? "；学习设置等待上传" : "";
 }
 function pendingCount() {
   return session && db
@@ -115,6 +217,18 @@ async function request(
       try {
         code = JSON.parse(text).error_code || JSON.parse(text).code;
       } catch (_) {}
+      if (
+        route.startsWith("/rest/v1/wordpop_current_settings") ||
+        route.startsWith("/rest/v1/wordpop_settings_changes")
+      ) {
+        if (["PGRST205", "42P01"].includes(code))
+          throw new Error(
+            "学习设置云表尚未配置，请执行新版 cloud/supabase.sql",
+          );
+        throw new Error(
+          `学习设置请求失败（HTTP ${response.status}${/^[A-Za-z0-9_]{1,64}$/.test(code || "") ? " / " + code : ""}）`,
+        );
+      }
       const messages = {
         email_not_confirmed:
           "邮箱尚未确认。请点击确认邮件中的链接，再回到软件登录；若最后跳到 localhost 并打不开，邮箱可能已确认，可再次尝试登录。",
@@ -215,9 +329,16 @@ async function sync({ background = false } = {}) {
       );
     for (const event of upload)
       db.prepare("UPDATE cloud_events SET sent=1 WHERE id=?").run(event.id);
+    const owner = session.url + ":" + session.user.id;
+    let settingsWarning = "";
+    try {
+      settingsWarning = await syncSettings(fetch, owner);
+    } catch (error) {
+      checkSession();
+      settingsWarning = "；学习设置未同步：" + error.message;
+    }
     const wordRows = db.prepare("SELECT id,word FROM words ORDER BY id").all();
     const wordKey = JSON.stringify(wordRows);
-    const owner = session.url + ":" + session.user.id;
     if (!downloadCache || downloadCache.owner !== owner) {
       let snapshot = null;
       try {
@@ -239,7 +360,8 @@ async function sync({ background = false } = {}) {
       !upload.length &&
       !pendingCount()
     ) {
-      status = "已同步 · " + new Date().toLocaleTimeString("zh-CN");
+      status =
+        "已同步 · " + new Date().toLocaleTimeString("zh-CN") + settingsWarning;
       succeeded = true;
       return { message: status };
     }
@@ -437,6 +559,7 @@ async function sync({ background = false } = {}) {
     status = pending
       ? `已保存本地 · ${pending} 条记录等待上传`
       : "已同步 · " + new Date().toLocaleTimeString("zh-CN");
+    status += settingsWarning;
     succeeded = true;
     return { message: status };
   } catch (error) {
@@ -608,6 +731,7 @@ module.exports = {
   start,
   captureReview,
   captureUndo,
+  captureSettings,
   login,
   resendConfirmation,
   sync,

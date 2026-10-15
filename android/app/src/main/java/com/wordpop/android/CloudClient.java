@@ -188,9 +188,12 @@ final class CloudClient {
       String route, String method, boolean countOnly, String errorCode, int code) {
     if (route.startsWith("/auth/")) return authError(errorCode, code);
     String operation =
-        route.startsWith("/rest/v1/wordpop_baseline")
-            ? "读取初始记录失败"
-            : "POST".equals(method) ? "上传评分记录失败" : countOnly ? "检查记录数量失败" : "下载评分记录失败";
+        (route.startsWith("/rest/v1/wordpop_current_settings")
+                || route.startsWith("/rest/v1/wordpop_settings_changes"))
+            ? "同步学习设置失败"
+            : route.startsWith("/rest/v1/wordpop_baseline")
+                ? "读取初始记录失败"
+                : "POST".equals(method) ? "上传评分记录失败" : countOnly ? "检查记录数量失败" : "下载评分记录失败";
     // Include a bounded machine code, never the raw server response, URL or payload.
     String safeCode = errorCode.matches("[A-Za-z0-9_]{1,64}") ? errorCode : "";
     String detail;
@@ -262,6 +265,15 @@ final class CloudClient {
     enqueueSync(context, 10000, false, false);
   }
 
+  static void settingsSaved(Context context, JSONObject state) {
+    if (pendingSettingsCount(state) == 0) return;
+    gate.changed();
+    status = "学习设置已保存本地 · 等待同步";
+    MainActivity.notifyStatus();
+    SyncWorker.uploadSoon(context);
+    enqueueSync(context, 0, false, false);
+  }
+
   static void requestSync(Context context) {
     enqueueSync(context, 0, true, false);
   }
@@ -280,7 +292,8 @@ final class CloudClient {
     engine.executor.execute(
         () -> {
           try {
-            if (pendingCount(engine.store.load()) > 0) enqueueSync(context, 0, false, false);
+            JSONObject state = engine.store.load();
+            if (pendingUploads(state) > 0) enqueueSync(context, 0, false, false);
           } catch (Exception error) {
             android.util.Log.w("WordPop", "Pending sync check failed", error);
           }
@@ -351,6 +364,20 @@ final class CloudClient {
     return count;
   }
 
+  static int pendingSettingsCount(JSONObject state) {
+    JSONObject metadata = state == null ? null : state.optJSONObject("settingsSync");
+    JSONObject pending = metadata == null ? null : metadata.optJSONObject("pending");
+    if (pending == null) return 0;
+    int count = 0;
+    for (String key : new String[] {"selectedWordlists", "learningPlan", "autoBalanceLoad"})
+      if (pending.has(key)) count++;
+    return count;
+  }
+
+  static int pendingUploads(JSONObject state) {
+    return pendingCount(state) + pendingSettingsCount(state);
+  }
+
   static JSONArray pendingUpload(JSONObject state, String userId) throws Exception {
     JSONArray upload = new JSONArray();
     if (state != null)
@@ -379,6 +406,68 @@ final class CloudClient {
 
   static void syncBlocking(Context context) throws Exception {
     syncBlocking(context, false);
+  }
+
+  private static String syncLearningSettings(
+      Context context, JSONObject session, StudyEngine engine, String owner) {
+    try {
+      JSONObject prepared =
+          engine
+              .executor
+              .submit(
+                  () ->
+                      engine.run(new JSONObject().put("type", "settingsBind").put("owner", owner)))
+              .get(20, TimeUnit.SECONDS);
+      String route = "/rest/v1/wordpop_current_settings?select=setting_key,value,id&limit=3";
+      JSONArray rows = new JSONArray(request(session, route, "GET", null));
+      JSONArray sent = new JSONArray();
+      JSONObject pending = prepared.getJSONObject("settingsSync").getJSONObject("pending");
+      for (String key : new String[] {"selectedWordlists", "learningPlan", "autoBalanceLoad"}) {
+        if (!pending.has(key)) continue;
+        JSONObject change = pending.getJSONObject(key);
+        sent.put(
+            new JSONObject()
+                .put("id", change.getString("id"))
+                .put("user_id", session.getString("user_id"))
+                .put("setting_key", key)
+                .put("value", change.get("value")));
+      }
+      if (sent.length() > 0) {
+        request(
+            session,
+            "/rest/v1/wordpop_settings_changes?on_conflict=id,setting_key",
+            "POST",
+            sent.toString());
+        rows = new JSONArray(request(session, route, "GET", null));
+      }
+      JSONArray latest = rows;
+      JSONObject result =
+          engine
+              .executor
+              .submit(
+                  () ->
+                      engine.run(
+                          new JSONObject()
+                              .put("type", "settingsApply")
+                              .put("owner", owner)
+                              .put("rows", latest)
+                              .put("sent", sent)))
+              .get(20, TimeUnit.SECONDS);
+      if (result.getBoolean("changed")) {
+        JSONObject view =
+            engine
+                .executor
+                .submit(() -> engine.run(new JSONObject().put("type", "view")))
+                .get(20, TimeUnit.SECONDS);
+        WordWidget.render(context, view);
+        MainActivity.notifyView(view, null);
+      }
+      return result.getJSONObject("settingsSync").getJSONObject("pending").length() > 0
+          ? "；学习设置等待上传"
+          : "";
+    } catch (Exception error) {
+      return "；学习设置未同步：" + error.getMessage();
+    }
   }
 
   private static synchronized void syncBlocking(Context context, boolean forcePull)
@@ -455,6 +544,7 @@ final class CloudClient {
       JSONObject latest =
           engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS);
       syncedStatus(latest);
+      status += syncLearningSettings(context, session, engine, owner);
       saveDownloadCache(engine, owner, journal.snapshot);
       return;
     }
@@ -478,6 +568,7 @@ final class CloudClient {
     appliedOwner = owner;
     saveDownloadCache(engine, owner, journal.snapshot);
     syncedStatus(view.getJSONObject("state"));
+    status += syncLearningSettings(context, session, engine, owner);
   }
 
   private static void saveDownloadCache(StudyEngine engine, String owner, JSONObject snapshot)

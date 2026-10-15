@@ -4,6 +4,7 @@ const {
 } = require("../main/review-algorithm");
 const { calculateDailyQuota, localDateKey } = require("../main/study-policy");
 const translations = require("../renderer/shared/translations");
+const learningSettings = require("./learning-settings");
 function empty() {
   return {
     config: {
@@ -139,7 +140,21 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
   state.undo ??= null;
   let logs = runtime?.logs;
   if (command.type === "config") {
-    state.config = { ...state.config, ...command.config };
+    const next = command.configBase
+      ? learningSettings.mergeDraft(
+          state.config,
+          command.config,
+          command.configBase,
+        )
+      : { ...state.config, ...command.config };
+    if (state.settingsSync?.owner)
+      state.settingsSync = learningSettings.capture(
+        state.settingsSync,
+        state.config,
+        next,
+        command.settingsEditId,
+      );
+    state.config = next;
     state.current = null;
     state.undo = null;
   }
@@ -233,8 +248,20 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
       throw new Error("学习记录属于其他账户");
     if (!state.cloudUser) {
       state.current = null;
-      if (command.initialConfig)
-        state.config = { ...state.config, ...command.initialConfig };
+      if (command.initialConfig) {
+        for (const key of [
+          "dailyNewWordsMode",
+          "dailyNewWords",
+          "targetDate",
+          "autoBalanceLoad",
+        ])
+          if (Object.hasOwn(command.initialConfig, key))
+            state.config[key] = command.initialConfig[key];
+        const lists = command.initialConfig.selectedWordlists?.filter((id) =>
+          ["cet4", "cet6", "kaoyan"].includes(id),
+        );
+        if (lists?.length) state.config.selectedWordlists = lists;
+      }
     }
     state.cloudUser = command.userId;
     state.cloudSyncedIds = Object.fromEntries(
@@ -298,6 +325,32 @@ function createSession(initialState, vocab) {
     null,
   );
   return {
+    settings(command) {
+      let metadata = state.settingsSync || { owner: null, pending: {} };
+      if (metadata.owner !== command.owner) {
+        if (Object.keys(metadata.pending).length)
+          throw new Error("学习设置属于其他云账户");
+        metadata = { owner: command.owner, pending: {} };
+      }
+      let changed = false;
+      if (command.type === "settingsApply") {
+        const result = learningSettings.apply(
+          metadata,
+          state.config,
+          command.rows,
+          command.sent,
+        );
+        metadata = result.state;
+        changed = result.changed;
+        if (changed) {
+          state.config = result.config;
+          state.current = null;
+          state.undo = null;
+        }
+      }
+      state.settingsSync = metadata;
+      return { settingsSync: metadata, config: state.config, changed };
+    },
     dispatch(command, now = Date.now()) {
       const result = dispatch(state, vocab, command, now, runtime);
       state = result.state;
