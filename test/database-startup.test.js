@@ -5,12 +5,13 @@ const path = require('path');
 const Module = require('module');
 const vm = require('vm');
 const Database = require('better-sqlite3');
+const root = process.env.WORDPOP_TEST_APP_ROOT || path.join(__dirname, '..');
 
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'wordpop-db-startup-'));
 let profile = path.join(dir, '新电脑', 'WordPop');
 const originalLoad = Module._load;
 const originalFetch = global.fetch;
-const app = { getPath: () => profile, getAppPath: () => path.join(__dirname, '..') };
+const app = { getPath: () => profile, getAppPath: () => root, isPackaged: !!process.env.WORDPOP_TEST_APP_ROOT };
 const desktop = { reloadQueue() {}, emit() {}, applyConfig() {}, updateConfig() {} };
 Module._load = function(name, parent) {
   if (name === 'electron') return {
@@ -24,7 +25,7 @@ Module._load = function(name, parent) {
       ['./scheduler', './popup-manager', './ambient-pill'].includes(name)) return desktop;
   return originalLoad.apply(this, arguments);
 };
-const production = require('../src/main/db');
+const production = require(path.join(root, 'src/main/db'));
 
 async function main() {
   // A new profile directory may not exist yet; logging must not be a prerequisite.
@@ -71,7 +72,7 @@ async function main() {
 
   // Use real login + backup + SQLite merge; substitute only the cloud server/UI.
   // Older auth tests mocked backup, which could hide this missing-table error.
-  const baseline = require('../src/main/backup').createBackupData();
+  const baseline = require(path.join(root, 'src/main/backup')).createBackupData();
   const english = db.prepare('SELECT word FROM words WHERE id=?').get(word.id).word;
   const event = {
     id: 'dbce4e1a-16ee-49b2-a69e-bfa3f824f602', word: english, action: 'known',
@@ -93,7 +94,7 @@ async function main() {
     else throw new Error('Unexpected fixture request: ' + request.pathname);
     return { ok: true, status: 200, headers: { get: () => '*/1' }, text: async () => JSON.stringify(data) };
   };
-  const cloud = require('../src/main/cloud-sync');
+  const cloud = require(path.join(root, 'src/main/cloud-sync'));
   cloud.start(db);
   try {
     const result = await cloud.login({
@@ -137,7 +138,7 @@ async function main() {
     constructor() { windows.push(this); }
     loadURL(url) { this.html = decodeURIComponent(url.split(',').slice(1).join(',')); }
   }
-  const entry = path.join(__dirname, '../src/main/index.js');
+  const entry = path.join(root, 'src/main/index.js');
   const nativeRequire = Module.createRequire(entry);
   const service = new Proxy({}, { get: (_target, key) => () => unexpected.push(key) });
   vm.runInNewContext(fs.readFileSync(entry, 'utf8'), {

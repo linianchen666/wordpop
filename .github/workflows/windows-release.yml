@@ -8,7 +8,7 @@ on:
       tag:
         description: 'Stable release tag to build'
         required: true
-        default: v1.9.4
+        default: v1.9.5
 
 permissions:
   contents: write
@@ -103,6 +103,14 @@ jobs:
           $env:ELECTRON_RUN_AS_NODE = '1'
           & .\node_modules\.bin\electron.cmd test/memory-initialization.test.js
           if ($LASTEXITCODE -ne 0) { throw 'Packaged memory initialization validation failed' }
+          Remove-Item Env:ELECTRON_RUN_AS_NODE
+      - name: Verify packaged legacy database repair and login
+        shell: pwsh
+        run: |
+          $env:WORDPOP_TEST_APP_ROOT = (Resolve-Path 'build/win-unpacked/resources/app.asar').Path
+          $env:ELECTRON_RUN_AS_NODE = '1'
+          & .\node_modules\.bin\electron.cmd test/database-startup.test.js
+          if ($LASTEXITCODE -ne 0) { throw 'Packaged legacy database repair validation failed' }
           Remove-Item Env:ELECTRON_RUN_AS_NODE
       - name: Prepare installers and checksums
         shell: pwsh

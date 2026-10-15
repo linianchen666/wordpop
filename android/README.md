@@ -10,7 +10,7 @@ APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。GitHub 构建
 
 正式发布选择工作流的 `release` 变体，使用同一固定签名生成非调试 APK，执行 `assembleRelease testReleaseUnitTest lintRelease -PwordpopReleaseTests=true` 和 `connectedReleaseAndroidTest -PwordpopReleaseTests=true`。正式 APK 输出为 `android/app/build/outputs/apk/release/app-release.apk`；本地构建也需先按签名说明配置固定密钥环境变量。`wordpopReleaseTests` 让设备测试验证实际 release 变体，默认仍测试 debug。
 
-[下载 Android 0.1.8 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.4/WordPop.Android.0.1.8.apk)，与 Windows 1.9.4 一起发布。Android versionCode 为 10，0.1.2 起的固定签名包（包括 0.1.4-beta.1）可直接覆盖升级，保留账号和学习记录。
+[下载 Android 0.1.8 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.5/WordPop.Android.0.1.8.apk)，随 Windows 1.9.5 分发（本次仅修复 Windows，安卓版本未变）。Android versionCode 为 10，0.1.2 起的固定签名包（包括 0.1.4-beta.1）可直接覆盖升级，保留账号和学习记录。
 
 ## 使用
 
