@@ -114,6 +114,7 @@ public class AppUpdateTest {
             assertEquals("下载 APK", checker.dialog.getButton(-1).getText().toString());
             checker.dialog.getButton(-1).performClick();
           });
+      until(() -> opened.get() != null);
       assertNotNull(opened.get());
       assertEquals(
           "https://github.com/linianchen666/wordpop/releases/download/v999.0.0/WordPop.Android."
@@ -192,10 +193,11 @@ public class AppUpdateTest {
     try {
       instrumentation.runOnMainSync(checker::check);
       assertTrue(started.await(5, TimeUnit.SECONDS));
+      instrumentation.runOnMainSync(() -> checker.dialog.getButton(-2).performClick());
+      // AlertDialog dispatches button listeners through its Handler.
+      until(() -> checker.dialog == null);
       instrumentation.runOnMainSync(
           () -> {
-            checker.dialog.getButton(-2).performClick();
-            assertNull(checker.dialog);
             checker.close();
             activity.finish();
           });
