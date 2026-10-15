@@ -1,4 +1,4 @@
-/** Add FSRS state and review history atomically, preserving legacy progress. */
+/** Ensure FSRS state and history atomically, including incomplete old upgrades. */
 function migrateFsrs(db) {
   db.transaction(() => {
     const columns = db.prepare("PRAGMA table_info('progress')").all();
@@ -17,7 +17,10 @@ function migrateFsrs(db) {
       );
       CREATE INDEX IF NOT EXISTS idx_review_history_word ON review_history(word_id, reviewed_at);
     `);
-    db.pragma('user_version = 7');
+    // Do not downgrade v8 and repeat its one-time memory upgrade during repair.
+    if (db.pragma('user_version', { simple: true }) < 7) {
+      db.pragma('user_version = 7');
+    }
   })();
 }
 

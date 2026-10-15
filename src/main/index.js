@@ -101,7 +101,11 @@ app.whenReady().then(async () => {
   initLog();
 
   // 1. 数据库
-  safeStep('initDatabase', initDatabase);
+  const database = safeStep('initDatabase', initDatabase);
+  if (!database) {
+    showErrorWindow();
+    return;
+  }
 
   // 2. 配置
   let config = safeStep('loadConfig', loadConfig);
@@ -109,7 +113,7 @@ app.whenReady().then(async () => {
     config = { setupComplete: false, selectedWordlists: ['cet4'], dailyNewWords: 20 };
   }
 
-  safeStep('cloudSync', () => require('./cloud-sync').start(require('./db').getDb()));
+  safeStep('cloudSync', () => require('./cloud-sync').start(database));
 
   // 3. IPC
   safeStep('registerIpc', registerIpcHandlers);

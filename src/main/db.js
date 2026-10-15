@@ -6,6 +6,7 @@ const { migrateFsrs } = require('./fsrs-schema');
 const { initializeMemory } = require('./memory-initialization');
 
 let db = null;
+let initializationError = null;
 
 /**
  * 初始化数据库
@@ -15,29 +16,31 @@ let db = null;
  * - 如果迁移失败，保留原数据库并报告错误
  */
 function initDatabase() {
-  const userDataPath = app.getPath('userData');
-  const dbPath = path.join(userDataPath, 'wordpop.db');
-
-  db = new Database(dbPath);
-
-  // 性能优化：WAL 模式 + 外键约束
-  db.pragma('journal_mode = WAL');
-  db.pragma('foreign_keys = ON');
-  db.pragma('synchronous = NORMAL');
-  db.pragma('cache_size = -8000'); // 8MB 缓存
-
-  // 执行迁移
+  if (db?.open) return db;
+  let connection = null;
   try {
-    migrate(db);
+    const userDataPath = app.getPath('userData');
+    fs.mkdirSync(userDataPath, { recursive: true });
+    const dbPath = path.join(userDataPath, 'wordpop.db');
+    connection = new Database(dbPath);
+
+    connection.pragma('journal_mode = WAL');
+    connection.pragma('foreign_keys = ON');
+    connection.pragma('synchronous = NORMAL');
+    connection.pragma('cache_size = -8000'); // 8MB 缓存
+    migrate(connection);
+    db = connection;
+    initializationError = null;
+    return db;
   } catch (err) {
-    console.error('[DB] Migration failed:', err.message);
-    // A failed upgrade must never erase learning data. Leave the file intact.
-    try { db.close(); } catch (_) {}
+    console.error('[DB] Initialization failed:', err.message);
+    // Opening, PRAGMA setup and migrations can all fail. Preserve the original
+    // cause and file, and never expose a partially initialized connection.
+    try { connection?.close(); } catch (_) {}
     db = null;
+    initializationError = err;
     throw err;
   }
-
-  return db;
 }
 
 /**
@@ -309,7 +312,9 @@ function migrate(db) {
     db.pragma('user_version = 6');
   }
 
-  if (currentVersion < 7) migrateFsrs(db);
+  // Some old installations have a v7 marker without the history table.
+  // Ensure the actual schema before memory initialization, even at v7/v8.
+  migrateFsrs(db);
   if (currentVersion < 8) {
     const result = initializeMemory(db);
     console.log('[DB] Memory initialization finished:', result.updated, 'records');
@@ -530,7 +535,11 @@ function importCustomWordlist(filePath, wordlistName) {
  * 获取数据库实例
  */
 function getDb() {
-  if (!db) {
+  if (!db?.open) {
+    if (initializationError) {
+      throw new Error('本地学习数据库初始化失败：' + initializationError.message,
+        { cause: initializationError });
+    }
     throw new Error('Database not initialized. Call initDatabase() first.');
   }
   return db;
