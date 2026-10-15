@@ -5,7 +5,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/linianchen666/wordpop?label=latest)](https://github.com/linianchen666/wordpop/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/linianchen666/wordpop/releases/latest)
 
-当前正式版及源码版本：**1.8.6**。支持 Windows x64。
+当前正式版：**Windows 1.9.0 / Android 0.1.4**。支持 Windows x64 和 Android 8.0 及以上。
 
 ## 下载安装与更新
 
@@ -182,7 +182,7 @@ npm run build -- --win --x64 --publish never
 
 ### 发布与保留规则
 
-正式版代码在 **main**。推送正式版本标签（如 `v1.8.2`）会触发 [Windows 发布工作流](.github/workflows/windows-release.yml)：运行回归测试、构建安装包、验证包内功能，上传安装包和校验文件，再发布为正式 Latest Release。发布前应创建对应的 Release 草稿；也可通过工作流手动指定版本标签。
+正式版代码在 **main**。先在待发布提交运行 [Android APK 工作流](.github/workflows/android-build.yml)，选择 `release`，通过固定签名校验、单元测试、Lint 和模拟器设备测试。随后创建对应的 Release 草稿，推送正式版本标签（如 `v1.9.0`），触发 [Windows 发布工作流](.github/workflows/windows-release.yml)：读取相同提交已通过测试的 Android 正式 APK，运行 Windows 回归测试、构建安装包并验证包内功能，两端安装包和校验文件全部上传且校验通过后，发布为正式 Latest Release。也可通过工作流手动指定版本标签。
 
 GitHub 按发布时间分别保留最近 **3 个正式版和 3 个测试版**。旧 Release 及附件自动清理，源码标签与分支保留。[清理工作流](.github/workflows/release-retention.yml) 在发布后执行，并提供每日巡检和手动入口。
 
@@ -190,15 +190,15 @@ GitHub 按发布时间分别保留最近 **3 个正式版和 3 个测试版**。
 
 MIT
 
-## Android 手机与桌面小组件（开发测试版）
+## Android 手机与桌面小组件
 
-Android 应用支持普通桌面小组件、先回忆再评分、离线学习及与电脑共用的 FSRS 算法。小组件支持缩放、透明背景和交互自动发音；底部三个反馈按钮，右上角星号表示轻松。App 设置收进菜单，适合通过 MultiStar 在外屏专注背词。云同步采用 Supabase，同一账户共享评分和学习进度，默认项目网址和公开密钥已预填，也可按说明配置自己的项目。此功能尚未包含在 1.8.6 正式安装包中。
+Android 应用支持普通桌面小组件、先回忆再评分、离线学习及与电脑共用的 FSRS 算法。小组件支持缩放、透明背景和交互自动发音；底部三个反馈按钮，右上角星号表示轻松。App 设置收进菜单，适合通过 MultiStar 在外屏专注背词。云同步采用 Supabase，同一账户共享评分和学习进度，默认项目网址和公开密钥已预填，也可按说明配置自己的项目。Windows 1.9.0 正式版已包含云同步。
 
-[下载 Android 0.1.4 测试版](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.4-beta.1/WordPop.Android.0.1.4-beta.1.apk) · [下载 Windows 云同步预览 1.9.0-beta.5](https://github.com/linianchen666/wordpop/releases/download/android-v0.1.4-beta.1/WordPop.Setup.1.9.0-beta.5.exe)
+[下载 Android 0.1.4 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.0/WordPop.Android.0.1.4.apk) · [下载 Windows 1.9.0 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.0/WordPop.Setup.1.9.0.exe)
 
 [Android 构建与使用](android/README.md) · [云同步配置与记忆记录合并规则](cloud/README.md)
 
-Android 0.1.4 / Windows 1.9.0-beta.5 已精简 App 的回忆提示，小组件未展开时英文居中，点击后上移并显示释义。同步以 10 秒窗口批量上传评分，前台每 15 秒先轻量检查记录数量，未变化时不下载完整日志；评分立即保存在本地；离线记录自动重试，同步期间的新评分自动续传；无新记录时不重写进度、不重置复习队列。手机增加联网补传任务，以及 App/小组件顶部的触屏撤销入口，可回到上一词重新评分。现有初始快照、评分和撤销记录继续使用，无需重建云表。
+Android 0.1.4 / Windows 1.9.0 已精简 App 的回忆提示，小组件未展开时英文居中，点击后上移并显示释义。同步以 10 秒窗口批量上传评分，前台每 15 秒先轻量检查记录数量，未变化时不下载完整日志；评分立即保存在本地；离线记录自动重试，同步期间的新评分自动续传；无新记录时不重写进度、不重置复习队列。手机增加联网补传任务，以及 App/小组件顶部的触屏撤销入口，可回到上一词重新评分。现有初始快照、评分和撤销记录继续使用，无需重建云表。
 
 自 Android 0.1.2 起使用固定 WordPop 签名，本版沿用同一证书并递增版本，可从 0.1.2 直接覆盖升级。由更早的临时签名版本迁移时：先在旧手机 App 完成云同步并在电脑导出备份，再卸载旧 APK、安装新版并登录恢复记录。卸载会清除手机本地数据。
 

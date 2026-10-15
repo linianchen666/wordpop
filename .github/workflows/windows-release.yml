@@ -8,10 +8,11 @@ on:
       tag:
         description: 'Stable release tag to build'
         required: true
-        default: v1.8.6
+        default: v1.9.0
 
 permissions:
   contents: write
+  actions: read
 
 concurrency:
   group: wordpop-${{ github.event.inputs.tag || github.ref_name }}-release
@@ -37,6 +38,31 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      - name: Retrieve verified Android release from the same source
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          $runs = gh run list --repo $env:GITHUB_REPOSITORY --workflow android-build.yml --commit $sha --status success --limit 20 --json databaseId,headSha | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Android builds' }
+          $runId = $null
+          foreach ($run in $runs) {
+            if ($run.headSha -ne $sha) { continue }
+            $result = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($run.databaseId)/artifacts" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Android artifacts' }
+            if ($result.artifacts | Where-Object { $_.name -eq 'wordpop-android-release-apk' -and -not $_.expired }) {
+              $runId = $run.databaseId
+              break
+            }
+          }
+          if (-not $runId) { throw 'Run the Android APK release variant successfully for this exact source commit first' }
+          gh run download $runId --repo $env:GITHUB_REPOSITORY --name wordpop-android-release-apk --dir artifacts/android
+          if ($LASTEXITCODE -ne 0) { throw 'Android release download failed' }
+          $expected = (Get-Content android/signing-certificate.sha256 -Raw).Trim()
+          $actual = (Get-Content artifacts/android/outputs/signing-certificate.sha256 -Raw).Trim()
+          if ($actual -ne $expected) { throw 'Android signing certificate mismatch' }
+          if (-not (Test-Path artifacts/android/outputs/apk/release/app-release.apk)) { throw 'Missing Android release APK' }
       - name: Install locked dependencies and Electron native addon
         run: npm ci --strict-ssl=true
       - name: Run regression tests on Windows
@@ -75,34 +101,51 @@ jobs:
           & .\node_modules\.bin\electron.cmd test/memory-initialization.test.js
           if ($LASTEXITCODE -ne 0) { throw 'Packaged memory initialization validation failed' }
           Remove-Item Env:ELECTRON_RUN_AS_NODE
-      - name: Prepare installer and checksum
+      - name: Prepare installers and checksums
         shell: pwsh
         run: |
           $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
           if ("v$version" -ne $env:RELEASE_TAG) { throw 'Release version does not match source' }
           $asset = "build/WordPop.Setup.$version.exe"
           Copy-Item "build/WordPop Setup $version.exe" $asset
-          $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
-          "$hash  WordPop.Setup.$version.exe" | Set-Content build/SHA256SUMS.txt -Encoding ascii
+          $gradle = Get-Content android/app/build.gradle -Raw
+          if ($gradle -notmatch "versionName '([0-9]+\.[0-9]+\.[0-9]+)'") { throw 'Android stable version is required' }
+          $androidName = "WordPop.Android.$($Matches[1]).apk"
+          Copy-Item artifacts/android/outputs/apk/release/app-release.apk "build/$androidName"
+          $assets = @($asset, "build/$androidName")
+          $checksums = foreach ($file in $assets) {
+            $hash = (Get-FileHash $file -Algorithm SHA256).Hash.ToLowerInvariant()
+            "$hash  $(Split-Path $file -Leaf)"
+          }
+          $checksums | Set-Content build/SHA256SUMS.txt -Encoding ascii
+      - name: Save verified release packages
+        uses: actions/upload-artifact@v4
+        with:
+          name: wordpop-stable-packages
+          path: |
+            build/WordPop.Setup.*.exe
+            build/WordPop.Android.*.apk
+            build/SHA256SUMS.txt
+          if-no-files-found: error
       - name: Upload and publish verified stable release
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          $version = (Get-Content package.json -Raw | ConvertFrom-Json).version
-          $name = "WordPop.Setup.$version.exe"
-          $asset = "build/$name"
-          gh release upload $env:RELEASE_TAG $asset build/SHA256SUMS.txt --repo $env:GITHUB_REPOSITORY --clobber
+          $assets = @(Get-ChildItem build/WordPop.Setup.*.exe, build/WordPop.Android.*.apk, build/SHA256SUMS.txt)
+          if ($assets.Count -ne 3) { throw 'Expected exactly two installers and their checksums' }
+          gh release upload $env:RELEASE_TAG @($assets.FullName) --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
           $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect uploaded release' }
           $release = $releases | Where-Object { $_.tag_name -eq $env:RELEASE_TAG }
           if (-not $release) { throw 'Release draft was not found' }
-          $exe = $release.assets | Where-Object { $_.name -eq $name }
-          $checksum = $release.assets | Where-Object { $_.name -eq 'SHA256SUMS.txt' }
-          $hash = (Get-FileHash $asset -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($release.tag_name -ne $env:RELEASE_TAG -or $exe.state -ne 'uploaded' -or $checksum.state -ne 'uploaded' -or $exe.digest -ne "sha256:$hash") {
-            throw 'Release asset verification failed'
+          foreach ($file in $assets) {
+            $asset = $release.assets | Where-Object { $_.name -eq $file.Name }
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$hash") {
+              throw "Release asset verification failed: $($file.Name)"
+            }
           }
           gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --prerelease=false --latest=true
           if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }

@@ -35,7 +35,14 @@ Module._load = function(request) {
 (async () => {
   const tray = require('../src/main/tray');
   try {
-    for (const current of ['1.7.1', '1.8.0-beta.10', '1.8.1', '1.8.2', '1.8.3', latest]) {
+    const cases = ['1.7.1', '1.8.0-beta.10', '1.8.1', '1.8.2', '1.8.3', '1.8.6', '1.9.0-beta.5', latest]
+      .map(current => ({ current, needUpdate: current !== latest }));
+    cases.push(
+      { current: `${latest}+local.1`, needUpdate: false },
+      { current: '1.9.1-beta.1', needUpdate: false },
+      { current: '1.10.0', needUpdate: false }
+    );
+    for (const { current, needUpdate } of cases) {
       version = current; dialogs.length = 0; links.length = 0; requests.length = 0;
       tray.createTray();
       menu.find(item => item.label?.includes('检查更新')).click();
@@ -44,7 +51,7 @@ Module._load = function(request) {
       assert.equal(requests[0].hostname, 'api.github.com');
       assert.equal(requests[0].path, '/repos/linianchen666/wordpop/releases/latest');
       assert.equal(dialogs.length, 1);
-      if (current !== latest) {
+      if (needUpdate) {
         assert.equal(dialogs[0].title, '发现新版本');
         assert.ok(dialogs[0].message.includes('v'+latest));
         assert.deepEqual(links, ['https://github.com/linianchen666/wordpop/releases/latest']);

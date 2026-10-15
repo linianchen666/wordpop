@@ -75,17 +75,22 @@ async function checkForUpdates(silent = false) {
 }
 
 /**
- * 简易版本号比较：返回 1 表示 a > b，-1 表示 a < b，0 表示相等
+ * Latest 只返回正式版；比较主版本，并将同版本的预览包排在正式版之前。
+ * 返回 1 表示 a > b，-1 表示 a < b，0 表示相等。
  */
 function compareVersions(a, b) {
-  const pa = a.split('.').map(Number);
-  const pb = b.split('.').map(Number);
+  const cleanA = a.split('+')[0];
+  const cleanB = b.split('+')[0];
+  const pa = cleanA.split('-')[0].split('.').map(Number);
+  const pb = cleanB.split('-')[0].split('.').map(Number);
   for (let i = 0; i < 3; i++) {
     const na = pa[i] || 0, nb = pb[i] || 0;
     if (na > nb) return 1;
     if (na < nb) return -1;
   }
-  return 0;
+  const previewA = cleanA.includes('-');
+  const previewB = cleanB.includes('-');
+  return previewA === previewB ? 0 : (previewA ? -1 : 1);
 }
 
 /**

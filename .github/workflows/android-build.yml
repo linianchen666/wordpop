@@ -1,12 +1,20 @@
 name: Android APK
 on:
   workflow_dispatch:
+    inputs:
+      variant:
+        description: APK build variant
+        type: choice
+        options: [debug, release]
+        default: debug
 permissions:
   contents: read
 jobs:
   apk:
     runs-on: ubuntu-latest
     timeout-minutes: 35
+    env:
+      APK_VARIANT: ${{ inputs.variant || 'debug' }}
     steps:
       - uses: actions/checkout@v4
       - name: Restore fixed WordPop signing key
@@ -38,10 +46,22 @@ jobs:
       - name: Build APK, run unit tests and lint
         env:
           WORDPOP_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.WORDPOP_ANDROID_KEYSTORE_PASSWORD }}
-        run: gradle -p android assembleDebug testDebugUnitTest lintDebug
+        run: |
+          if [ "$APK_VARIANT" = release ]; then
+            gradle -p android assembleRelease testReleaseUnitTest lintRelease -PwordpopReleaseTests=true
+          else
+            gradle -p android assembleDebug testDebugUnitTest lintDebug
+          fi
       - name: Verify fixed APK signature
         run: |
-          python3 android/tools/verify-signing.py --apk android/app/build/outputs/apk/debug/app-debug.apk --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --expected android/signing-certificate.sha256 --output android/app/build/outputs/signing-certificate.sha256
+          python3 android/tools/verify-signing.py --apk "android/app/build/outputs/apk/$APK_VARIANT/app-$APK_VARIANT.apk" --apksigner "$ANDROID_HOME/build-tools/35.0.0/apksigner" --expected android/signing-certificate.sha256 --output android/app/build/outputs/signing-certificate.sha256
+          if [ "$APK_VARIANT" = release ]; then
+            badging=$("$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging android/app/build/outputs/apk/release/app-release.apk)
+            if [[ "$badging" == *application-debuggable* ]]; then
+              echo '::error::Release APK must not be debuggable.'
+              exit 1
+            fi
+          fi
       - name: Enable emulator acceleration
         run: |
           echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
@@ -55,13 +75,14 @@ jobs:
           api-level: 35
           arch: x86_64
           target: google_apis
-          script: gradle -p android connectedDebugAndroidTest
+          script: |
+            if [ "$APK_VARIANT" = release ]; then gradle -p android connectedReleaseAndroidTest -PwordpopReleaseTests=true; else gradle -p android connectedDebugAndroidTest; fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: wordpop-android-test-apk
+          name: ${{ inputs.variant == 'release' && 'wordpop-android-release-apk' || 'wordpop-android-test-apk' }}
           path: |
-            android/app/build/outputs/apk/debug/*.apk
+            android/app/build/outputs/apk/${{ inputs.variant || 'debug' }}/*.apk
             android/app/build/reports/
             android/app/build/test-results/
             android/app/build/outputs/androidTest-results/

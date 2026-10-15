@@ -7,12 +7,13 @@ if (fixedStore && !fixedPassword) {
 android {
     namespace 'com.wordpop.android'
     compileSdk 35
+    testBuildType = project.hasProperty('wordpopReleaseTests') ? 'release' : 'debug'
     defaultConfig {
         applicationId 'com.wordpop.android'
         minSdk 26
         targetSdk 35
-        versionCode 5
-        versionName '0.1.4-beta.1'
+        versionCode 6
+        versionName '0.1.4'
         testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
     }
     compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
