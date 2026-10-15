@@ -35,7 +35,7 @@ Module._load = function(request) {
 (async () => {
   const tray = require('../src/main/tray');
   try {
-    const cases = ['1.7.1', '1.8.0-beta.10', '1.8.1', '1.8.2', '1.8.3', '1.8.6', '1.9.0-beta.5', latest]
+    const cases = ['1.7.1', '1.8.0-beta.10', '1.8.1', '1.8.2', '1.8.3', '1.8.6', '1.9.0', '1.9.0-beta.5', latest]
       .map(current => ({ current, needUpdate: current !== latest }));
     const [major, minor, patch] = latest.split('.').map(Number);
     cases.push(
