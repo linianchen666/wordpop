@@ -10,7 +10,7 @@ APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。GitHub 构建
 
 正式发布选择工作流的 `release` 变体，使用同一固定签名生成非调试 APK，执行 `assembleRelease testReleaseUnitTest lintRelease -PwordpopReleaseTests=true` 和 `connectedReleaseAndroidTest -PwordpopReleaseTests=true`。正式 APK 输出为 `android/app/build/outputs/apk/release/app-release.apk`；本地构建也需先按签名说明配置固定密钥环境变量。`wordpopReleaseTests` 让设备测试验证实际 release 变体，默认仍测试 debug。
 
-[下载 Android 0.1.7 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.3/WordPop.Android.0.1.7.apk)，与 Windows 1.9.3 一起发布。Android versionCode 为 9，0.1.2 起的固定签名包（包括 0.1.4-beta.1）可直接覆盖升级，保留账号和学习记录。
+[下载 Android 0.1.8 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.4/WordPop.Android.0.1.8.apk)，与 Windows 1.9.4 一起发布。Android versionCode 为 10，0.1.2 起的固定签名包（包括 0.1.4-beta.1）可直接覆盖升级，保留账号和学习记录。
 
 ## 使用
 
@@ -58,8 +58,8 @@ App 点击显示释义后立即展开已加载的释义和按钮，后台完成�
 
 项目网址和公开密钥默认收在“高级连接设置”中。登录期间显示等待提示并锁定重复提交，密码验证成功后立即显示登录成功，再继续同步；失败时保留密码供修改，并可通过显示密码按钮检查输入。三星外屏使用方式保留在本文，不作为 App 设置项。学习引擎复用会话状态，正常评分只更新当前单词，云撤销或乱序事件仍完整回放校验。
 
-## 当前 main 的后续改动（尚未发布）
+## 学习设置同步（Android 0.1.8）
 
-学习设置新增双向同步：内置词库选择支持多选，固定 / 智能模式、固定词量、目标日期及减负开关会同步。启用前需执行最新 `cloud/supabase.sql`，并更新两端客户端；建议先用新版电脑同步，再打开手机。离线修改会保留，其他设备没有修改的设置组可合并。配置缺失不影响原有评分同步。详见 [设置同步规则](../cloud/README.md#学习设置同步当前-main尚未发布安装包)。
+学习设置新增双向同步：内置词库选择支持多选，固定 / 智能模式、固定词量、目标日期及减负开关会同步。启用前需执行最新 `cloud/supabase.sql`，并更新两端客户端；建议先用新版电脑同步，再打开手机。离线修改会保留，其他设备没有修改的设置组可合并。配置缺失不影响原有评分同步。详见 [设置同步规则](../cloud/README.md#学习设置同步)。
 
 三星主题或图标包可替换 WordPop 的启动图标，并在卸载重装后再次应用。若仍看到旧的线条 W，可在 Galaxy Themes 的“我的内容 → 图标”中选择默认图标进行对照，或在 Theme Park 中更新 / 恢复 WordPop 图标。本仓库的启动图标为蓝色词卡和白色 W，启用图标包时最终显示由启动器和图标包决定。

@@ -8,7 +8,7 @@ on:
       tag:
         description: 'Stable release tag to build'
         required: true
-        default: v1.9.3
+        default: v1.9.4
 
 permissions:
   contents: write
