@@ -25,7 +25,9 @@ let baseline = null,
   pulls = 0,
   counts = 0,
   uploadedBatches = [],
-  countHeaderAvailable = true;
+  countHeaderAvailable = true,
+  createdSequence = 0,
+  downloadedRows = 0;
 const realSetTimeout = global.setTimeout,
   realClearTimeout = global.clearTimeout;
 const batches = [];
@@ -111,6 +113,10 @@ try {
         }
       } else if (options.headers.Prefer === "count=exact") {
         counts++;
+        for (const event of serverEvents)
+          event.created_at ||= new Date(
+            1792022400000 + ++createdSequence,
+          ).toISOString();
         result = [];
       } else {
         pulls++;
@@ -120,12 +126,30 @@ try {
           injectOnPull = null;
           callback();
         }
-        const offset = Number(parsed.searchParams.get("offset") || 0);
+        for (const event of serverEvents)
+          event.created_at ||= new Date(
+            1792022400000 + ++createdSequence,
+          ).toISOString();
+        const filter = parsed.searchParams.get("or");
+        const cursor =
+          filter &&
+          filter.match(
+            /^\(created_at.gt.(.*),and\(created_at.eq.*?,id.gt.([a-z0-9-]+)\)\)$/i,
+          );
         result = [...serverEvents]
           .sort(
-            (a, b) => a.reviewed_at - b.reviewed_at || a.id.localeCompare(b.id),
+            (a, b) =>
+              a.created_at.localeCompare(b.created_at) ||
+              a.id.localeCompare(b.id),
           )
-          .slice(offset, offset + 1000);
+          .filter(
+            (e) =>
+              !cursor ||
+              e.created_at > cursor[1] ||
+              (e.created_at === cursor[1] && e.id > cursor[2]),
+          )
+          .slice(0, 1000);
+        downloadedRows += result.length;
       }
     }
     return {
@@ -152,7 +176,7 @@ try {
       const initialBaselineReads = baselineReads;
       const initialReloads = reloads;
       const initialChanges = db.prepare("SELECT total_changes() n").get().n;
-      await cloud.sync();
+      await cloud.sync({ background: true });
       assert.equal(
         baselineReads,
         initialBaselineReads,
@@ -169,8 +193,9 @@ try {
         "unchanged checks must not rewrite SQLite",
       );
       const initialPulls = pulls;
+      const initialCounts = counts;
       await cloud.sync({ background: true });
-      assert.equal(counts, 1);
+      assert.equal(counts, initialCounts + 1);
       assert.equal(
         pulls,
         initialPulls,
@@ -183,7 +208,9 @@ try {
         initialPulls + 1,
         "missing count header safely falls back to a full pull",
       );
-      countHeaderAvailable = true;
+      (countHeaderAvailable = true),
+        (createdSequence = 0),
+        (downloadedRows = 0);
       const now = Date.now();
       recordReview(db, 1, "unknown", now);
       await cloud.sync();
@@ -324,7 +351,7 @@ try {
       );
       assert.equal(cloud.getStatus().pending, 0);
 
-      // Offline events may arrive with older review times. Full pulls and UUID dedup retain them.
+      // Offline events may arrive with older review times; server-time cursors retain them.
       const { fold } = require("../src/shared/learning-core");
       for (let i = 0; i < 1005; i++)
         serverEvents.push({
@@ -409,6 +436,7 @@ try {
       );
       assert.equal(uploadedBatches.at(-1).length, 3);
       const beforeIdlePull = pulls;
+      const beforeDeltaRows = downloadedRows;
       await cloud.sync({ background: true });
       assert.equal(pulls, beforeIdlePull);
       serverEvents.push({
@@ -420,10 +448,71 @@ try {
       await cloud.sync({ background: true });
       assert.equal(
         pulls,
-        beforeIdlePull + 2,
-        "a changed count fetches all pages and merges the new remote rating",
+        beforeIdlePull + 1,
+        "a changed count downloads only the new remote rating",
       );
 
+      assert.equal(
+        downloadedRows - beforeDeltaRows,
+        1,
+        "a new review must not download the existing thousand events again",
+      );
+      // A transaction whose server timestamp precedes our cursor commits late.
+      serverEvents.push({
+        id: "late-commit",
+        word: "test",
+        action: "unknown",
+        reviewed_at: now - MINUTE,
+        created_at: "2026-10-15T00:00:00.000Z",
+      });
+      const beforeRecovery = downloadedRows;
+      assert(!(await cloud.sync({ background: true })).error);
+      assert(
+        downloadedRows - beforeRecovery > 1000,
+        "a count gap forces a full reconciliation",
+      );
+      assert(
+        db.prepare("SELECT id FROM cloud_events WHERE id='late-commit'").get(),
+      );
+      const persisted = JSON.parse(
+        db.prepare("SELECT snapshot FROM cloud_download_cache").get().snapshot,
+      );
+      assert.equal(
+        persisted.count,
+        serverEvents.length,
+        "checkpoint persists only the complete journal",
+      );
+
+      // A local merge failure must not publish the download checkpoint.
+      serverEvents.push({
+        id: "merge-retry",
+        word: "test",
+        action: "known",
+        reviewed_at: now + 12 * MINUTE,
+      });
+      const committedCount = JSON.parse(
+        db.prepare("SELECT snapshot FROM cloud_download_cache").get().snapshot,
+      ).count;
+      db.exec(
+        "CREATE TRIGGER fail_cloud_merge BEFORE UPDATE ON progress BEGIN SELECT RAISE(ABORT,'fixture merge failure'); END",
+      );
+      assert((await cloud.sync({ background: true })).error);
+      assert.equal(
+        JSON.parse(
+          db.prepare("SELECT snapshot FROM cloud_download_cache").get()
+            .snapshot,
+        ).count,
+        committedCount,
+      );
+      db.exec("DROP TRIGGER fail_cloud_merge");
+      assert(!(await cloud.sync({ background: true })).error);
+      assert(
+        db.prepare("SELECT id FROM cloud_events WHERE id='merge-retry'").get(),
+      );
+
+      const credentialsBeforeLogout = fs.readFileSync(
+        path.join(dir, "cloud-session.bin"),
+      );
       const beforeLogout = db.prepare("SELECT total_changes() n").get().n;
       let release;
       holdPull = new Promise((resolve) => {
@@ -448,6 +537,28 @@ try {
         "logout must stop an in-flight pull from applying records",
       );
       assert.equal(cloud.getStatus().message, "已退出云账户");
+      // A new process restores the confirmed journal and pulls only the row that
+      // arrived while the old process was logging out.
+      fs.writeFileSync(
+        path.join(dir, "cloud-session.bin"),
+        credentialsBeforeLogout,
+      );
+      delete require.cache[require.resolve("../src/main/cloud-sync")];
+      const restarted = require("../src/main/cloud-sync");
+      const beforeRestartRows = downloadedRows;
+      restarted.start(db);
+      try {
+        await until(() => !restarted.getStatus().syncing);
+        assert(!restarted.getStatus().message.includes("失败"));
+        assert.equal(
+          downloadedRows - beforeRestartRows,
+          1,
+          "restart must reuse the durable download cache",
+        );
+      } finally {
+        restarted.logout();
+      }
+
       console.log(
         "Cloud sync checks passed: real SQLite persistence, desktop outbox, phone feedback, no-op polls, automatic followup, offline/lost-response retries, pagination, missing dictionaries, remote undo and logout cancellation.",
       );

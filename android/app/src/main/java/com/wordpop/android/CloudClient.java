@@ -22,7 +22,8 @@ final class CloudClient {
   private static long ticket;
   private static boolean forceRequested;
   private static boolean flushRequested;
-  private static long lastRemoteCount = -1;
+  private static JSONObject downloadCache;
+  private static String downloadOwner;
   private static JSONObject cachedBaseline;
   private static String baselineOwner;
   private static volatile String appliedOwner;
@@ -141,7 +142,7 @@ final class CloudClient {
             MainActivity.notifyAuth(requestId, "authenticated", status);
             MainActivity.notifyStatus();
             try {
-              syncBlocking(context);
+              syncBlocking(context, true);
             } catch (Exception syncError) {
               status = "已登录，但同步失败：" + syncError.getMessage();
             }
@@ -365,40 +366,38 @@ final class CloudClient {
       MainActivity.notifyStatus();
       request(session, "/rest/v1/wordpop_events?on_conflict=id", "POST", upload.toString());
     }
-    if (!forcePull && upload.length() == 0 && owner.equals(appliedOwner) && lastRemoteCount >= 0) {
-      long count =
-          Long.parseLong(
-              request(session, "/rest/v1/wordpop_events?select=id&limit=0", "GET", null, true));
-      if (count == lastRemoteCount) {
-        syncedStatus(engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS));
-        return;
-      }
+    if (!owner.equals(downloadOwner)) {
+      downloadCache =
+          engine
+              .executor
+              .submit(() -> engine.store.loadDownloadCache(owner))
+              .get(20, TimeUnit.SECONDS);
+      downloadOwner = owner;
     }
-    status = "正在同步学习记录…";
-    MainActivity.notifyStatus();
-    JSONArray events = new JSONArray();
-    for (int offset = 0; ; offset += 1000) {
-      JSONArray page =
-          new JSONArray(
-              request(
-                  session,
-                  "/rest/v1/wordpop_events?select=id,word,action,reviewed_at,target_id&order=reviewed_at.asc,id.asc&limit=1000&offset="
-                      + offset,
-                  "GET",
-                  null));
-      for (int n = 0; n < page.length(); n++) events.put(page.get(n));
-      if (page.length() < 1000) break;
-    }
-    java.util.HashSet<String> remoteIds = new java.util.HashSet<>();
-    for (int n = 0; n < events.length(); n++)
-      remoteIds.add(events.getJSONObject(n).getString("id"));
+    CloudJournal.Result journal =
+        CloudJournal.download(
+            new CloudJournal.Transport() {
+              public long count() throws Exception {
+                return Long.parseLong(
+                    request(
+                        session, "/rest/v1/wordpop_events?select=id&limit=0", "GET", null, true));
+              }
+
+              public JSONArray page(String route) throws Exception {
+                return new JSONArray(request(session, route, "GET", null));
+              }
+            },
+            downloadCache,
+            forcePull,
+            System.currentTimeMillis());
+    JSONArray events = journal.events;
     // The cloud journal is append-only. Already acknowledged IDs cannot change.
     // Skip the engine/SQLite/widget roundtrip on an unchanged foreground check.
     if (owner.equals(appliedOwner) && acknowledged(state, events)) {
       JSONObject latest =
           engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS);
       syncedStatus(latest);
-      lastRemoteCount = remoteIds.size();
+      saveDownloadCache(engine, owner, journal.snapshot);
       return;
     }
     JSONObject baseline = cachedBaseline.getJSONObject("data"), seeds = new JSONObject();
@@ -419,8 +418,23 @@ final class CloudClient {
     WordWidget.render(context, view);
     MainActivity.notifyView(view, null);
     appliedOwner = owner;
-    lastRemoteCount = remoteIds.size();
+    saveDownloadCache(engine, owner, journal.snapshot);
     syncedStatus(view.getJSONObject("state"));
+  }
+
+  private static void saveDownloadCache(StudyEngine engine, String owner, JSONObject snapshot)
+      throws Exception {
+    if (snapshot != downloadCache) {
+      engine
+          .executor
+          .submit(
+              () -> {
+                engine.store.saveDownloadCache(owner, snapshot);
+                return null;
+              })
+          .get(20, TimeUnit.SECONDS);
+      downloadCache = snapshot;
+    }
   }
 
   static boolean acknowledged(JSONObject state, JSONArray events) {

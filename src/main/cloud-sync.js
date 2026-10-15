@@ -2,6 +2,7 @@ const fs = require("fs"),
   path = require("path"),
   crypto = require("crypto");
 const { fold } = require("../shared/learning-core");
+const { downloadJournal } = require("./cloud-journal");
 let session = null,
   timer = null,
   busy = false,
@@ -11,7 +12,7 @@ let session = null,
   generation = 0,
   cachedBaseline = null,
   appliedFingerprint = null,
-  lastRemoteCount = null,
+  downloadCache = null,
   appliedWordKey = null,
   status = "尚未连接云服务",
   db = null;
@@ -35,7 +36,8 @@ function tables(database) {
   database.exec(
     `CREATE TABLE IF NOT EXISTS cloud_events(id TEXT PRIMARY KEY,user_id TEXT NOT NULL,word TEXT NOT NULL,action TEXT NOT NULL,reviewed_at INTEGER NOT NULL,history_id INTEGER,target_id TEXT,sent INTEGER DEFAULT 0);
      CREATE INDEX IF NOT EXISTS cloud_events_outbox ON cloud_events(user_id,sent);
-     CREATE INDEX IF NOT EXISTS cloud_events_history ON cloud_events(user_id,history_id);`,
+     CREATE INDEX IF NOT EXISTS cloud_events_history ON cloud_events(user_id,history_id);
+     CREATE TABLE IF NOT EXISTS cloud_download_cache(owner TEXT PRIMARY KEY,snapshot TEXT NOT NULL);`,
   );
 }
 function captureReview(database, wordId, action, now, historyId) {
@@ -215,35 +217,33 @@ async function sync({ background = false } = {}) {
       db.prepare("UPDATE cloud_events SET sent=1 WHERE id=?").run(event.id);
     const wordRows = db.prepare("SELECT id,word FROM words ORDER BY id").all();
     const wordKey = JSON.stringify(wordRows);
+    const owner = session.url + ":" + session.user.id;
+    if (!downloadCache || downloadCache.owner !== owner) {
+      let snapshot = null;
+      try {
+        snapshot = JSON.parse(
+          db
+            .prepare("SELECT snapshot FROM cloud_download_cache WHERE owner=?")
+            .get(owner)?.snapshot || "null",
+        );
+      } catch (_) {}
+      downloadCache = { owner, snapshot };
+    }
+    const journal = await downloadJournal(fetch, {
+      snapshot: downloadCache.snapshot,
+      forceFull: !background,
+    });
     if (
-      background &&
+      !journal.downloaded &&
+      appliedWordKey === wordKey &&
       !upload.length &&
-      lastRemoteCount != null &&
-      appliedWordKey === wordKey
+      !pendingCount()
     ) {
-      const count = await fetch(
-        "/rest/v1/wordpop_events?select=id&limit=0",
-        "GET",
-        undefined,
-        session,
-        true,
-      );
-      if (count === lastRemoteCount && !pendingCount()) {
-        status = "已同步 · " + new Date().toLocaleTimeString("zh-CN");
-        succeeded = true;
-        return { message: status };
-      }
+      status = "已同步 · " + new Date().toLocaleTimeString("zh-CN");
+      succeeded = true;
+      return { message: status };
     }
-    let events = [];
-    for (let offset = 0; ; offset += 1000) {
-      const page = await fetch(
-        "/rest/v1/wordpop_events?select=id,word,action,reviewed_at,target_id&order=reviewed_at.asc,id.asc&limit=1000&offset=" +
-          offset,
-      );
-      events.push(...page);
-      if (page.length < 1000) break;
-    }
-    const remoteCount = new Set(events.map((e) => e.id)).size;
+    let events = journal.events;
     events = [
       ...new Map(
         [
@@ -423,7 +423,16 @@ async function sync({ background = false } = {}) {
       appliedFingerprint = fingerprint;
       appliedWordKey = wordKey;
     }
-    lastRemoteCount = remoteCount;
+    // Advance the durable download checkpoint only after the merge succeeds.
+    if (journal.snapshot !== downloadCache.snapshot) {
+      if (journal.snapshot)
+        db.prepare(
+          "INSERT OR REPLACE INTO cloud_download_cache VALUES(?,?)",
+        ).run(owner, JSON.stringify(journal.snapshot));
+      else
+        db.prepare("DELETE FROM cloud_download_cache WHERE owner=?").run(owner);
+      downloadCache = { owner, snapshot: journal.snapshot };
+    }
     const pending = pendingCount();
     status = pending
       ? `已保存本地 · ${pending} 条记录等待上传`
@@ -484,7 +493,7 @@ async function login(input) {
     generation++;
     cachedBaseline = null;
     appliedFingerprint = null;
-    lastRemoteCount = null;
+    downloadCache = null;
     appliedWordKey = null;
     persist();
     authenticating = false;
@@ -559,7 +568,7 @@ function start(database) {
     if (session && !followupTimer) sync({ background: true });
   }, 15000);
   timer.unref();
-  if (session) sync();
+  if (session) sync({ background: true });
 }
 function captureUndo(database, historyId, now = Date.now()) {
   if (!session?.user?.id || !db) return;
@@ -586,7 +595,7 @@ function logout() {
   generation++;
   cachedBaseline = null;
   appliedFingerprint = null;
-  lastRemoteCount = null;
+  downloadCache = null;
   appliedWordKey = null;
   clearTimeout(followupTimer);
   followupTimer = null;
