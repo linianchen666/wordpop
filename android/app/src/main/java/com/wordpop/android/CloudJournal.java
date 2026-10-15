@@ -88,46 +88,58 @@ final class CloudJournal {
           if (cursor == null || compare(event, cursor) > 0) cursor = event;
         }
       }
-      for (; ; ) {
-        String filter = "";
-        if (cursor != null) {
-          String time = cursor.getString("created_at");
-          filter =
-              "&or="
-                  + URLEncoder.encode(
-                      "(created_at.gt."
-                          + time
-                          + ",and(created_at.eq."
-                          + time
-                          + ",id.gt."
-                          + cursor.getString("id")
-                          + "))",
-                      "UTF-8");
+      long expected = before;
+      for (int drain = 0; drain < 3; drain++) {
+        int added = 0;
+        for (; ; ) {
+          String filter = "";
+          if (cursor != null) {
+            String time = cursor.getString("created_at");
+            filter =
+                "&or="
+                    + URLEncoder.encode(
+                        "(created_at.gt."
+                            + time
+                            + ",and(created_at.eq."
+                            + time
+                            + ",id.gt."
+                            + cursor.getString("id")
+                            + "))",
+                        "UTF-8");
+          }
+          JSONArray page = transport.page(SELECT + filter);
+          for (int n = 0; n < page.length(); n++) {
+            JSONObject event = page.getJSONObject(n);
+            validate(event);
+            if (cursor != null && compare(event, cursor) <= 0)
+              throw new Exception("云端记录分页顺序无效，请重试同步");
+            records.put(event.getString("id"), event);
+            added++;
+            cursor = event;
+          }
+          // Continue across smaller server page caps too.
+          if (page.length() == 0 || (expected >= 0 && records.size() >= expected)) break;
         }
-        JSONArray page = transport.page(SELECT + filter);
-        for (int n = 0; n < page.length(); n++) {
-          JSONObject event = page.getJSONObject(n);
-          validate(event);
-          if (cursor != null && compare(event, cursor) <= 0)
-            throw new Exception("云端记录分页顺序无效，请重试同步");
-          records.put(event.getString("id"), event);
-          cursor = event;
+        JSONArray events = new JSONArray(records.values());
+        long after = transport.count();
+        if (after == events.length()) {
+          JSONObject next =
+              new JSONObject()
+                  .put("version", 1)
+                  .put("count", after)
+                  .put("validatedAt", full ? now : snapshot.getLong("validatedAt"))
+                  .put("events", events);
+          return new Result(events, next);
         }
-        // Continue across smaller server page caps too.
-        if (page.length() == 0 || (before >= 0 && records.size() >= before)) break;
+        if (after < 0 && full) return new Result(events, null);
+        // Catch up new tail inserts without redownloading existing history.
+        if (after > events.length() && added > 0) {
+          expected = after;
+          if (drain < 2) continue;
+          throw new Exception("云端记录持续新增，已保留本地记录，将继续增量同步");
+        }
+        break;
       }
-      JSONArray events = new JSONArray(records.values());
-      long after = transport.count();
-      if (after == events.length()) {
-        JSONObject next =
-            new JSONObject()
-                .put("version", 1)
-                .put("count", after)
-                .put("validatedAt", full ? now : snapshot.getLong("validatedAt"))
-                .put("events", events);
-        return new Result(events, next);
-      }
-      if (after < 0 && full) return new Result(events, null);
       full = true;
     }
     throw new Exception("云端记录正在变化或数量不一致，已保留本地记录，将重试同步");

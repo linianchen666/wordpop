@@ -161,6 +161,7 @@ public class CloudJournalTest {
     Server server = new Server();
     server.events.add(event(1));
     CloudJournal.Result first = CloudJournal.download(server, null, false, NOW);
+    server.routes.clear();
     server.events.add(event(2));
     server.counts = 0;
     server.onCount =
@@ -174,6 +175,7 @@ public class CloudJournalTest {
         };
     CloudJournal.Result recovered = CloudJournal.download(server, first.snapshot, false, NOW);
     assertEquals(3, recovered.events.length());
+    assertTrue(server.routes.stream().allMatch(route -> route.contains("&or=")));
     server.events.add(event(4));
     server.onCount =
         () -> {
@@ -186,6 +188,6 @@ public class CloudJournalTest {
     Exception error =
         assertThrows(
             Exception.class, () -> CloudJournal.download(server, recovered.snapshot, false, NOW));
-    assertTrue(error.getMessage().contains("数量不一致"));
+    assertTrue(error.getMessage().contains("数量不一致") || error.getMessage().contains("持续新增"));
   }
 }

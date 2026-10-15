@@ -199,6 +199,7 @@ function server(events = [], cap = 1000) {
   // A concurrent insert after a page is caught by the final count and retried.
   const concurrent = server([event(1)]);
   const base = await downloadJournal(concurrent.fetch, { now });
+  concurrent.pages.length = 0;
   concurrent.events.push(event(2));
   let counts = 0;
   concurrent.onCount = () => {
@@ -209,12 +210,16 @@ function server(events = [], cap = 1000) {
     now,
   });
   assert.equal(complete.events.length, 3);
+  assert(
+    concurrent.pages.every((route) => route.includes("&or=")),
+    "concurrent tail inserts must stay incremental",
+  );
   // Continuous changes fail safely instead of publishing an incomplete cursor.
   concurrent.events.push(event(4));
   concurrent.onCount = () => concurrent.events.push(event(100 + ++counts));
   await assert.rejects(
     downloadJournal(concurrent.fetch, { snapshot: complete.snapshot, now }),
-    /数量不一致/,
+    /数量不一致|持续新增/,
   );
   console.log(
     "Cloud journal checks passed: durable incremental cache, precise keysets, small server pages, offline reviews/undos, late commits, concurrent inserts, failed pages and full-validation fallbacks.",

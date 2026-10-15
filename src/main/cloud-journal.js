@@ -71,40 +71,54 @@ async function downloadJournal(
       (full ? [] : snapshot.events).map((e) => [e.id, e]),
     );
     let cursor = [...records.values()].sort(compare).at(-1);
-    for (;;) {
-      const filter = cursor
-        ? "&or=" +
-          encodeURIComponent(
-            `(created_at.gt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.gt.${cursor.id}))`,
-          )
-        : "";
-      const page = await fetch(SELECT + filter);
-      if (!Array.isArray(page)) throw new Error("云端记录响应无效");
-      for (const event of page) {
-        validate(event);
-        if (cursor && compare(event, cursor) <= 0)
-          throw new Error("云端记录分页顺序无效，请重试同步");
-        records.set(event.id, event);
-        cursor = event;
+    let expected = before;
+    for (let drain = 0; drain < 3; drain++) {
+      let added = 0;
+      for (;;) {
+        const filter = cursor
+          ? "&or=" +
+            encodeURIComponent(
+              `(created_at.gt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.gt.${cursor.id}))`,
+            )
+          : "";
+        const page = await fetch(SELECT + filter);
+        if (!Array.isArray(page)) throw new Error("云端记录响应无效");
+        for (const event of page) {
+          validate(event);
+          if (cursor && compare(event, cursor) <= 0)
+            throw new Error("云端记录分页顺序无效，请重试同步");
+          records.set(event.id, event);
+          added++;
+          cursor = event;
+        }
+        // Also works when a project caps REST pages below our requested size.
+        if (!page.length || (expected !== null && records.size >= expected))
+          break;
       }
-      // Also works when a project caps REST pages below our requested size.
-      if (!page.length || (before !== null && records.size >= before)) break;
-    }
-    const events = [...records.values()];
-    const after = await readCount();
-    if (after === events.length)
-      return {
-        events,
-        downloaded: true,
-        snapshot: {
-          version: 1,
-          count: after,
-          validatedAt: full ? now : snapshot.validatedAt,
+      const events = [...records.values()];
+      const after = await readCount();
+      if (after === events.length)
+        return {
           events,
-        },
-      };
-    if (after === null && full)
-      return { events, snapshot: null, downloaded: true };
+          downloaded: true,
+          snapshot: {
+            version: 1,
+            count: after,
+            validatedAt: full ? now : snapshot.validatedAt,
+            events,
+          },
+        };
+      if (after === null && full)
+        return { events, snapshot: null, downloaded: true };
+      // Tail inserts during a download are normal. Catch up incrementally;
+      // only an empty tail with a count gap indicates rows behind the cursor.
+      if (after !== null && after > events.length && added > 0) {
+        expected = after;
+        if (drain < 2) continue;
+        throw new Error("云端记录持续新增，已保留本地记录，将继续增量同步");
+      }
+      break;
+    }
     full = true;
   }
   throw new Error("云端记录正在变化或数量不一致，已保留本地记录，将重试同步");
