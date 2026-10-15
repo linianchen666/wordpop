@@ -78,6 +78,15 @@ public class LearningTest {
             .get(10, TimeUnit.SECONDS);
     assertEquals(2, engine.store.load().getJSONArray("events").length());
     assertEquals(0, engine.store.load().getJSONObject("progress").length());
+    org.json.JSONArray upload = CloudClient.pendingUpload(engine.store.load(), "upload-test-user");
+    assertEquals(2, upload.length());
+    for (int n = 0; n < upload.length(); n++) {
+      assertEquals(6, upload.getJSONObject(n).length());
+      assertTrue(upload.getJSONObject(n).has("target_id"));
+      assertFalse(upload.getJSONObject(n).has("created_at"));
+    }
+    assertTrue(upload.getJSONObject(0).isNull("target_id"));
+    assertEquals("persisted-review", upload.getJSONObject(1).getString("target_id"));
     assertEquals(
         initial.getJSONObject("word").getString("word"),
         undone.getJSONObject("word").getString("word"));

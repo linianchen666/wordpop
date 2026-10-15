@@ -83,7 +83,7 @@ final class CloudClient {
           errorCode = error.optString("error_code", error.optString("code"));
         } catch (Exception ignored) {
         }
-        throw new Exception(authError(errorCode, code));
+        throw new Exception(requestError(route, method, countOnly, errorCode, code));
       }
       return countOnly
           ? Long.toString(parseRemoteCount(connection.getHeaderField("Content-Range")))
@@ -182,6 +182,47 @@ final class CloudClient {
       default:
         return "云服务请求失败（" + code + "），请检查项目、账户和数据库配置";
     }
+  }
+
+  static String requestError(
+      String route, String method, boolean countOnly, String errorCode, int code) {
+    if (route.startsWith("/auth/")) return authError(errorCode, code);
+    String operation =
+        route.startsWith("/rest/v1/wordpop_baseline")
+            ? "读取初始记录失败"
+            : "POST".equals(method) ? "上传评分记录失败" : countOnly ? "检查记录数量失败" : "下载评分记录失败";
+    // Include a bounded machine code, never the raw server response, URL or payload.
+    String safeCode = errorCode.matches("[A-Za-z0-9_]{1,64}") ? errorCode : "";
+    String detail;
+    switch (safeCode) {
+      case "PGRST102":
+        detail = "批量记录格式不兼容，请更新应用；本地记录已保留";
+        break;
+      case "PGRST204":
+      case "PGRST205":
+      case "42703":
+      case "42P01":
+        detail = "云表或字段不完整，请在 Supabase 执行最新 cloud/supabase.sql";
+        break;
+      case "23514":
+        detail = "云表校验规则不兼容，请在 Supabase 执行最新 cloud/supabase.sql";
+        break;
+      case "42501":
+        detail = "云表访问权限不足，请核对 Supabase 的表权限和行级安全策略";
+        break;
+      case "22P02":
+        detail = "记录字段格式无效，本地记录已保留";
+        break;
+      default:
+        detail =
+            code == 401 ? "登录状态已失效，请重新登录" : code == 429 ? "请求过于频繁，请稍后重试" : "云服务未接受请求，本地记录已保留，请稍后重试";
+    }
+    return operation
+        + "（HTTP "
+        + code
+        + (safeCode.isEmpty() ? "" : " / " + safeCode)
+        + "）："
+        + detail;
   }
 
   static void resendConfirmation(JSONObject input) {
@@ -310,6 +351,32 @@ final class CloudClient {
     return count;
   }
 
+  static JSONArray pendingUpload(JSONObject state, String userId) throws Exception {
+    JSONArray upload = new JSONArray();
+    if (state != null)
+      for (int n = 0; n < state.getJSONArray("events").length(); n++) {
+        JSONObject event = state.getJSONArray("events").getJSONObject(n);
+        if (!(state.optJSONObject("cloudSyncedIds") != null
+            && state.optJSONObject("cloudSyncedIds").optBoolean(event.getString("id")))) {
+          // PostgREST bulk inserts require identical keys on every row. Regular
+          // reviews omit target_id locally; undos and downloaded rows include it.
+          // Keep server-assigned created_at out of inserts so cursor order remains
+          // based on server arrival time, including offline reviews.
+          upload.put(
+              new JSONObject()
+                  .put("id", event.getString("id"))
+                  .put("user_id", userId)
+                  .put("word", event.getString("word"))
+                  .put("action", event.getString("action"))
+                  .put("reviewed_at", event.getLong("reviewed_at"))
+                  .put(
+                      "target_id",
+                      event.has("target_id") ? event.get("target_id") : JSONObject.NULL));
+        }
+      }
+    return upload;
+  }
+
   static void syncBlocking(Context context) throws Exception {
     syncBlocking(context, false);
   }
@@ -351,16 +418,7 @@ final class CloudClient {
         && state.has("cloudUser")
         && !state.getString("cloudUser").equals(session.getString("user_id")))
       throw new Exception("学习记录属于其他账户，请先备份并清除本地记录再切换");
-    JSONArray upload = new JSONArray();
-    if (state != null)
-      for (int n = 0; n < state.getJSONArray("events").length(); n++) {
-        JSONObject event = new JSONObject(state.getJSONArray("events").getJSONObject(n).toString());
-        if (!(state.optJSONObject("cloudSyncedIds") != null
-            && state.optJSONObject("cloudSyncedIds").optBoolean(event.getString("id")))) {
-          event.put("user_id", session.getString("user_id"));
-          upload.put(event);
-        }
-      }
+    JSONArray upload = pendingUpload(state, session.getString("user_id"));
     if (upload.length() > 0) {
       status = "正在同步学习记录…";
       MainActivity.notifyStatus();
