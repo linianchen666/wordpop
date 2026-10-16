@@ -73,8 +73,11 @@ jobs:
           $assets = @($installers) + @(Get-Item build/SHA256SUMS.txt)
           gh release upload $env:RELEASE_TAG @($assets.FullName) --repo $env:GITHUB_REPOSITORY --clobber
           if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
-          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$([Uri]::EscapeDataString($env:RELEASE_TAG))" | ConvertFrom-Json
+          # Drafts may not resolve through releases/tags until publication.
+          $releases = gh api "repos/$env:GITHUB_REPOSITORY/releases?per_page=100" | ConvertFrom-Json
           if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect release assets' }
+          $release = $releases | Where-Object { $_.tag_name -eq $env:RELEASE_TAG }
+          if (-not $release) { throw 'Release draft not found' }
           foreach ($file in $assets) {
             $asset = $release.assets | Where-Object { $_.name -eq $file.Name }
             $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
