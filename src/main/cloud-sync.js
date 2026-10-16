@@ -4,6 +4,7 @@ const fs = require("fs"),
 const { fold } = require("../shared/learning-core");
 const { downloadJournal } = require("./cloud-journal");
 const learningSettings = require("../shared/learning-settings");
+const scheduleStore = require("./review-schedule-store");
 const SETTINGS_ROUTE =
   "/rest/v1/wordpop_current_settings?select=setting_key,value,id&limit=3";
 let session = null,
@@ -111,6 +112,32 @@ function captureSettings(before, after) {
   saveSettingsState(owner, next);
   queueSync(0);
 }
+function captureSchedules(database, changes) {
+  scheduleStore.capture(
+    database,
+    changes,
+    session?.user?.id ? session.url + ":" + session.user.id : null,
+  );
+  queueSync(0);
+}
+async function syncSchedules(fetch, owner, background) {
+  try {
+    return await scheduleStore.sync(
+      fetch,
+      db,
+      owner,
+      session.user.id,
+      !background,
+      () => {
+        require("./scheduler").reloadQueue();
+        require("./scheduler").emit("stats-updated");
+      },
+    );
+  } catch (error) {
+    if (!session || error.message === "云账户已退出，停止同步") throw error;
+    return "；复习平摊安排未同步：" + error.message;
+  }
+}
 async function syncSettings(fetch, owner) {
   const config = require("./config");
   let state = settingsState(owner);
@@ -217,6 +244,18 @@ async function request(
       try {
         code = JSON.parse(text).error_code || JSON.parse(text).code;
       } catch (_) {}
+      if (
+        route.startsWith("/rest/v1/wordpop_review_schedules") ||
+        route.startsWith("/rest/v1/wordpop_current_review_schedules")
+      ) {
+        if (["PGRST205", "42P01"].includes(code) || response.status === 404)
+          throw new Error(
+            "复习平摊云表尚未配置，请执行新版 cloud/supabase.sql",
+          );
+        throw new Error(
+          `复习平摊请求失败（HTTP ${response.status}${/^[A-Za-z0-9_]{1,64}$/.test(code || "") ? " / " + code : ""}）`,
+        );
+      }
       if (
         route.startsWith("/rest/v1/wordpop_current_settings") ||
         route.startsWith("/rest/v1/wordpop_settings_changes")
@@ -361,7 +400,10 @@ async function sync({ background = false } = {}) {
       !pendingCount()
     ) {
       status =
-        "已同步 · " + new Date().toLocaleTimeString("zh-CN") + settingsWarning;
+        "已同步 · " +
+        new Date().toLocaleTimeString("zh-CN") +
+        settingsWarning +
+        (await syncSchedules(fetch, owner, background));
       succeeded = true;
       return { message: status };
     }
@@ -560,6 +602,7 @@ async function sync({ background = false } = {}) {
       ? `已保存本地 · ${pending} 条记录等待上传`
       : "已同步 · " + new Date().toLocaleTimeString("zh-CN");
     status += settingsWarning;
+    status += await syncSchedules(fetch, owner, background);
     succeeded = true;
     return { message: status };
   } catch (error) {
@@ -732,6 +775,7 @@ module.exports = {
   captureReview,
   captureUndo,
   captureSettings,
+  captureSchedules,
   login,
   resendConfirmation,
   sync,

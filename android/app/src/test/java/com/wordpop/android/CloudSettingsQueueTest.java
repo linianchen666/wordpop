@@ -22,10 +22,16 @@ public class CloudSettingsQueueTest {
     assertEquals(0, CloudClient.pendingCount(state));
     assertEquals(1, CloudClient.pendingSettingsCount(state));
     assertEquals(1, CloudClient.pendingUploads(state));
-    state.getJSONArray("events").put(new JSONObject().put("id", "review"));
+    state.put(
+        "scheduleSync",
+        new JSONObject()
+            .put("pending", new JSONObject().put("test", new JSONObject().put("id", "schedule"))));
+    assertEquals(1, CloudClient.pendingSchedulesCount(state));
     assertEquals(2, CloudClient.pendingUploads(state));
+    state.getJSONArray("events").put(new JSONObject().put("id", "review"));
+    assertEquals(3, CloudClient.pendingUploads(state));
     state.put("cloudSyncedIds", new JSONObject().put("review", true));
-    assertEquals(1, CloudClient.pendingUploads(state));
+    assertEquals(2, CloudClient.pendingUploads(state));
   }
 
   @Test

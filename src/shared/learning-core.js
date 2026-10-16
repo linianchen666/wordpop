@@ -5,6 +5,17 @@ const {
 const { calculateDailyQuota, localDateKey } = require("../main/study-policy");
 const translations = require("../renderer/shared/translations");
 const learningSettings = require("./learning-settings");
+const reviewSchedules = require("./review-schedules");
+function applySchedules(state, previous) {
+  const updates = reviewSchedules.apply(
+    state.progress,
+    state.scheduleSync || {},
+    previous,
+  );
+  for (const [word, due] of Object.entries(updates))
+    state.progress[word].next_review_at = due;
+  return updates;
+}
 function empty() {
   return {
     config: {
@@ -129,6 +140,7 @@ function view(state, vocab, now = Date.now(), logs) {
     revealed: !!state.current?.revealed,
     nonce: state.current?.nonce,
     dueCount: due.length,
+    spreadCount: due.filter((w) => w.word !== state.current?.word).length,
     newRemaining: remaining,
     quota,
     intervals,
@@ -139,6 +151,33 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
   state = state || empty();
   state.undo ??= null;
   let logs = runtime?.logs;
+  if (command.type === "spread") {
+    if (![3, 5, 7].includes(command.days))
+      throw new Error("请选择 3、5 或 7 天");
+    const selected = state.config.selectedWordlists || ["cet4"];
+    const records = vocab
+      .filter(
+        (w) =>
+          w.wordlists.some((id) => selected.includes(id)) &&
+          state.progress[w.word],
+      )
+      .map((w) => ({ ...state.progress[w.word], word: w.word }));
+    const plan = reviewSchedules.spread(
+      records,
+      command.days,
+      now,
+      state.current?.word,
+      state.scheduleSync,
+    );
+    state.scheduleSync = reviewSchedules.capture(
+      state.scheduleSync,
+      plan.changes,
+      command.scheduleId,
+    );
+    applySchedules(state);
+    const result = view(state, vocab, now, logs);
+    return { ...result, spreadResult: { count: plan.count, days: plan.days } };
+  }
   if (command.type === "config") {
     const next = command.configBase
       ? learningSettings.mergeDraft(
@@ -196,6 +235,7 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
       const folded = fold(state.seeds, state.events);
       state.progress = folded.progress;
       logs = folded.logs;
+      applySchedules(state);
     }
     state.undo = { id: event.id, word: event.word, action: event.action };
     state.current = null;
@@ -237,6 +277,7 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
       logs = restored.logs;
     }
     state.undo = null;
+    applySchedules(state);
     state.current = {
       word: target.word,
       revealed: true,
@@ -287,6 +328,7 @@ function dispatch(state, vocab, command, now = Date.now(), runtime) {
       const folded = fold(state.seeds, state.events);
       state.progress = folded.progress;
       logs = folded.logs;
+      applySchedules(state);
     }
     if (!undoTarget(state, logs)) state.undo = null;
   }
@@ -325,6 +367,30 @@ function createSession(initialState, vocab) {
     null,
   );
   return {
+    schedules(command) {
+      const previous = state.scheduleSync;
+      let metadata = reviewSchedules.bind(previous, command.owner);
+      if (command.type === "scheduleApply")
+        metadata = reviewSchedules.merge(
+          metadata,
+          command.owner,
+          command.rows,
+          command.sent,
+          command.count,
+        );
+      state.scheduleSync = metadata;
+      const updates = applySchedules(state, previous);
+      const changed = Object.keys(updates).length > 0;
+      return {
+        pending: reviewSchedules.upload(metadata),
+        count: metadata.count ?? null,
+        changed,
+        dueUpdates: updates,
+        ...(JSON.stringify(previous) !== JSON.stringify(metadata)
+          ? { scheduleSync: metadata }
+          : {}),
+      };
+    },
     settings(command) {
       let metadata = state.settingsSync || { owner: null, pending: {} };
       if (metadata.owner !== command.owner) {
@@ -373,7 +439,7 @@ function createSession(initialState, vocab) {
       display.current = memory.current;
       if (
         fullState ||
-        ["sync", "config", "undo"].includes(command.type) ||
+        ["sync", "config", "undo", "spread"].includes(command.type) ||
         (command.type === "review" && !canPatch)
       )
         display.state = memory;

@@ -75,6 +75,34 @@ final class StudyEngine {
       sessionReady = true;
     }
     String type = command.optString("type");
+    if ("spread".equals(type) && !command.has("scheduleId"))
+      command.put("scheduleId", java.util.UUID.randomUUID().toString());
+    if ("scheduleBind".equals(type) || "scheduleApply".equals(type)) {
+      try {
+        if (cachedState == null) run(new JSONObject().put("type", "view"));
+        JSONObject result =
+            new JSONObject(
+                isolate
+                    .evaluateJavaScriptAsync(
+                        "JSON.stringify(learningSession.schedules(" + command + "))")
+                    .get(6, TimeUnit.SECONDS));
+        if (result.has("scheduleSync"))
+          cachedState.put("scheduleSync", result.getJSONObject("scheduleSync"));
+        JSONObject updates = result.getJSONObject("dueUpdates");
+        for (java.util.Iterator<String> it = updates.keys(); it.hasNext(); ) {
+          String word = it.next();
+          cachedState
+              .getJSONObject("progress")
+              .getJSONObject(word)
+              .put("next_review_at", updates.getLong(word));
+        }
+        if (result.has("scheduleSync") || updates.length() > 0) store.save(cachedState);
+        return result;
+      } catch (Exception error) {
+        invalidate();
+        throw error;
+      }
+    }
     if ("config".equals(type) && !command.has("settingsEditId"))
       command.put("settingsEditId", java.util.UUID.randomUUID().toString());
     if ("settingsBind".equals(type) || "settingsApply".equals(type)) {
@@ -181,6 +209,8 @@ final class StudyEngine {
             CloudClient.eventSaved(context);
           if (failure == null && result != null && "config".equals(command.optString("type")))
             CloudClient.settingsSaved(context, cachedState);
+          if (failure == null && result != null && "spread".equals(command.optString("type")))
+            CloudClient.schedulesSaved(context, cachedState);
         });
   }
 }

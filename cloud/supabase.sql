@@ -68,3 +68,34 @@ grant select on public.wordpop_settings_changes to authenticated;
 grant insert (id,user_id,setting_key,value) on public.wordpop_settings_changes to authenticated;
 grant select on public.wordpop_current_settings to authenticated;
 notify pgrst, 'reload schema';
+
+-- Queue dates are separate from ratings/FSRS. One operation may cover many words.
+-- The memory key makes a stale/offline plan harmless after a newer rating.
+create table if not exists public.wordpop_review_schedules (
+ id uuid not null,
+ user_id uuid not null references auth.users(id) on delete cascade,
+ word text not null check(length(word) between 1 and 200),
+ base_key text not null check(length(base_key) between 1 and 2048),
+ original_due_at bigint not null check(original_due_at between 0 and 8640000000000000),
+ due_at bigint not null check(due_at between 1 and 8640000000000000),
+ created_at timestamptz not null default clock_timestamp(),
+ primary key (id,word)
+);
+create index if not exists wordpop_review_schedules_latest
+ on public.wordpop_review_schedules(user_id,word,created_at desc,id desc);
+alter table public.wordpop_review_schedules enable row level security;
+drop policy if exists "Read own review schedules" on public.wordpop_review_schedules;
+create policy "Read own review schedules" on public.wordpop_review_schedules
+ for select to authenticated using ((select auth.uid())=user_id);
+drop policy if exists "Create own review schedules" on public.wordpop_review_schedules;
+create policy "Create own review schedules" on public.wordpop_review_schedules
+ for insert to authenticated with check ((select auth.uid())=user_id);
+create or replace view public.wordpop_current_review_schedules with (security_invoker=true) as
+ select distinct on (user_id,word) user_id,word,id,base_key,original_due_at,due_at
+ from public.wordpop_review_schedules
+ order by user_id,word,created_at desc,id desc;
+revoke all on public.wordpop_review_schedules,public.wordpop_current_review_schedules from anon,authenticated;
+grant select on public.wordpop_review_schedules to authenticated;
+grant insert(id,user_id,word,base_key,original_due_at,due_at) on public.wordpop_review_schedules to authenticated;
+grant select on public.wordpop_current_review_schedules to authenticated;
+notify pgrst, 'reload schema';

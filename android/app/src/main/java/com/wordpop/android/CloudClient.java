@@ -240,12 +240,15 @@ final class CloudClient {
       String route, String method, boolean countOnly, String errorCode, int code) {
     if (route.startsWith("/auth/")) return authError(errorCode, code);
     String operation =
-        (route.startsWith("/rest/v1/wordpop_current_settings")
-                || route.startsWith("/rest/v1/wordpop_settings_changes"))
-            ? "同步学习设置失败"
-            : route.startsWith("/rest/v1/wordpop_baseline")
-                ? "读取初始记录失败"
-                : "POST".equals(method) ? "上传评分记录失败" : countOnly ? "检查记录数量失败" : "下载评分记录失败";
+        (route.startsWith(ReviewScheduleDownload.TABLE)
+                || route.startsWith(ReviewScheduleDownload.CURRENT))
+            ? "同步复习平摊安排失败"
+            : (route.startsWith("/rest/v1/wordpop_current_settings")
+                    || route.startsWith("/rest/v1/wordpop_settings_changes"))
+                ? "同步学习设置失败"
+                : route.startsWith("/rest/v1/wordpop_baseline")
+                    ? "读取初始记录失败"
+                    : "POST".equals(method) ? "上传评分记录失败" : countOnly ? "检查记录数量失败" : "下载评分记录失败";
     // Include a bounded machine code, never the raw server response, URL or payload.
     String safeCode = errorCode.matches("[A-Za-z0-9_]{1,64}") ? errorCode : "";
     String detail;
@@ -321,6 +324,15 @@ final class CloudClient {
     if (pendingSettingsCount(state) == 0) return;
     gate.changed();
     status = "学习设置已保存本地 · 等待同步";
+    MainActivity.notifyStatus();
+    SyncWorker.uploadSoon(context);
+    enqueueSync(context, 0, false, false);
+  }
+
+  static void schedulesSaved(Context context, JSONObject state) {
+    if (pendingSchedulesCount(state) == 0) return;
+    gate.changed();
+    status = "复习安排已保存本地 · 等待同步";
     MainActivity.notifyStatus();
     SyncWorker.uploadSoon(context);
     enqueueSync(context, 0, false, false);
@@ -427,7 +439,92 @@ final class CloudClient {
   }
 
   static int pendingUploads(JSONObject state) {
-    return pendingCount(state) + pendingSettingsCount(state);
+    return pendingCount(state) + pendingSettingsCount(state) + pendingSchedulesCount(state);
+  }
+
+  static int pendingSchedulesCount(JSONObject state) {
+    JSONObject metadata = state == null ? null : state.optJSONObject("scheduleSync");
+    JSONObject pending = metadata == null ? null : metadata.optJSONObject("pending");
+    return pending == null ? 0 : pending.length();
+  }
+
+  private static String syncSchedules(
+      Context context, JSONObject session, StudyEngine engine, String owner, boolean force) {
+    try {
+      JSONObject prepared =
+          engine
+              .executor
+              .submit(
+                  () ->
+                      engine.run(new JSONObject().put("type", "scheduleBind").put("owner", owner)))
+              .get(20, TimeUnit.SECONDS);
+      JSONArray sent = prepared.getJSONArray("pending");
+      for (int offset = 0; offset < sent.length(); offset += 500) {
+        JSONArray batch = new JSONArray();
+        for (int n = offset; n < Math.min(offset + 500, sent.length()); n++)
+          batch.put(
+              new JSONObject(sent.getJSONObject(n).toString())
+                  .put("user_id", session.getString("user_id")));
+        request(
+            session,
+            ReviewScheduleDownload.TABLE + "?on_conflict=id,word",
+            "POST",
+            batch.toString());
+      }
+      ReviewScheduleDownload.Result downloaded =
+          ReviewScheduleDownload.download(
+              new ReviewScheduleDownload.Transport() {
+                public long count() throws Exception {
+                  return Long.parseLong(
+                      request(
+                          session,
+                          ReviewScheduleDownload.TABLE + "?select=id&limit=0",
+                          "GET",
+                          null,
+                          true));
+                }
+
+                public JSONArray page(int offset) throws Exception {
+                  return new JSONArray(
+                      request(
+                          session,
+                          ReviewScheduleDownload.CURRENT
+                              + "?select=id,word,base_key,original_due_at,due_at&order=word.asc&limit=500&offset="
+                              + offset,
+                          "GET",
+                          null));
+                }
+              },
+              prepared.optLong("count", -1),
+              force || sent.length() > 0);
+      JSONObject result =
+          engine
+              .executor
+              .submit(
+                  () ->
+                      engine.run(
+                          new JSONObject()
+                              .put("type", "scheduleApply")
+                              .put("owner", owner)
+                              .put(
+                                  "rows",
+                                  downloaded.rows == null ? JSONObject.NULL : downloaded.rows)
+                              .put("sent", sent)
+                              .put("count", downloaded.count)))
+              .get(20, TimeUnit.SECONDS);
+      if (result.getBoolean("changed")) {
+        JSONObject view =
+            engine
+                .executor
+                .submit(() -> engine.run(new JSONObject().put("type", "view")))
+                .get(20, TimeUnit.SECONDS);
+        WordWidget.render(context, view);
+        MainActivity.notifyView(view, null);
+      }
+      return result.getJSONArray("pending").length() > 0 ? "；复习安排等待上传" : "";
+    } catch (Exception error) {
+      return "；复习平摊安排未同步：" + error.getMessage();
+    }
   }
 
   static JSONArray pendingUpload(JSONObject state, String userId) throws Exception {
@@ -598,6 +695,7 @@ final class CloudClient {
           engine.executor.submit(() -> engine.store.load()).get(20, TimeUnit.SECONDS);
       syncedStatus(latest);
       status += syncLearningSettings(context, session, engine, owner);
+      status += syncSchedules(context, session, engine, owner, forcePull);
       saveDownloadCache(engine, owner, journal.snapshot);
       return;
     }
@@ -622,6 +720,7 @@ final class CloudClient {
     saveDownloadCache(engine, owner, journal.snapshot);
     syncedStatus(view.getJSONObject("state"));
     status += syncLearningSettings(context, session, engine, owner);
+    status += syncSchedules(context, session, engine, owner, forcePull);
   }
 
   private static void saveDownloadCache(StudyEngine engine, String owner, JSONObject snapshot)

@@ -34,6 +34,9 @@ let baseline = null,
 let settingsEnabled = false,
   settingsRecords = [],
   settingImports = [];
+let schedulesEnabled = false,
+  scheduleRows = [],
+  scheduleReads = 0;
 const realSetTimeout = global.setTimeout,
   realClearTimeout = global.clearTimeout;
 const batches = [];
@@ -139,6 +142,25 @@ try {
           )
         )
           settingsRecords.push(row);
+    } else if (
+      route.endsWith("wordpop_current_review_schedules") &&
+      schedulesEnabled
+    ) {
+      scheduleReads++;
+      const offset = Number(parsed.searchParams.get("offset"));
+      result = [...new Map(scheduleRows.map((row) => [row.word, row])).values()]
+        .sort((a, b) => a.word.localeCompare(b.word))
+        .slice(offset, offset + 500);
+    } else if (route.endsWith("wordpop_review_schedules") && schedulesEnabled) {
+      if (options.method === "POST") {
+        for (const row of body)
+          if (
+            !scheduleRows.some(
+              (old) => old.id === row.id && old.word === row.word,
+            )
+          )
+            scheduleRows.push(row);
+      } else result = [];
     } else if (route.endsWith("wordpop_events")) {
       if (options.method === "POST") {
         uploadedBatches.push(body);
@@ -196,7 +218,10 @@ try {
       headers: {
         get: (key) =>
           key === "Content-Range" && countHeaderAvailable
-            ? "*/" + serverEvents.length
+            ? "*/" +
+              (route.endsWith("wordpop_review_schedules")
+                ? scheduleRows.length
+                : serverEvents.length)
             : null,
       },
       text: async () => (result === null ? "" : JSON.stringify(result)),
@@ -632,6 +657,60 @@ try {
           ).pending,
         ).length,
         0,
+      );
+
+      schedulesEnabled = true;
+      const schedules = require("../src/shared/review-schedules");
+      const p = db.prepare("SELECT * FROM progress WHERE word_id=1").get();
+      const due = now + 20 * 86400000;
+      cloud.captureSchedules(db, [
+        {
+          word: "test",
+          base_key: schedules.key(p),
+          original_due_at: schedules.baseDue(p),
+          due_at: due,
+        },
+      ]);
+      await until(() => !cloud.getStatus().syncing);
+      const scheduleResult = await cloud.sync({ background: true });
+      assert(
+        !scheduleResult.message.includes("复习平摊安排未同步"),
+        scheduleResult.message,
+      );
+      assert.equal(
+        db.prepare("SELECT next_review_at FROM progress WHERE word_id=1").get()
+          .next_review_at,
+        due,
+      );
+      assert(
+        scheduleRows.some((row) => row.word === "test" && row.due_at === due),
+      );
+      const beforeScheduleReads = scheduleReads;
+      const beforeScheduleWrites = db
+        .prepare("SELECT total_changes() n")
+        .get().n;
+      await cloud.sync({ background: true });
+      assert.equal(
+        scheduleReads,
+        beforeScheduleReads,
+        "ordinary sync should not read unchanged schedules",
+      );
+      assert.equal(
+        db.prepare("SELECT total_changes() n").get().n,
+        beforeScheduleWrites,
+        "unchanged schedules should not rewrite DB",
+      );
+      const earlier = now + 10 * 86400000;
+      scheduleRows.push({
+        ...scheduleRows.find((row) => row.word === "test"),
+        id: "newer-schedule",
+        due_at: earlier,
+      });
+      await cloud.sync({ background: true });
+      assert.equal(
+        db.prepare("SELECT next_review_at FROM progress WHERE word_id=1").get()
+          .next_review_at,
+        earlier,
       );
 
       const credentialsBeforeLogout = fs.readFileSync(

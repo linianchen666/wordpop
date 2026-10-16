@@ -68,5 +68,56 @@ do $$ begin
  exception when insufficient_privilege then null; end;
 end $$;
 reset role;
+set role authenticated;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000001',true);
+insert into public.wordpop_review_schedules(id,user_id,word,base_key,original_due_at,due_at) values
+ ('20000000-0000-0000-0000-000000000001',auth.uid(),'test','memory',1,500),
+ ('20000000-0000-0000-0000-000000000001',auth.uid(),'other','memory',2,600);
+insert into public.wordpop_review_schedules(id,user_id,word,base_key,original_due_at,due_at) values
+ ('20000000-0000-0000-0000-000000000002',auth.uid(),'test','memory',1,300);
+insert into public.wordpop_review_schedules(id,user_id,word,base_key,original_due_at,due_at) values
+ ('20000000-0000-0000-0000-000000000001',auth.uid(),'test','memory',1,500) on conflict(id,word) do nothing;
+do $$ begin
+ if (select count(*) from public.wordpop_current_review_schedules)<>2 then raise exception 'schedule view not grouped'; end if;
+ if (select due_at from public.wordpop_current_review_schedules where word='test')<>300 then raise exception 'retry reordered schedules'; end if;
+ if (select count(*) from public.wordpop_review_schedules)<>3 then raise exception 'schedule retry not idempotent'; end if;
+ begin
+  insert into public.wordpop_review_schedules(id,user_id,word,base_key,original_due_at,due_at,created_at)
+   values(gen_random_uuid(),auth.uid(),'fake','key',1,2,'2999-01-01');
+  raise exception 'schedule timestamp override accepted';
+ exception when insufficient_privilege then null; end;
+ begin
+  insert into public.wordpop_review_schedules(id,user_id,word,base_key,original_due_at,due_at)
+   values(gen_random_uuid(),'00000000-0000-0000-0000-000000000002','fake','key',1,2);
+  raise exception 'schedule cross-user insert accepted';
+ exception when insufficient_privilege then null; end;
+ begin
+  update public.wordpop_review_schedules set due_at=3;
+  raise exception 'schedule update accepted';
+ exception when insufficient_privilege then null; end;
+ begin
+  delete from public.wordpop_review_schedules;
+  raise exception 'schedule delete accepted';
+ exception when insufficient_privilege then null; end;
+ begin
+  insert into public.wordpop_review_schedules(id,user_id,word,base_key,original_due_at,due_at)
+   values(gen_random_uuid(),auth.uid(),'fake','key',1,0);
+  raise exception 'invalid schedule accepted';
+ exception when check_violation then null; end;
+end $$;
+select set_config('request.jwt.claim.sub','00000000-0000-0000-0000-000000000002',true);
+do $$ begin
+ if (select count(*) from public.wordpop_current_review_schedules)<>0 then raise exception 'schedule view leaked'; end if;
+ if (select count(*) from public.wordpop_review_schedules)<>0 then raise exception 'schedule count leaked'; end if;
+end $$;
+reset role;
+set role anon;
+do $$ begin
+ begin
+  perform * from public.wordpop_current_review_schedules;
+  raise exception 'anonymous schedule read accepted';
+ exception when insufficient_privilege then null; end;
+end $$;
+reset role;
 rollback;
-\echo 'Settings schema: idempotent migration, preserved baseline, RLS, grouped latest values and retry ordering passed.'
+\echo 'Settings / review schedules schema: idempotent migration, preserved baseline, RLS, grouped latest values and retry ordering passed.'

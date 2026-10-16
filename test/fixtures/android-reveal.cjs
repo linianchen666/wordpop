@@ -38,6 +38,7 @@ async function checkFlow() {
       translation: "n. 测试",
     },
     dueCount: 20,
+    spreadCount: 19,
     newRemaining: 5,
     quota: { reason: "" },
     intervals: { unknown: 60000, fuzzy: 60000, known: 600000, easy: 86400000 },
@@ -158,6 +159,51 @@ async function checkFlow() {
   );
   el("checkUpdates").click();
   check(updateChecks === 1, "update menu must call the native checker");
+  el("spreadOverdue").click();
+  check(
+    el("spreadDialog").open && el("spreadCount").textContent.includes("19"),
+    "spread menu should show eligible count",
+  );
+  el("spreadDays").value = "5";
+  el("spreadConfirm").click();
+  confirmSpread();
+  const spreadRequest = commands.at(-1);
+  check(
+    spreadRequest.type === "spread" && spreadRequest.days === 5,
+    "spread selection must reach native engine",
+  );
+  check(
+    commands.filter((c) => c.type === "spread").length === 1 &&
+      el("spreadConfirm").disabled,
+    "pending spread should block duplicate requests",
+  );
+  receive(null, "平摊保存失败", spreadRequest.clientRequestId);
+  check(
+    el("spreadDialog").open &&
+      !el("spreadConfirm").disabled &&
+      !el("spreadNotice").hidden,
+    "failure should keep dialog available for retry",
+  );
+  el("spreadConfirm").click();
+  receive(
+    {
+      ...next,
+      revision: 6,
+      dueCount: 5,
+      spreadCount: 4,
+      spreadResult: { count: 19, days: 5 },
+    },
+    null,
+    commands.at(-1).clientRequestId,
+  );
+  check(
+    !el("spreadDialog").open && el("settingsNotice").textContent.includes("19"),
+    "spread needs confirmed feedback",
+  );
+  check(
+    el("word").textContent === "next" && el("counts").textContent.includes("5"),
+    "spread should preserve card and refresh counts",
+  );
   const cloud = [...document.querySelectorAll("#settings > details")].find(
     (d) => d.querySelector("summary")?.textContent.includes("云同步"),
   );

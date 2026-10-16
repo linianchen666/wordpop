@@ -127,6 +127,8 @@ public class MainActivity extends Activity {
           "revealed",
           "nonce",
           "dueCount",
+          "spreadCount",
+          "spreadResult",
           "newRemaining",
           "quota",
           "intervals",

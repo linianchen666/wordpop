@@ -455,6 +455,8 @@
     <p id="settingsNotice" role="status" hidden></p>
     <div class="actions">
       <button onclick="send('view')">刷新</button
+      ><button id="spreadOverdue" onclick="showSpread()" disabled>
+        逾期复习平摊</button
       ><button onclick="WordPopAndroid.addWidget()">添加桌面小组件</button
       ><button onclick="WordPopAndroid.widgetAppearance()">小组件背景</button
       ><button id="checkUpdates" onclick="WordPopAndroid.checkUpdates()">
@@ -565,10 +567,32 @@
       </div>
     </details>
   </dialog>
+  <dialog id="spreadDialog">
+    <h2>逾期复习平摊</h2>
+    <p id="spreadCount"></p>
+    <p>
+      将已到期的复习分配到今天起的几天内，保留正在看的单词。记忆记录和学习统计会保留；联网后同步到其他设备。
+    </p>
+    <label
+      >平摊天数<select id="spreadDays">
+        <option value="3">3 天</option>
+        <option value="5">5 天</option>
+        <option value="7" selected>7 天</option>
+      </select></label
+    >
+    <p id="spreadNotice" role="status" hidden></p>
+    <div class="actions">
+      <button id="spreadCancel" onclick="el('spreadDialog').close()">
+        取消
+      </button>
+      <button id="spreadConfirm" onclick="confirmSpread()">确认平摊</button>
+    </div>
+  </dialog>
   <script>
     let current = {},
       pendingReveal = null,
-      pendingReview = null;
+      pendingReview = null,
+      pendingSpread = null;
     let requestSequence = 0,
       latestRevision = 0;
     const el = (id) => document.getElementById(id);
@@ -678,6 +702,44 @@
           : Math.round(ms / 86400000) + "天后";
     }
     let settingsFormBase = null;
+    function spreadControls() {
+      const busy = !!pendingSpread;
+      const count = current.spreadCount || 0;
+      el("spreadOverdue").disabled =
+        busy || !!pendingReview || !!pendingReveal || !count;
+      el("spreadCount").textContent = "当前有 " + count + " 个可平摊的到期词";
+      el("spreadConfirm").disabled = busy || !count;
+      el("spreadConfirm").textContent = busy ? "正在平摊…" : "确认平摊";
+      el("spreadCancel").disabled = busy;
+      el("spreadDays").disabled = busy;
+    }
+    function showSpread() {
+      if (
+        pendingReview ||
+        pendingReveal ||
+        pendingSpread ||
+        !current.spreadCount
+      )
+        return;
+      el("spreadNotice").hidden = true;
+      spreadControls();
+      el("spreadDialog").showModal();
+    }
+    function confirmSpread() {
+      if (
+        pendingSpread ||
+        pendingReview ||
+        pendingReveal ||
+        !current.spreadCount
+      )
+        return;
+      pendingSpread = { id: "ui-" + (requestSequence + 1) };
+      spreadControls();
+      send("spread", { days: Number(el("spreadDays").value) });
+    }
+    el("spreadDialog").addEventListener("cancel", (event) => {
+      if (pendingSpread) event.preventDefault();
+    });
     function render(view) {
       if (view.revision != null && view.revision < latestRevision) return;
       if (view.revision != null) latestRevision = view.revision;
@@ -685,6 +747,7 @@
         view = { ...view, revealed: true };
       if (current.nonce !== view.nonce) el("fullPanel").open = false;
       current = view;
+      spreadControls();
       el("planReason").textContent = view.quota.reason;
       el("counts").textContent =
         "待复习 " + view.dueCount + " · 待新学 " + view.newRemaining;
@@ -728,6 +791,24 @@
       }
     }
     function receive(view, error, requestId) {
+      if (pendingSpread?.id === requestId) {
+        pendingSpread = null;
+        spreadControls();
+        if (error) {
+          el("spreadNotice").textContent = error;
+          el("spreadNotice").hidden = false;
+          return;
+        }
+        el("spreadDialog").close();
+        if (view.spreadResult)
+          feedback(
+            "已将 " +
+              view.spreadResult.count +
+              " 个到期词平摊到 " +
+              view.spreadResult.days +
+              " 天",
+          );
+      }
       if (pendingReveal?.id === requestId) {
         const before = pendingReveal.before;
         pendingReveal = null;

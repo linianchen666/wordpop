@@ -1,4 +1,3 @@
-const { reviewPriority } = require('./review-algorithm');
 const MASTERED_STAGE = 9;
 const DAY = 86400000;
 // Fresh FSRS learning steps outrank ordinary/stale backlog. Manual deferral
@@ -213,32 +212,16 @@ function createLearningRepository(getDb) {
       ? wordlistFilter('p.word_id', wordlists) : { sql: '1', params: [] };
     return db.transaction(() => {
       const overdue = db.prepare(`
-        SELECT p.* FROM progress p JOIN words w ON p.word_id = w.id
+        SELECT p.*,w.word FROM progress p JOIN words w ON p.word_id = w.id
         WHERE p.next_review_at <= ? AND p.stage < ? AND ${filter.sql}
           AND (? IS NULL OR p.word_id != ?)
-      `).all(now, MASTERED_STAGE, ...filter.params, currentWordId, currentWordId)
-        .map(row => ({ row, priority: reviewPriority(row, now) }))
-        .sort((a, b) => a.priority.learning - b.priority.learning ||
-          a.priority.recall - b.priority.recall || a.priority.stability - b.priority.stability ||
-          a.row.next_review_at - b.row.next_review_at || a.row.word_id - b.row.word_id);
-      const update = db.prepare('UPDATE progress SET next_review_at = ? WHERE word_id = ?');
-      const slots = Math.min(targetDays, overdue.length);
-      overdue.forEach(({ row }, index) => {
-        // Assign contiguous priority groups, rather than scattering weak words
-        // round-robin across all days. Use local calendar days and clamp jitter.
-        const dayOffset = Math.floor(index * slots / overdue.length);
-        const date = new Date(now);
-        date.setDate(date.getDate() + dayOffset);
-        let next = now;
-        if (dayOffset) {
-          const start = new Date(date); start.setHours(0, 0, 0, 0);
-          const end = new Date(date); end.setHours(23, 59, 59, 999);
-          next = Math.max(start.getTime(), Math.min(end.getTime(),
-            date.getTime() + (Math.random() - 0.5) * 2 * 3600 * 1000));
-        }
-        update.run(Math.round(next), row.word_id);
-      });
-      return { success: true, count: overdue.length, days: targetDays };
+      `).all(now, MASTERED_STAGE, ...filter.params, currentWordId, currentWordId);
+      const plan = require('../shared/review-schedules').spread(overdue, targetDays, now, null,
+        require('./review-schedule-store').load(db) || {});
+      const update = db.prepare('UPDATE progress SET next_review_at=? WHERE word_id=(SELECT id FROM words WHERE word=?)');
+      for (const row of plan.changes) update.run(row.due_at, row.word);
+      if (plan.changes.length) require('./cloud-sync').captureSchedules(db, plan.changes);
+      return { success: true, count: plan.count, days: targetDays };
     })();
   }
 
