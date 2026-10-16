@@ -1,14 +1,19 @@
 name: Windows release
 
 on:
-  push:
-    tags: ['v*']
   workflow_dispatch:
     inputs:
       tag:
         description: 'Stable release tag to build'
         required: true
-        default: v1.9.5
+      scope:
+        description: Platforms changed in this release
+        type: choice
+        options: [windows, both]
+        default: windows
+      reuse_release:
+        description: Published stable release supplying the unchanged APK (windows scope)
+        required: false
 
 permissions:
   contents: write
@@ -24,7 +29,8 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 30
     env:
-      RELEASE_TAG: ${{ github.event.inputs.tag || github.ref_name }}
+      RELEASE_TAG: ${{ inputs.tag }}
+      REUSE_RELEASE: ${{ inputs.reuse_release }}
       WORDPOP_TEST_SCREENSHOT_DIR: artifacts/transparent-popup-previews
     steps:
       - name: Verify stable release tag
@@ -35,10 +41,12 @@ jobs:
         with:
           ref: ${{ github.event.inputs.tag || github.ref_name }}
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
       - name: Retrieve verified Android release from the same source
+        if: inputs.scope == 'both'
         shell: pwsh
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -63,6 +71,23 @@ jobs:
           $actual = (Get-Content artifacts/android/outputs/signing-certificate.sha256 -Raw).Trim()
           if ($actual -ne $expected) { throw 'Android signing certificate mismatch' }
           if (-not (Test-Path artifacts/android/outputs/apk/release/app-release.apk)) { throw 'Missing Android release APK' }
+      - name: Reuse the unchanged Android APK
+        if: inputs.scope == 'windows'
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if (-not $env:REUSE_RELEASE) { throw 'Specify the previous stable release containing the unchanged APK' }
+          $changed = git diff --name-only $env:REUSE_RELEASE HEAD -- android/app/src/main android/tools android/app/build.gradle android/build.gradle android/settings.gradle android/gradle.properties src/shared src/data/wordlists src/main/review-algorithm.js src/main/study-policy.js src/renderer/shared/translations.js
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot compare source release' }
+          if ($changed) { throw "Android inputs changed; select both platforms instead: $changed" }
+          $previousLock = git show "$($env:REUSE_RELEASE):package-lock.json" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot read original dependency lock' }
+          $currentLock = Get-Content package-lock.json -Raw | ConvertFrom-Json
+          if (($previousLock.packages.'node_modules/ts-fsrs' | ConvertTo-Json -Compress) -ne ($currentLock.packages.'node_modules/ts-fsrs' | ConvertTo-Json -Compress)) { throw 'Shared FSRS dependency changed; release both platforms' }
+          $gradle = Get-Content android/app/build.gradle -Raw
+          if ($gradle -notmatch "versionName '([0-9]+\.[0-9]+\.[0-9]+)'") { throw 'Missing Android version' }
+          ./tools/reuse-release-asset.ps1 -Tag $env:REUSE_RELEASE -Asset "WordPop.Android.$($Matches[1]).apk" -Destination artifacts/android/outputs/apk/release/app-release.apk
       - name: Install locked dependencies and Electron native addon
         run: npm ci --strict-ssl=true
       - name: Run regression tests on Windows

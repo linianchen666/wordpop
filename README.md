@@ -5,7 +5,7 @@
 [![Latest Release](https://img.shields.io/github/v/release/linianchen666/wordpop?label=latest)](https://github.com/linianchen666/wordpop/releases/latest)
 [![Platform](https://img.shields.io/badge/platform-Windows-blue)](https://github.com/linianchen666/wordpop/releases/latest)
 
-当前正式版：**Windows 1.9.5 / Android 0.1.8**。支持 Windows x64 和 Android 8.0 及以上。
+当前正式版：**Windows 1.9.5 / Android 0.1.9**。支持 Windows x64 和 Android 8.0 及以上。
 
 ## 下载安装与更新
 
@@ -182,7 +182,11 @@ npm run build -- --win --x64 --publish never
 
 ### 发布与保留规则
 
-正式版代码在 **main**。先在待发布提交运行 [Android APK 工作流](.github/workflows/android-build.yml)，选择 `release`，通过固定签名校验、单元测试、Lint 和模拟器设备测试。随后创建对应的 Release 草稿，推送正式版本标签（如 `v1.9.5`），触发 [Windows 发布工作流](.github/workflows/windows-release.yml)：读取相同提交已通过测试的 Android 正式 APK，运行 Windows 回归测试、构建安装包并验证包内功能，两端安装包和校验文件全部上传且校验通过后，发布为正式 Latest Release。也可通过工作流手动指定版本标签。
+正式版代码在 **main**，两端独立更新版本号：只改 Android 时仅构建新 APK，并原样复用最近正式版 exe；只改 Windows 时仅构建新 exe，并原样复用最近正式版 APK。两端或共享学习逻辑都变化时，两端才一起更新版本并构建。复用附件核对原发布的 SHA-256，不重新构建同版本安装包。
+
+Android 有更新时，先在待发布提交运行 [Android APK 工作流](.github/workflows/android-build.yml) 的 `release` 变体，通过签名、单元测试、Lint 和设备测试。随后创建正式发布草稿和源码标签，再手动运行发布工作流：Android 单端选择 [Android stable release](.github/workflows/android-release.yml)，填写标签及提供旧 exe 的 `reuse_release`；Windows 单端选择 [Windows release](.github/workflows/windows-release.yml) 的 `scope=windows` 并指定提供旧 APK 的 `reuse_release`；两端都更新则选 `scope=both`。推送标签不自动构建，避免重复打包。
+
+Android 单端标签使用 `v<Windows 版本>+android.<Android 版本>`（如 `v1.9.5+android.0.1.9`），其中 Windows 版本不变，`+` 后仅为发布标识；保留旧电脑端的版本比较兼容。Windows 单端或双端标签仍使用 `v<Windows 版本>`。正式发布始终附带当前两个安装包及 `SHA256SUMS.txt`，设为 Latest；电脑和手机分别比较自己的版本。
 
 GitHub 按发布时间分别保留最近 **3 个正式版和 3 个测试版**。旧 Release 及附件自动清理，源码标签与分支保留。[清理工作流](.github/workflows/release-retention.yml) 在发布后执行，并提供每日巡检和手动入口。
 
@@ -194,7 +198,7 @@ MIT
 
 Android 应用支持普通桌面小组件、先回忆再评分、离线学习及与电脑共用的 FSRS 算法。小组件支持缩放、透明背景和交互自动发音；底部三个反馈按钮，右上角星号表示轻松。App 设置收进菜单，适合通过 MultiStar 在外屏专注背词。云同步采用 Supabase，同一账户共享评分和学习进度，默认项目网址和公开密钥已预填，也可按说明配置自己的项目。Windows 1.9.0 正式版已包含云同步。
 
-[下载 Android 0.1.8 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.5/WordPop.Android.0.1.8.apk) · [下载 Windows 1.9.5 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.5/WordPop.Setup.1.9.5.exe)
+[下载 Android 0.1.9 正式版](https://github.com/linianchen666/wordpop/releases/latest/download/WordPop.Android.0.1.9.apk) · [下载 Windows 1.9.5 正式版](https://github.com/linianchen666/wordpop/releases/latest/download/WordPop.Setup.1.9.5.exe)
 
 [Android 构建与使用](android/README.md) · [云同步配置与记忆记录合并规则](cloud/README.md)
 
@@ -213,3 +217,5 @@ Android 0.1.7 修复评分与撤销混合批量上传可能触发 400 的格式�
 Windows 1.9.4 / Android 0.1.8 新增学习设置双向同步，包含内置词库多选、固定 / 智能模式、新词量、目标日期及减负开关；启用前需执行最新云端 SQL，并更新两端。详见 [同步配置](cloud/README.md)。同时修复 Windows 升级保留旧快捷方式时的图标：为已有桌面和开始菜单快捷方式指定独立的新图标文件，并增加真实安装 / 覆盖升级验证。三星手机旧图标的问题已由用户确认解决，启用图标包时最终显示由图标包决定。
 
 Windows 1.9.5 修复旧数据库缺少 `review_history` 时启动失败、登录显示 “Database not initialized” 的问题。启动时补建缺失的评分历史表及 FSRS 字段，保留已有学习进度和统计；已完成的记忆初始化不会重复执行。其他数据库打开失败会显示原始原因并停止依赖数据库的服务。本次安卓功能不变，仍分发固定签名的 Android 0.1.8。
+
+Android 0.1.9 隐藏背词页左下角的同步信息，将同步详情移到账户设置。登录后显示昵称或邮箱前缀，隐藏邮箱、密码与注册入口，提供立即同步和退出账户；退出保留本地学习记录。旧会话可恢复账户显示，同步失败不退回登录表单。Windows 仍为 1.9.5，附件沿用原正式版 exe。

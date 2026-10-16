@@ -1,0 +1,89 @@
+name: Android stable release
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag: v<unchanged Windows version>+android.<new Android version>'
+        required: true
+      reuse_release:
+        description: Published stable release supplying the unchanged Windows installer
+        required: true
+permissions:
+  contents: write
+  actions: read
+concurrency:
+  group: wordpop-${{ inputs.tag }}-release
+  cancel-in-progress: false
+jobs:
+  release:
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      RELEASE_TAG: ${{ inputs.tag }}
+      REUSE_RELEASE: ${{ inputs.reuse_release }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag }}
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check Android-only release versions and unchanged Windows sources
+        shell: pwsh
+        run: |
+          $windows = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          $gradle = Get-Content android/app/build.gradle -Raw
+          if ($gradle -notmatch "versionName '([0-9]+\.[0-9]+\.[0-9]+)'") { throw 'Missing Android version' }
+          $android = $Matches[1]
+          if ($env:RELEASE_TAG -ne "v$windows+android.$android") { throw 'Release tag must preserve the Windows version and identify the new Android version' }
+          $changed = git diff --name-only $env:REUSE_RELEASE HEAD -- src assets package.json package-lock.json electron-builder.yml
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot compare source release' }
+          if ($changed) { throw "Windows package inputs changed; release both platforms instead: $changed" }
+          "WINDOWS_VERSION=$windows" >> $env:GITHUB_ENV
+          "ANDROID_VERSION=$android" >> $env:GITHUB_ENV
+      - name: Retrieve verified fixed-signature Android release from this source commit
+        shell: pwsh
+        run: |
+          $sha = (git rev-parse HEAD).Trim()
+          $runs = gh run list --repo $env:GITHUB_REPOSITORY --workflow android-build.yml --commit $sha --status success --limit 20 --json databaseId,headSha | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Android builds' }
+          $runId = $null
+          foreach ($run in $runs) {
+            if ($run.headSha -ne $sha) { continue }
+            $result = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$($run.databaseId)/artifacts" | ConvertFrom-Json
+            if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect Android artifacts' }
+            if ($result.artifacts | Where-Object { $_.name -eq 'wordpop-android-release-apk' -and -not $_.expired }) { $runId = $run.databaseId; break }
+          }
+          if (-not $runId) { throw 'Run the Android release variant successfully for this commit first' }
+          gh run download $runId --repo $env:GITHUB_REPOSITORY --name wordpop-android-release-apk --dir artifacts/android
+          if ($LASTEXITCODE -ne 0) { throw 'Android release download failed' }
+          if ((Get-Content artifacts/android/outputs/signing-certificate.sha256 -Raw).Trim() -ne (Get-Content android/signing-certificate.sha256 -Raw).Trim()) { throw 'Android signing certificate mismatch' }
+          New-Item -ItemType Directory -Force -Path build | Out-Null
+          Copy-Item artifacts/android/outputs/apk/release/app-release.apk "build/WordPop.Android.$($env:ANDROID_VERSION).apk"
+      - name: Reuse the unchanged Windows installer
+        shell: pwsh
+        run: ./tools/reuse-release-asset.ps1 -Tag $env:REUSE_RELEASE -Asset "WordPop.Setup.$($env:WINDOWS_VERSION).exe" -Destination "build/WordPop.Setup.$($env:WINDOWS_VERSION).exe"
+      - name: Upload and publish checked installers
+        shell: pwsh
+        run: |
+          $installers = @(Get-ChildItem build/WordPop.Setup.*.exe, build/WordPop.Android.*.apk)
+          if ($installers.Count -ne 2) { throw 'Expected one installer for each platform' }
+          $checksums = foreach ($file in $installers) { "$((Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant())  $($file.Name)" }
+          $checksums | Set-Content build/SHA256SUMS.txt -Encoding ascii
+          $assets = @($installers) + @(Get-Item build/SHA256SUMS.txt)
+          gh release upload $env:RELEASE_TAG @($assets.FullName) --repo $env:GITHUB_REPOSITORY --clobber
+          if ($LASTEXITCODE -ne 0) { throw 'Release upload failed' }
+          $release = gh api "repos/$env:GITHUB_REPOSITORY/releases/tags/$([Uri]::EscapeDataString($env:RELEASE_TAG))" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cannot inspect release assets' }
+          foreach ($file in $assets) {
+            $asset = $release.assets | Where-Object { $_.name -eq $file.Name }
+            $hash = (Get-FileHash $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+            if ($asset.state -ne 'uploaded' -or $asset.digest -ne "sha256:$hash") { throw "Uploaded asset verification failed: $($file.Name)" }
+          }
+          gh release edit $env:RELEASE_TAG --repo $env:GITHUB_REPOSITORY --draft=false --prerelease=false --latest=true
+          if ($LASTEXITCODE -ne 0) { throw 'Release publication failed' }
+  prune-releases:
+    needs: release
+    uses: ./.github/workflows/release-retention.yml
+    permissions:
+      contents: write

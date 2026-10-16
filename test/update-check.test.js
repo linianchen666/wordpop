@@ -3,7 +3,7 @@ const Module = require('module');
 const { EventEmitter } = require('events');
 const originalLoad = Module._load;
 const latest = require('../package.json').version;
-let version, menu;
+let version, menu, releaseTag;
 const dialogs = [], links = [], requests = [];
 const image = { isEmpty: () => false };
 class Tray extends EventEmitter {
@@ -25,7 +25,7 @@ Module._load = function(request) {
     req.setTimeout = () => {}; req.destroy = () => {};
     setImmediate(() => {
       const res = new EventEmitter(); callback(res);
-      res.emit('data', JSON.stringify({ tag_name: 'v'+latest, body: '正式版' }));
+      res.emit('data', JSON.stringify({ tag_name: releaseTag || 'v'+latest, body: '正式版' }));
       res.emit('end');
     });
     return req;
@@ -41,9 +41,13 @@ Module._load = function(request) {
     cases.push(
       { current: `${latest}+local.1`, needUpdate: false },
       { current: `${major}.${minor}.${patch + 1}-beta.1`, needUpdate: false },
-      { current: `${major}.${minor + 1}.0`, needUpdate: false }
+      { current: `${major}.${minor + 1}.0`, needUpdate: false },
+      { current: latest, needUpdate: false, tag: `v${latest}+android.0.1.9` },
+      { current: `${latest}-beta.1`, needUpdate: true, tag: `v${latest}+android.0.1.9` },
+      { current: `${major}.${minor}.${patch - 1}`, needUpdate: true, tag: `v${latest}+android.0.1.9` }
     );
-    for (const { current, needUpdate } of cases) {
+    for (const { current, needUpdate, tag } of cases) {
+      releaseTag = tag;
       version = current; dialogs.length = 0; links.length = 0; requests.length = 0;
       tray.createTray();
       menu.find(item => item.label?.includes('检查更新')).click();

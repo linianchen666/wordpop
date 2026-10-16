@@ -10,7 +10,7 @@ APK 输出：`android/app/build/outputs/apk/debug/app-debug.apk`。GitHub 构建
 
 正式发布选择工作流的 `release` 变体，使用同一固定签名生成非调试 APK，执行 `assembleRelease testReleaseUnitTest lintRelease -PwordpopReleaseTests=true` 和 `connectedReleaseAndroidTest -PwordpopReleaseTests=true`。正式 APK 输出为 `android/app/build/outputs/apk/release/app-release.apk`；本地构建也需先按签名说明配置固定密钥环境变量。`wordpopReleaseTests` 让设备测试验证实际 release 变体，默认仍测试 debug。
 
-[下载 Android 0.1.8 正式版](https://github.com/linianchen666/wordpop/releases/download/v1.9.5/WordPop.Android.0.1.8.apk)，随 Windows 1.9.5 分发（本次仅修复 Windows，安卓版本未变）。Android versionCode 为 10，0.1.2 起的固定签名包（包括 0.1.4-beta.1）可直接覆盖升级，保留账号和学习记录。
+[下载 Android 0.1.9 正式版](https://github.com/linianchen666/wordpop/releases/latest/download/WordPop.Android.0.1.9.apk)，发布页同时附带原版 Windows 1.9.5 exe。Android versionCode 为 11，0.1.2 起的固定签名包可直接覆盖升级，保留账号和学习记录。只更新安卓时不改变 Windows 版本，也不重新构建 exe；发布规则见 [仓库说明](../README.md#发布与保留规则)。
 
 ## 使用
 
@@ -64,6 +64,6 @@ App 点击显示释义后立即展开已加载的释义和按钮，后台完成�
 
 三星主题或图标包可替换 WordPop 的启动图标，并在卸载重装后再次应用。若仍看到旧的线条 W，可在 Galaxy Themes 的“我的内容 → 图标”中选择默认图标进行对照，或在 Theme Park 中更新 / 恢复 WordPop 图标。本仓库的启动图标为蓝色词卡和白色 W，启用图标包时最终显示由启动器和图标包决定。
 
-## 开发中的账户界面（尚未发布）
+## 账户界面（Android 0.1.9）
 
 背词页不再常驻显示同步信息；设置中的“账户与云同步”展示同步详情。已登录时显示昵称（没有昵称时使用邮箱前缀），隐藏邮箱、密码、注册及高级连接入口，提供立即同步和退出账户。启动或重新打开设置会恢复已保存的账户；同步失败仍保留登录状态。退出会等待正在执行的同步结束并移除登录凭据，本地学习记录保留。评分、保存和发音等操作错误仍在当前页面短暂显示。
