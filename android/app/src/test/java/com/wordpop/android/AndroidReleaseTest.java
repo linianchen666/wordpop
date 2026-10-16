@@ -29,9 +29,9 @@ public class AndroidReleaseTest {
 
   @Test
   public void androidOnlyStableReleaseKeepsWindowsVersionInTag() throws Exception {
-    JSONObject release = release().put("tag_name", "v1.9.5+android.0.1.9");
+    JSONObject release = release().put("tag_name", "v1.9.5.android.0.1.9");
     String url =
-        "https://github.com/linianchen666/wordpop/releases/download/v1.9.5+android.0.1.9/WordPop.Android.0.1.9.apk";
+        "https://github.com/linianchen666/wordpop/releases/download/v1.9.5.android.0.1.9/WordPop.Android.0.1.9.apk";
     release.put("assets", new JSONArray().put(asset("0.1.9").put("browser_download_url", url)));
     AndroidRelease latest = AndroidRelease.latest(release);
     assertEquals("0.1.9", latest.version);

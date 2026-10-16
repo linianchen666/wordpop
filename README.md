@@ -186,7 +186,7 @@ npm run build -- --win --x64 --publish never
 
 Android 有更新时，先在待发布提交运行 [Android APK 工作流](.github/workflows/android-build.yml) 的 `release` 变体，通过签名、单元测试、Lint 和设备测试。随后创建正式发布草稿和源码标签，再手动运行发布工作流：Android 单端选择 [Android stable release](.github/workflows/android-release.yml)，填写标签及提供旧 exe 的 `reuse_release`；Windows 单端选择 [Windows release](.github/workflows/windows-release.yml) 的 `scope=windows` 并指定提供旧 APK 的 `reuse_release`；两端都更新则选 `scope=both`。推送标签不自动构建，避免重复打包。
 
-Android 单端标签使用 `v<Windows 版本>+android.<Android 版本>`（如 `v1.9.5+android.0.1.9`），其中 Windows 版本不变，`+` 后仅为发布标识；保留旧电脑端的版本比较兼容。Windows 单端或双端标签仍使用 `v<Windows 版本>`。正式发布始终附带当前两个安装包及 `SHA256SUMS.txt`，设为 Latest；电脑和手机分别比较自己的版本。
+Android 单端标签使用 `v<Windows 版本>.android.<Android 版本>`（如 `v1.9.5.android.0.1.9`），前三段保留 Windows 版本，后缀仅为安卓发布标识；兼容旧电脑端的版本比较和旧安卓端的下载链接校验。避免使用 `+`，GitHub 会将其编码成旧安卓端无法识别的下载链接。Windows 单端或双端标签仍使用 `v<Windows 版本>`。正式发布始终附带当前两个安装包及 `SHA256SUMS.txt`，设为 Latest；电脑和手机分别比较自己的版本。
 
 GitHub 按发布时间分别保留最近 **3 个正式版和 3 个测试版**。旧 Release 及附件自动清理，源码标签与分支保留。[清理工作流](.github/workflows/release-retention.yml) 在发布后执行，并提供每日巡检和手动入口。
 

@@ -42,9 +42,9 @@ Module._load = function(request) {
       { current: `${latest}+local.1`, needUpdate: false },
       { current: `${major}.${minor}.${patch + 1}-beta.1`, needUpdate: false },
       { current: `${major}.${minor + 1}.0`, needUpdate: false },
-      { current: latest, needUpdate: false, tag: `v${latest}+android.0.1.9` },
-      { current: `${latest}-beta.1`, needUpdate: true, tag: `v${latest}+android.0.1.9` },
-      { current: `${major}.${minor}.${patch - 1}`, needUpdate: true, tag: `v${latest}+android.0.1.9` }
+      { current: latest, needUpdate: false, tag: `v${latest}.android.0.1.9` },
+      { current: `${latest}-beta.1`, needUpdate: true, tag: `v${latest}.android.0.1.9` },
+      { current: `${major}.${minor}.${patch - 1}`, needUpdate: true, tag: `v${latest}.android.0.1.9` }
     );
     for (const { current, needUpdate, tag } of cases) {
       releaseTag = tag;
