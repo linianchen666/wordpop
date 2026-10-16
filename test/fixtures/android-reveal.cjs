@@ -15,11 +15,17 @@ async function checkFlow() {
   window.commands = [];
   window.speeches = [];
   let updateChecks = 0;
+  let savedAccount = { signedIn: false, signingOut: false };
+  let logouts = 0;
   window.WordPopAndroid = {
     versionName: () => "0.1.4",
     checkUpdates: () => updateChecks++,
     command: (raw) => commands.push(JSON.parse(raw)),
     speakOnReveal: (word) => speeches.push(word),
+    account: () => JSON.stringify(savedAccount),
+    logout: () => {
+      logouts++;
+    },
   };
   const v = {
     revision: 1,
@@ -44,6 +50,11 @@ async function checkFlow() {
     },
   };
   render(v);
+  notice("已同步 · 12:30");
+  check(
+    !visible("cloudStatus"),
+    "study page must not show background sync status",
+  );
   check(
     el("meaning").hidden && el("meaning").textContent === "",
     "recall should not repeat instructional copy",
@@ -137,7 +148,7 @@ async function checkFlow() {
   receive(null, "写入失败", commands.at(-1).clientRequestId);
   check(!visible("ratings"), "failed reveal was not rolled back");
   check(
-    el("cloudStatus").textContent === "写入失败",
+    el("studyNotice").textContent === "写入失败" && visible("studyNotice"),
     "native error was hidden",
   );
   el("menu").click();
@@ -151,6 +162,10 @@ async function checkFlow() {
     (d) => d.querySelector("summary")?.textContent.includes("云同步"),
   );
   cloud.open = true;
+  check(
+    visible("email") && !visible("logoutButton"),
+    "signed-out account should offer login only",
+  );
   check(
     !visible("url") && !visible("key"),
     "project configuration should start hidden",
@@ -187,10 +202,12 @@ async function checkFlow() {
   el("showPassword").click();
   check(el("password").type === "text", "password visibility toggle failed");
   el("loginButton").click();
+  savedAccount = { signedIn: true, displayName: "用户昵称", signingOut: false };
   authResult({
     id: logins[1].requestId,
     phase: "authenticated",
     message: "登录成功，正在同步",
+    account: savedAccount,
   });
   check(
     el("password").value === "" &&
@@ -201,8 +218,96 @@ async function checkFlow() {
     el("loginButton").disabled,
     "login must stay locked during initial sync",
   );
-  authResult({ id: logins[1].requestId, phase: "complete", message: "已同步" });
+  check(
+    visible("accountCard") &&
+      el("accountName").textContent === "用户昵称" &&
+      !visible("email") &&
+      !visible("password") &&
+      !visible("signupButton") &&
+      visible("logoutButton") &&
+      el("logoutButton").disabled,
+    "validated login should show the account and hide credentials before sync completes",
+  );
+  authResult({
+    id: logins[1].requestId,
+    phase: "complete",
+    message: "已登录，但同步失败：网络不可用",
+    account: savedAccount,
+  });
   check(!el("loginButton").disabled, "sync completion must release controls");
+  check(
+    !visible("email") &&
+      !el("logoutButton").disabled &&
+      el("cloudStatus").textContent.includes("同步失败"),
+    "sync failure must not sign the user out or bring back the password form",
+  );
+  login(false);
+  check(
+    logins.length === 2,
+    "hidden login entry must not submit another authentication",
+  );
+  el("settings").close();
+  notice("已同步 · 12:31");
+  check(!visible("cloudStatus"), "sync polling must never restore the footer");
+  el("menu").click();
+  check(
+    el("accountName").textContent === "用户昵称" && !visible("email"),
+    "reopening settings must restore the saved account instead of the login form",
+  );
+  el("logoutButton").click();
+  logout();
+  check(
+    logouts === 1 && el("logoutButton").disabled,
+    "sign-out must prevent repeated taps",
+  );
+  accountStatus({ ...savedAccount, signingOut: true }, "已同步");
+  check(
+    el("cloudStatus").textContent === "正在退出账户…",
+    "late sync status must not hide sign-out progress",
+  );
+  savedAccount = { signedIn: false, signingOut: false };
+  accountStatus(savedAccount, "已退出账户，本地学习记录已保留");
+  check(
+    visible("email") &&
+      !visible("accountCard") &&
+      !visible("logoutButton") &&
+      el("email").value === "" &&
+      el("password").value === "" &&
+      !el("loginButton").disabled,
+    "completed sign-out must clear credentials and restore login controls",
+  );
+  authResult({
+    id: logins[1].requestId,
+    phase: "complete",
+    message: "旧的登录回调",
+    account: { signedIn: true, displayName: "过期账户" },
+  });
+  check(
+    !visible("accountCard"),
+    "late login callback must not restore a signed-out account",
+  );
+  // Cold start with a persisted account must work without another login callback.
+  savedAccount = {
+    signedIn: true,
+    displayName: "<b>旧账户</b>",
+    signingOut: false,
+  };
+  el("settings").close();
+  el("menu").click();
+  check(
+    el("accountName").textContent === "<b>旧账户</b>" &&
+      !el("accountName").querySelector("b") &&
+      !visible("email"),
+    "restored names must use text and keep credentials hidden",
+  );
+  WordPopAndroid.logout = () => {
+    throw Error("bridge failed");
+  };
+  el("logoutButton").click();
+  check(
+    !el("logoutButton").disabled && visible("accountCard"),
+    "failed sign-out must retain the account and allow retry",
+  );
   el("settings").close();
   WordPopAndroid.command = () => {
     throw Error("bridge failed");

@@ -28,7 +28,53 @@ final class CloudClient {
   private static String baselineOwner;
   private static volatile String appliedOwner;
   private static final AtomicBoolean authenticating = new AtomicBoolean();
+  private static final AtomicBoolean signingOut = new AtomicBoolean();
   static volatile String status = "尚未连接云服务";
+
+  static JSONObject account(Context context) {
+    try {
+      String saved = SecretPrefs.load(context);
+      return CloudAccount.describe(saved == null ? null : new JSONObject(saved))
+          .put("signingOut", signingOut.get());
+    } catch (Exception error) {
+      return new JSONObject();
+    }
+  }
+
+  static void logout(Context context) {
+    if (!signingOut.compareAndSet(false, true)) return;
+    status = "正在退出账户…";
+    MainActivity.notifyStatus();
+    Context app = context.getApplicationContext();
+    network.execute(
+        () -> {
+          // Serialize with foreground/background sync so an in-flight refresh cannot
+          // restore credentials or merge cloud records after sign-out completes.
+          try {
+            synchronized (CloudClient.class) {
+              SecretPrefs.clear(app);
+              cachedBaseline = null;
+              baselineOwner = null;
+              downloadCache = null;
+              downloadOwner = null;
+              appliedOwner = null;
+              synchronized (queueLock) {
+                ++ticket;
+                if (scheduledSync != null) scheduledSync.cancel(false);
+                scheduledSync = null;
+                forceRequested = flushRequested = false;
+                gate.complete(false);
+              }
+              status = "已退出账户，本地学习记录已保留";
+            }
+          } catch (Exception error) {
+            status = "退出账户失败，请重试";
+          } finally {
+            signingOut.set(false);
+            MainActivity.notifyStatus();
+          }
+        });
+  }
 
   private static String request(JSONObject session, String route, String method, String body)
       throws Exception {
@@ -95,6 +141,10 @@ final class CloudClient {
 
   static void login(Context context, JSONObject input, boolean signup) {
     String requestId = input.optString("requestId");
+    if (signingOut.get()) {
+      MainActivity.notifyAuth(requestId, "error", "正在退出账户，请稍候");
+      return;
+    }
     if (!authenticating.compareAndSet(false, true)) {
       MainActivity.notifyAuth(requestId, "error", "正在处理登录，请稍候");
       return;
@@ -137,6 +187,8 @@ final class CloudClient {
                 .put(
                     "expires_at",
                     System.currentTimeMillis() / 1000 + result.optLong("expires_in", 3600));
+            CloudAccount.remember(
+                session, result.optJSONObject("user"), credentials.getString("email"));
             SecretPrefs.save(context, session.toString());
             status = "登录成功，密码验证通过；正在同步学习记录…";
             MainActivity.notifyAuth(requestId, "authenticated", status);
@@ -301,7 +353,7 @@ final class CloudClient {
   }
 
   private static void enqueueSync(Context context, long delay, boolean force, boolean pollOnly) {
-    if (authenticating.get()) return;
+    if (authenticating.get() || signingOut.get()) return;
     Context app = context.getApplicationContext();
     synchronized (queueLock) {
       if (!gate.offer()) {
@@ -490,6 +542,7 @@ final class CloudClient {
           .put("refresh_token", tokens.getString("refresh_token"))
           .put(
               "expires_at", System.currentTimeMillis() / 1000 + tokens.optLong("expires_in", 3600));
+      CloudAccount.remember(session, tokens.optJSONObject("user"), session.optString("email"));
       SecretPrefs.save(context, session.toString());
     }
     String owner = session.getString("url") + ":" + session.getString("user_id");

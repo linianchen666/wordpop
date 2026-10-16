@@ -167,9 +167,16 @@ public class MainActivity extends Activity {
     MainActivity activity = active.get();
     if (activity != null)
       activity.runOnUiThread(
-          () ->
+          () -> {
+            if (activity.web != null)
               activity.web.evaluateJavascript(
-                  "notice(" + JSONObject.quote(CloudClient.status) + ")", null));
+                  "accountStatus("
+                      + CloudClient.account(activity).toString()
+                      + ","
+                      + JSONObject.quote(CloudClient.status)
+                      + ")",
+                  null);
+          });
   }
 
   static void notifyAuth(String id, String phase, String message) {
@@ -185,12 +192,24 @@ public class MainActivity extends Activity {
                       + JSONObject.quote(phase)
                       + ",message:"
                       + JSONObject.quote(message)
+                      + ",account:"
+                      + CloudClient.account(activity).toString()
                       + "})",
                   null);
           });
   }
 
   final class Bridge {
+    @JavascriptInterface
+    public String account() {
+      return CloudClient.account(MainActivity.this).toString();
+    }
+
+    @JavascriptInterface
+    public void logout() {
+      CloudClient.logout(MainActivity.this);
+    }
+
     @JavascriptInterface
     public String versionName() {
       return AppUpdateChecker.installedVersion(MainActivity.this);
@@ -273,7 +292,7 @@ public class MainActivity extends Activity {
     }
 
     private void notice(String value) {
-      web.evaluateJavascript("notice(" + JSONObject.quote(value) + ")", null);
+      web.evaluateJavascript("feedback(" + JSONObject.quote(value) + ")", null);
     }
   }
 }

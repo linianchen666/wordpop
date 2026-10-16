@@ -162,12 +162,6 @@
       line-height: 1.6;
       color: #aebdd2;
     }
-    #cloudStatus {
-      font-size: 12px;
-      line-height: 1.5;
-      color: #a9c1dd;
-      margin: 12px 0;
-    }
     #full {
       white-space: pre-wrap;
       overflow-wrap: anywhere;
@@ -272,16 +266,65 @@
       background: #ffffff05;
     }
     #cloudStatus {
-      margin: 0;
-      min-height: 16px;
-      color: #8293ac;
-      font-size: 10px;
-      overflow: hidden;
-      white-space: nowrap;
-      text-overflow: ellipsis;
+      color: #aebdd2;
+      font-size: 13px;
+      line-height: 1.6;
+      overflow-wrap: anywhere;
     }
-    #cloudStatus:empty {
-      display: none;
+    .account-card {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin: 18px 0 12px;
+    }
+    .account-avatar {
+      display: grid;
+      place-items: center;
+      flex-shrink: 0;
+      width: 44px;
+      height: 44px;
+      border-radius: 50%;
+      background: #8abaff20;
+      color: #c8e2ff;
+      font-weight: 650;
+    }
+    .account-info {
+      min-width: 0;
+    }
+    #accountName {
+      display: block;
+      overflow-wrap: anywhere;
+    }
+    .account-label {
+      display: block;
+      color: #99baa9;
+      font-size: 12px;
+      margin-top: 4px;
+    }
+    #loginButton {
+      background: #d9eaff;
+      color: #172638;
+      font-weight: 600;
+    }
+    #logoutButton {
+      background: #ffffff0b;
+      color: #c1cddd;
+    }
+    #accountActions {
+      margin-top: 12px;
+    }
+    #accountSection button:disabled {
+      opacity: 0.5;
+      cursor: default;
+    }
+    #studyNotice,
+    #settingsNotice {
+      margin: 0;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: #3b2d25;
+      color: #ffe0bb;
+      overflow-wrap: anywhere;
     }
     dialog {
       width: min(520px, calc(100% - 24px));
@@ -300,7 +343,13 @@
       display: flex;
       align-items: center;
       justify-content: space-between;
-      margin-bottom: 16px;
+      margin-top: -18px;
+      margin-bottom: 4px;
+      padding: 18px 0 12px;
+      position: sticky;
+      top: -18px;
+      z-index: 1;
+      background: #101a2a;
     }
     @media (max-height: 600px) {
       body {
@@ -335,9 +384,6 @@
       }
       header h1 {
         font-size: 14px;
-      }
-      #cloudStatus {
-        max-height: 15px;
       }
     }
     #advancedCloud:not([open]) > label {
@@ -398,7 +444,7 @@
       <p id="full"></p>
     </details>
   </section>
-  <div id="cloudStatus" role="status"></div>
+  <p id="studyNotice" role="alert" hidden></p>
   <dialog id="settings">
     <div class="settings-heading">
       <h1>设置</h1>
@@ -406,6 +452,7 @@
         完成
       </button>
     </div>
+    <p id="settingsNotice" role="status" hidden></p>
     <div class="actions">
       <button onclick="send('view')">刷新</button
       ><button onclick="WordPopAndroid.addWidget()">添加桌面小组件</button
@@ -447,55 +494,75 @@
         />复习积压时减半或暂停推新</label
       ><button onclick="saveConfig()">保存学习设置</button>
     </details>
-    <details>
-      <summary>电脑与手机云同步</summary>
-      <p>
-        先在电脑端初始化云记录，再用同一账户登录手机。评分立即保存在本地，约 10
-        秒批量上传；前台每 15 秒轻量检查，离开 App
-        时补传。后台更新受系统限制，可能延迟。
-      </p>
-      <details id="advancedCloud">
-        <summary>高级连接设置</summary>
-        <label
-          >Supabase 项目网址<input
-            id="url"
-            type="url"
-            value="https://iuledvriatwnbyavqjsw.supabase.co"
-            placeholder="https://项目编号.supabase.co"
-            autocomplete="off" /></label
-        ><label
-          >项目公开 API 密钥<input
-            id="key"
-            autocomplete="off"
-            value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ"
-        /></label>
-      </details>
-      <label
-        >邮箱<input id="email" type="email" autocomplete="username" /></label
-      ><label
-        >密码<input
-          id="password"
-          type="password"
-          autocomplete="current-password"
-      /></label>
-      <button id="showPassword" onclick="togglePassword()">显示密码</button>
-      <p id="authStatus" role="status" aria-live="polite"></p>
-      <div class="actions">
-        <button id="loginButton" onclick="login(false)">登录</button
-        ><button id="signupButton" onclick="login(true)">注册</button
-        ><button onclick="resendConfirmation()">重发确认邮件</button
-        ><button onclick="WordPopAndroid.sync()">立即同步</button>
+    <details id="accountSection">
+      <summary id="accountSummary">账户与云同步</summary>
+      <div id="accountCard" class="account-card" hidden>
+        <span
+          id="accountAvatar"
+          class="account-avatar"
+          aria-hidden="true"
+        ></span>
+        <div class="account-info">
+          <strong id="accountName"></strong>
+          <span class="account-label">已登录</span>
+        </div>
       </div>
-      <details>
-        <summary>确认链接打不开？</summary>
-        <p>
-          点击邮件后若跳到 localhost
-          并打不开，邮箱可能已经确认，请回软件尝试登录。仍未确认时，在 Supabase
-          → Authentication → URL Configuration 将 Site URL 改为可访问的 HTTPS
-          网页（例如
-          https://github.com/linianchen666/wordpop），保存后重发确认邮件，点击最新链接，再回软件登录。
-        </p>
-      </details>
+      <p id="cloudStatus" role="status" aria-live="polite" hidden></p>
+      <div id="accountActions" class="actions" hidden>
+        <button id="syncButton" onclick="WordPopAndroid.sync()">
+          立即同步
+        </button>
+        <button id="logoutButton" onclick="logout()">退出账户</button>
+      </div>
+      <p id="accountLocalNote" hidden>
+        退出仅断开云同步，本地学习记录仍会保留。
+      </p>
+      <p id="authStatus" role="status" aria-live="polite"></p>
+      <div id="authForm">
+        <p>使用与电脑相同的账户，同步学习进度和学习设置。</p>
+        <label
+          >邮箱<input id="email" type="email" autocomplete="username"
+        /></label>
+        <label
+          >密码<input
+            id="password"
+            type="password"
+            autocomplete="current-password"
+        /></label>
+        <button id="showPassword" onclick="togglePassword()">显示密码</button>
+        <div class="actions" style="margin-top: 12px">
+          <button id="loginButton" onclick="login(false)">登录</button>
+          <button id="signupButton" onclick="login(true)">注册</button>
+          <button id="resendButton" onclick="resendConfirmation()">
+            重发确认邮件
+          </button>
+        </div>
+        <details id="advancedCloud">
+          <summary>高级连接设置</summary>
+          <label
+            >Supabase 项目网址<input
+              id="url"
+              type="url"
+              value="https://iuledvriatwnbyavqjsw.supabase.co"
+              placeholder="https://项目编号.supabase.co"
+              autocomplete="off"
+          /></label>
+          <label
+            >项目公开 API 密钥<input
+              id="key"
+              autocomplete="off"
+              value="sb_publishable_pG3bKRxBhJZFw1C6VaGF7A_5WZnm0NJ"
+          /></label>
+        </details>
+        <details>
+          <summary>确认链接打不开？</summary>
+          <p>
+            点击邮件后若跳到 localhost 并打不开，可先回软件尝试登录。
+            仍未确认时，在 Supabase → Authentication → URL Configuration 将 Site
+            URL 改为可访问的 HTTPS 网页，保存后重发确认邮件。
+          </p>
+        </details>
+      </div>
     </details>
   </dialog>
   <script>
@@ -511,10 +578,97 @@
         version = WordPopAndroid.versionName() || version;
       } catch (_) {}
       el("appVersion").textContent = "当前版本：" + version;
+      try {
+        accountStatus(JSON.parse(WordPopAndroid.account()));
+      } catch (_) {}
       el("settings").showModal();
     }
     function notice(text) {
       el("cloudStatus").textContent = text || "";
+    }
+    let feedbackTimer;
+    function feedback(text) {
+      clearTimeout(feedbackTimer);
+      const target = el(el("settings").open ? "settingsNotice" : "studyNotice");
+      target.textContent = text || "";
+      target.hidden = !text;
+      feedbackTimer = setTimeout(() => {
+        target.hidden = true;
+      }, 6000);
+    }
+    let accountState = { signedIn: false },
+      logoutPending = false;
+    function renderAccount() {
+      const signedIn = !!accountState.signedIn;
+      const busy = !!authPending || logoutPending || !!accountState.signingOut;
+      el("authForm").hidden = signedIn;
+      el("authStatus").hidden = signedIn;
+      for (const id of [
+        "accountCard",
+        "accountActions",
+        "accountLocalNote",
+        "cloudStatus",
+      ])
+        el(id).hidden = !signedIn;
+      const name = accountState.displayName || "学习账户";
+      el("accountName").textContent = signedIn ? name : "";
+      el("accountAvatar").textContent = signedIn
+        ? Array.from(name)[0].toUpperCase()
+        : "";
+      el("accountSummary").textContent = signedIn
+        ? "账户与云同步 · " + name
+        : "账户与云同步";
+      for (const id of [
+        "loginButton",
+        "signupButton",
+        "resendButton",
+        "showPassword",
+        "syncButton",
+        "logoutButton",
+      ])
+        el(id).disabled = busy;
+      el("email").readOnly = el("password").readOnly = busy;
+      el("logoutButton").textContent =
+        logoutPending || accountState.signingOut ? "正在退出…" : "退出账户";
+    }
+    function accountStatus(account, message) {
+      const wasSignedIn = accountState.signedIn;
+      accountState = account || { signedIn: false };
+      if (accountState.signingOut === false) logoutPending = false;
+      if (wasSignedIn && !accountState.signedIn) {
+        authPending = null;
+        logoutPending = false;
+        el("email").value = el("password").value = "";
+        el("password").type = "password";
+        el("showPassword").textContent = "显示密码";
+        el("advancedCloud").open = false;
+        el("authStatus").textContent = "已退出账户，本地学习记录已保留";
+      }
+      renderAccount();
+      if (message != null) {
+        notice(
+          logoutPending || accountState.signingOut ? "正在退出账户…" : message,
+        );
+        if (
+          !accountState.signedIn &&
+          !authPending &&
+          message !== "尚未连接云服务"
+        )
+          el("authStatus").textContent = message;
+      }
+    }
+    function logout() {
+      if (!accountState.signedIn || logoutPending || authPending) return;
+      logoutPending = true;
+      renderAccount();
+      notice("正在退出账户…");
+      try {
+        WordPopAndroid.logout();
+      } catch (_) {
+        logoutPending = false;
+        renderAccount();
+        notice("退出失败，请重试");
+      }
     }
     function interval(ms) {
       return ms < 3600000
@@ -579,7 +733,7 @@
         pendingReveal = null;
         if (error) {
           render(before);
-          notice(error);
+          feedback(error);
           return;
         }
       }
@@ -587,12 +741,12 @@
         pendingReview = null;
         if (error) {
           render(current);
-          notice(error);
+          feedback(error);
           return;
         }
       }
       if (error) {
-        notice(error);
+        feedback(error);
         return;
       }
       if (
@@ -649,11 +803,11 @@
         (option) => option.value,
       );
       if (!lists.length) {
-        notice("请至少选择一个词库");
+        feedback("请至少选择一个词库");
         return;
       }
       if (el("mode").value === "target" && !el("target").value) {
-        notice("请先选择目标日期");
+        feedback("请先选择目标日期");
         return;
       }
       send("config", {
@@ -669,7 +823,7 @@
           autoBalanceLoad: el("balance").checked,
         },
       });
-      notice("学习设置已保存");
+      feedback("学习设置已保存");
     }
     let authPending = null;
     function togglePassword() {
@@ -679,33 +833,35 @@
     }
     function authResult(result) {
       if (!authPending || result.id !== authPending) return;
-      el("authStatus").textContent =
-        result.phase === "complete"
-          ? "登录成功 · " + result.message
-          : result.message;
-      notice(result.message);
+      el("authStatus").textContent = result.message || "";
+      if (result.account) accountStatus(result.account, result.message);
       if (result.phase === "authenticated") {
         el("password").value = "";
         el("password").type = "password";
         el("showPassword").textContent = "显示密码";
-        el("loginButton").textContent = "已登录，正在同步…";
+        accountStatus(
+          result.account || {
+            signedIn: true,
+            displayName: el("email").value.trim().split("@")[0],
+          },
+          result.message,
+        );
+        el("advancedCloud").open = false;
         return;
       }
       authPending = null;
-      el("loginButton").disabled = el("signupButton").disabled = false;
-      el("email").readOnly = el("password").readOnly = false;
       el("loginButton").textContent = "登录";
+      renderAccount();
     }
     function login(signup) {
-      if (authPending) return;
+      if (authPending || accountState.signedIn || logoutPending) return;
       if (!el("email").value.trim() || !el("password").value) {
         el("authStatus").textContent = "请填写邮箱和密码";
         return;
       }
       const id = "auth-" + Date.now() + "-" + ++requestSequence;
       authPending = id;
-      el("loginButton").disabled = el("signupButton").disabled = true;
-      el("email").readOnly = el("password").readOnly = true;
+      renderAccount();
       el("loginButton").textContent = signup ? "正在注册…" : "正在登录…";
       el("authStatus").textContent = signup
         ? "正在注册，请稍候…"
@@ -726,6 +882,11 @@
       }
     }
     function resendConfirmation() {
+      if (authPending || accountState.signedIn || logoutPending) return;
+      if (!el("email").value.trim()) {
+        el("authStatus").textContent = "请先填写邮箱";
+        return;
+      }
       WordPopAndroid.resendConfirmation(
         JSON.stringify({
           url: el("url").value,
@@ -733,7 +894,7 @@
           email: el("email").value,
         }),
       );
-      notice("正在重新发送…");
+      el("authStatus").textContent = "正在重新发送确认邮件…";
     }
   </script>
 </html>
